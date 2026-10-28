@@ -1,0 +1,1 @@
+ALTER TABLE "imported_person" ADD COLUMN "erased_at" timestamp;

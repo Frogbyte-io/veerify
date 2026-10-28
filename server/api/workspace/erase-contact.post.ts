@@ -7,7 +7,8 @@
  *     description: >
  *       Workspace owner or admin only. Deletes every review request and testimonial for the email address
  *       (case-insensitive) across the workspace's projects, and keeps or creates a suppression so the
- *       address is never contacted again. Works whether or not Marketing is switched on.
+ *       address is never contacted again. Imported people with the address (authors and voters from an import) are
+ *       erased too: their name and email are erased, and cleared from their posts and comments. Works whether or not Marketing is switched on.
  *     operationId: eraseMarketingContact
  *     requestBody:
  *       required: true
@@ -19,7 +20,7 @@
  *             properties:
  *               email: { type: string, format: email }
  *     responses:
- *       200: { description: Counts of deleted review requests and testimonials }
+ *       200: { description: 'Counts of deleted review requests and testimonials, plus imported people removed' }
  *       400: { description: Validation failed }
  *       403: { description: Workspace owner or admin required }
  */

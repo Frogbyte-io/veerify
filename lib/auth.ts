@@ -5,6 +5,7 @@ import { magicLink, multiSession, organization, testUtils, twoFactor } from 'bet
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
 import { isReservedSlug } from '../server/utils/reserved-slugs'
+import { claimImportedActivityInBackground, isVerificationPath } from '../server/services/imports/claim'
 import {
   sendEmailVerificationEmail,
   sendMagicLinkEmail,
@@ -117,6 +118,25 @@ export const auth = betterAuth({
       twoFactor: schema.twoFactor,
     },
   }),
+  // Claim imported posts, comments and votes only on a verification event (server/services/imports/claim.ts):
+  // - `emailVerification.afterEmailVerification` (below): the verify-email link, including a confirmed email change;
+  // - `create.after`: a user created already verified (social sign-up asserting a verified email, magic-link sign-up);
+  // - `update.after`, only while handling `/magic-link/verify`: magic-link sign-in flips an existing unverified user to
+  //   verified without calling afterEmailVerification. Better-Auth passes the endpoint context (with `path`) to
+  //   database hooks; any other update (2FA toggle, update-user, internal adapter calls) never claims.
+  // Fire-and-forget: a failed claim is logged and never blocks sign-up or verification. The claim is idempotent.
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => claimImportedActivityInBackground(user),
+      },
+      update: {
+        after: async (user, context) => {
+          if (isVerificationPath(context?.path)) claimImportedActivityInBackground(user)
+        },
+      },
+    },
+  },
   session: {
     // The project the user is working in; resolved and repaired server-side by
     // server/utils/project-context.ts. Never set from client input.
@@ -148,6 +168,7 @@ export const auth = betterAuth({
       })
     },
     sendOnSignUp: true,
+    afterEmailVerification: async (user) => claimImportedActivityInBackground(user),
   },
   socialProviders: {
     github: {

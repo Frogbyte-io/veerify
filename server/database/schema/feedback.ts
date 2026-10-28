@@ -9,6 +9,7 @@ import {
   index,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { user, organization } from './auth'
 
 export type ProjectAccessMode = 'workspace' | 'restricted'
@@ -108,6 +109,38 @@ export const product = pgTable(
   (table) => ({
     projectSlugUnique: uniqueIndex('product_project_slug_idx').on(table.projectId, table.slug),
     projectOrderIdx: index('product_project_order_idx').on(table.projectId, table.sortOrder),
+  })
+)
+
+// Imported people - authors/voters from another platform. Never users until they claim the record.
+// Lives here (not imports.ts) because feedback, vote and feedbackComment reference it and imports.ts imports project.
+export const importedPerson = pgTable(
+  'imported_person',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    externalId: text('external_id').notNull(),
+    name: text('name'),
+    email: text('email'),
+    avatarUrl: text('avatar_url'),
+    /** Set when contact erasure removed the person's name, email and avatar; the row stays as a tombstone. */
+    erasedAt: timestamp('erased_at'),
+    claimedByUserId: text('claimed_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    externalUnique: uniqueIndex('imported_person_external_idx').on(table.projectId, table.source, table.externalId),
+    emailIdx: index('imported_person_email_idx').on(table.email),
+    // Claiming matches lower(email) = lower($1) (server/services/imports/claim.ts)
+    emailLowerIdx: index('imported_person_email_lower_idx').on(sql`lower(${table.email})`),
   })
 )
 
@@ -303,6 +336,12 @@ export const feedback = pgTable(
     // Set when submitted through an app key; sourceLabel is the public origin label
     apiKeyId: text('api_key_id').references(() => projectApiKey.id, { onDelete: 'set null' }),
     sourceLabel: text('source_label'),
+    // Import bookkeeping: id in the source platform, last imported values, baseline votes without rows
+    externalSource: text('external_source'),
+    externalId: text('external_id'),
+    importSnapshot: jsonb('import_snapshot').$type<Record<string, any>>(),
+    importedVoteBaseline: integer('imported_vote_baseline').default(0).notNull(),
+    importedPersonId: text('imported_person_id').references(() => importedPerson.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -335,6 +374,16 @@ export const feedback = pgTable(
     projectStatusIdx: index('feedback_project_status_idx').on(table.projectId, table.status),
     // Composite index for paginated project feedback lists sorted by date
     projectCreatedAtIdx: index('feedback_project_created_at_idx').on(table.projectId, table.createdAt),
+    // One feedback item per external record within a project
+    externalUnique: uniqueIndex('feedback_project_external_idx').on(
+      table.projectId,
+      table.externalSource,
+      table.externalId
+    ),
+    // Claiming and erasure look rows up by imported person
+    importedPersonIdx: index('feedback_imported_person_idx')
+      .on(table.importedPersonId)
+      .where(sql`${table.importedPersonId} IS NOT NULL`),
   })
 )
 
@@ -351,6 +400,8 @@ export const vote = pgTable(
     voterSessionId: text('voter_session_id').references(() => anonymousSession.id, { onDelete: 'cascade' }),
     // Vote direction: 'upvote' (default, backwards compatible) or 'downvote'
     type: text('type').default('upvote').notNull(),
+    // Imported voter (never a user until claimed)
+    importedPersonId: text('imported_person_id').references(() => importedPerson.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -360,12 +411,18 @@ export const vote = pgTable(
     uniqueUserVote: uniqueIndex('vote_user_feedback_idx').on(table.feedbackId, table.voterUserId),
     // Unique constraint: one vote per session per feedback
     uniqueSessionVote: uniqueIndex('vote_session_feedback_idx').on(table.feedbackId, table.voterSessionId),
+    // One vote per imported person per feedback
+    uniqueImportedVote: uniqueIndex('vote_imported_person_feedback_idx').on(table.feedbackId, table.importedPersonId),
     // Index for querying votes by feedback
     feedbackIdx: index('vote_feedback_idx').on(table.feedbackId),
     // Index for querying votes by user
     userIdx: index('vote_user_idx').on(table.voterUserId),
     // Index for querying votes by session
     sessionIdx: index('vote_session_idx').on(table.voterSessionId),
+    // Claiming looks votes up by imported person
+    importedPersonIdx: index('vote_imported_person_idx')
+      .on(table.importedPersonId)
+      .where(sql`${table.importedPersonId} IS NOT NULL`),
   })
 )
 
@@ -462,6 +519,10 @@ export const feedbackComment = pgTable(
     isInternal: boolean('is_internal')
       .$defaultFn(() => false)
       .notNull(), // Internal team notes vs public comments
+    externalSource: text('external_source'),
+    externalId: text('external_id'),
+    importSnapshot: jsonb('import_snapshot').$type<Record<string, any>>(),
+    importedPersonId: text('imported_person_id').references(() => importedPerson.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -482,6 +543,15 @@ export const feedbackComment = pgTable(
     internalIdx: index('comment_internal_idx').on(table.isInternal),
     // Composite index for threaded comment sorting by date
     feedbackCreatedAtIdx: index('comment_feedback_created_at_idx').on(table.feedbackId, table.createdAt),
+    externalUnique: uniqueIndex('comment_feedback_external_idx').on(
+      table.feedbackId,
+      table.externalSource,
+      table.externalId
+    ),
+    // Claiming and erasure look comments up by imported person
+    importedPersonIdx: index('comment_imported_person_idx')
+      .on(table.importedPersonId)
+      .where(sql`${table.importedPersonId} IS NOT NULL`),
   })
 )
 

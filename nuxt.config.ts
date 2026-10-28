@@ -67,7 +67,12 @@ export default defineNuxtConfig({
       // Trivial example proving the self-hosted backend wires up (Stage 00).
       // Outbound support delivery starts in Stage 04; later consumers include
       // Stage 06 (SLA sweeper), Stage 08 (CSAT dispatch), and Stage 09 rollups.
-      '* * * * *': ['support:outbound-delivery', 'marketing:audit-advance', 'marketing:visibility-advance'],
+      '* * * * *': [
+        'support:outbound-delivery',
+        'marketing:audit-advance',
+        'marketing:visibility-advance',
+        'imports:advance',
+      ],
       '*/5 * * * *': [
         'marketing:mentions-poll',
         'support:attachment-cleanup',

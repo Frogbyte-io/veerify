@@ -10,6 +10,7 @@ import {
   reviewRequest,
   testimonial,
 } from '~/server/database/schema/marketing'
+import { eraseImportedPeople } from '~/server/services/imports/claim'
 import { revokeToken } from '~/server/services/google/search-console'
 import { findGscConnection, gscAad, removeGscConnection } from '~/server/services/marketing/search/connection'
 import { hashEmail, hashEmailCandidates, normalizeMarketingEmail } from '~/server/utils/marketing-email-hash'
@@ -18,6 +19,7 @@ import { decryptSecret } from '~/server/utils/secrets'
 export interface EraseContactResult {
   reviewRequestsDeleted: number
   testimonialsDeleted: number
+  importedPeople: number
   suppressed: true
 }
 
@@ -97,11 +99,14 @@ export async function eraseContact(organizationId: string, rawEmail: string): Pr
 
     const removedRequests = await tx.delete(reviewRequest).where(matchesRequest).returning({ id: reviewRequest.id })
 
+    const importedPeople = await eraseImportedPeople(organizationId, email, tx)
+
     await writeSuppression(tx, { organizationId, email, emailHash })
 
     return {
       reviewRequestsDeleted: removedRequests.length,
       testimonialsDeleted: removedTestimonials.length,
+      importedPeople,
       suppressed: true as const,
     }
   })

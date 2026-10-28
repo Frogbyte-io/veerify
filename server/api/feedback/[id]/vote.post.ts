@@ -97,8 +97,13 @@ export default defineEventHandler(async (event) => {
 
   if (existingVote) {
     if (existingVote.type === voteType) {
-      // Same type → toggle off (remove vote)
-      await db.delete(vote).where(eq(vote.id, existingVote.id))
+      // Same type → toggle off (remove vote). An imported vote the user claimed keeps its row, detached from the
+      // user (importedPersonId stays), so a re-import finds it and does not add the vote back.
+      if (existingVote.importedPersonId) {
+        await db.update(vote).set({ voterUserId: null }).where(eq(vote.id, existingVote.id))
+      } else {
+        await db.delete(vote).where(eq(vote.id, existingVote.id))
+      }
       // Upvote removed: count -1; downvote removed: count +1
       const delta = voteType === 'upvote' ? -1 : 1
       await db

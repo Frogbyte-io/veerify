@@ -7,6 +7,7 @@
  *     description: >
  *       Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
  *       A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename.
+ *       Changing the email (compared case-insensitively) stores it in lower case, marks it unverified and sends a verification email to the new address.
  *     operationId: updateUserProfile
  *     security:
  *       - cookieAuth: []
@@ -28,9 +29,10 @@
  *       403: { description: "Email change attempted with a personal API key" }
  *       500: { description: "Internal server error" }
  */
+import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { isCredentialPrincipal, requireAuth } from '~/server/utils/auth-middleware'
 import { createLogger } from '~/server/utils/logger'
 
@@ -73,7 +75,11 @@ export default defineEventHandler(async (event) => {
     }
 
     // Check if email is already taken by another user
-    const existingUser = await db.select().from(user).where(eq(user.email, email)).limit(1)
+    const existingUser = await db
+      .select()
+      .from(user)
+      .where(sql`lower(${user.email}) = lower(${String(email).trim()})`)
+      .limit(1)
 
     if (existingUser.length > 0 && existingUser[0].id !== session.user.id) {
       throw createError({
@@ -82,17 +88,34 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Update user profile
+    // Credential principals never rewrite the stored email (not even its casing). Browser sessions store it in lower
+    // case, as Better-Auth does, so its email lookups (sign-in, verification) find the user.
+    const nextEmail = isCredentialPrincipal(session) ? session.user.email : String(email).trim().toLowerCase()
+
+    // A changed email is unverified until its owner follows the link. Decided in SQL against the stored email, not
+    // the (possibly cached) session, because a verified email lets Better-Auth hooks claim imported activity for it.
     const updatedUser = await db
       .update(user)
       .set({
         name: name.trim(),
-        // Credential principals never rewrite the stored email (not even its casing).
-        email: isCredentialPrincipal(session) ? session.user.email : email.trim(),
+        email: nextEmail,
+        emailVerified: sql`CASE WHEN lower(${user.email}) = lower(${nextEmail}) THEN ${user.emailVerified} ELSE false END`,
         updatedAt: new Date(),
       })
       .where(eq(user.id, session.user.id))
       .returning()
+
+    if (nextEmail.toLowerCase() !== String(session.user.email).trim().toLowerCase()) {
+      // Fire-and-forget: a failed mail never fails the profile update (the user can request another one).
+      Promise.resolve()
+        .then(() => auth.api.sendVerificationEmail({ body: { email: nextEmail } }))
+        .catch((error) => {
+          logger.error('Failed to send verification email after email change', {
+            userId: session.user.id,
+            error: error instanceof Error ? error.message : error,
+          })
+        })
+    }
 
     return {
       success: true,

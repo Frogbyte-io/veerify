@@ -1256,7 +1256,7 @@ export const openapiPaths = {
         "Feedback"
       ],
       "summary": "Delete a feedback item",
-      "description": "Permanently deletes the item. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Permanently deletes the item. Imported feedback stays deleted: a later import from the same source skips it. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "deleteFeedback",
       "security": [
         {
@@ -1593,7 +1593,7 @@ export const openapiPaths = {
         "Feedback"
       ],
       "summary": "Delete a comment",
-      "description": "Deletes the comment and decrements the comment count. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Deletes the comment and decrements the comment count. An imported comment stays deleted: a later import from the same source skips it and its replies. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "deleteFeedbackComment",
       "security": [
         {
@@ -2782,6 +2782,32 @@ export const openapiPaths = {
               }
             }
           }
+        }
+      }
+    }
+  },
+  "/api/imports/schema": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Get the veerify-import/1 JSON Schema",
+      "description": "Returns the import format identifier, its JSON Schema and a small valid example document.",
+      "operationId": "getImportSchema",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Format identifier, JSON Schema and example"
+        },
+        "401": {
+          "description": "Not authenticated"
         }
       }
     }
@@ -8211,6 +8237,425 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/projects/{slug}/imports": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "List import runs",
+      "description": "The project's 50 most recent import runs, newest first.",
+      "operationId": "listImportRuns",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Runs"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Create an import run",
+      "description": "Creates a draft run. Add records in batches, then preview and commit.",
+      "operationId": "createImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "source",
+                "sourceLabel"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "pattern": "^[a-z0-9_-]+$"
+                },
+                "sourceLabel": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "product": {
+                  "type": "string",
+                  "description": "Product slug or id; defaults to the project's first product"
+                },
+                "onExisting": {
+                  "type": "string",
+                  "enum": [
+                    "sync",
+                    "skip"
+                  ],
+                  "default": "sync"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Run created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or product not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Get an import run",
+      "description": "Run status and summary plus its first 200 issues.",
+      "operationId": "getImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The run and its issues"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}/cancel": {
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Cancel an import run",
+      "description": "Only draft or committing runs can be canceled.",
+      "operationId": "cancelImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The canceled run"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        },
+        "409": {
+          "description": "Run is already completed, failed or canceled"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}/commit": {
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Commit an import run",
+      "description": "Applies a draft run. Runs with up to 500 records are applied before the response (200 with the completed run); larger runs return 202 with the run still committing, and a scheduled task finishes them (poll the run for progress). Re-committing the same records creates nothing; fields edited in Veerify are kept. No notifications, emails or changelog publish hooks are triggered.",
+      "operationId": "commitImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The run, completed (or failed, with error)"
+        },
+        "202": {
+          "description": "The run, still committing in the background"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        },
+        "409": {
+          "description": "Run is not a draft"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}/preview": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Preview an import run",
+      "description": "Dry run of the staged records. Counts per section (create, update, unchanged, skip), fields kept because they were edited in Veerify (first 200), statuses and categories to create, and issues (first 500, staged issues first). Writes nothing.",
+      "operationId": "previewImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The import plan"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}/records": {
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Add a batch of records to an import run",
+      "description": "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Duplicate externalIds within a section of the run are dropped and reported as skipped issues.",
+      "operationId": "addImportRecords",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "statuses": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "categories": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "feedback": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "comments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "changelog": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Batch staged; returns seq, recordCount, runRecordCount and issues"
+        },
+        "400": {
+          "description": "Validation failed or a record limit was exceeded"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        },
+        "409": {
+          "description": "Run is not a draft"
+        },
+        "413": {
+          "description": "Request body exceeds 4 MiB"
+        }
+      }
+    }
+  },
   "/api/projects/{slug}/members": {
     "get": {
       "tags": [
@@ -12555,7 +13000,7 @@ export const openapiPaths = {
         "User"
       ],
       "summary": "Update my profile",
-      "description": "Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename.\n",
+      "description": "Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename. Changing the email (compared case-insensitively) stores it in lower case, marks it unverified and sends a verification email to the new address.\n",
       "operationId": "updateUserProfile",
       "security": [
         {
@@ -12974,7 +13419,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Erase a person's Marketing data",
-      "description": "Workspace owner or admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the workspace's projects, and keeps or creates a suppression so the address is never contacted again. Works whether or not Marketing is switched on.\n",
+      "description": "Workspace owner or admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the workspace's projects, and keeps or creates a suppression so the address is never contacted again. Imported people with the address (authors and voters from an import) are erased too: their name and email are erased, and cleared from their posts and comments. Works whether or not Marketing is switched on.\n",
       "operationId": "eraseMarketingContact",
       "requestBody": {
         "required": true,
@@ -12997,7 +13442,7 @@ export const openapiPaths = {
       },
       "responses": {
         "200": {
-          "description": "Counts of deleted review requests and testimonials"
+          "description": "Counts of deleted review requests and testimonials, plus imported people removed"
         },
         "400": {
           "description": "Validation failed"

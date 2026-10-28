@@ -59,6 +59,14 @@
             <p v-if="fieldErrors.email" class="text-sm text-destructive mt-1">
               {{ fieldErrors.email }}
             </p>
+            <div
+              v-else-if="verificationNotice"
+              role="status"
+              class="mt-2 flex items-start gap-2 rounded-md border bg-muted/50 p-3 text-sm"
+            >
+              <Icon name="lucide:mail-check" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span>{{ verificationNotice }}</span>
+            </div>
           </div>
         </div>
 
@@ -103,6 +111,8 @@ export default {
         email: '',
       },
       isSaving: false,
+      // Shown after an email change until the page is reloaded: the new address needs verifying.
+      verificationNotice: '',
     }
   },
 
@@ -221,7 +231,14 @@ export default {
         })
 
         if (response.success) {
-          toast.success('Profile updated successfully')
+          const newEmail = this.formData.email.trim()
+          const emailChanged = newEmail.toLowerCase() !== this.originalData.email.trim().toLowerCase()
+          if (emailChanged && response.user?.emailVerified === false) {
+            this.verificationNotice = `We sent a verification link to ${newEmail}. Check your inbox and follow the link to verify your new email address.`
+            toast.success('Profile updated. Check your inbox to verify your new email address.')
+          } else {
+            toast.success('Profile updated successfully')
+          }
           this.originalData = { ...this.formData }
         }
       } catch (error) {

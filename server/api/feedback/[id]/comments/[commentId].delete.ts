@@ -5,7 +5,7 @@
  *     tags: [Feedback]
  *     summary: Delete a comment
  *     description: >
- *       Deletes the comment and decrements the comment count. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Deletes the comment and decrements the comment count. An imported comment stays deleted: a later import from the same source skips it and its replies. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
  *     operationId: deleteFeedbackComment
  *     security:
  *       - cookieAuth: []
@@ -35,6 +35,7 @@ import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 import { requireProjectAccess } from '~/server/utils/project-access'
+import { commentTombstoneId, recordImportTombstone } from '~/server/services/imports/tombstones'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -62,7 +63,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [fb] = await db
-    .select({ projectId: feedback.projectId })
+    .select({ projectId: feedback.projectId, externalId: feedback.externalId })
     .from(feedback)
     .where(eq(feedback.id, feedbackId))
     .limit(1)
@@ -96,13 +97,24 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await db.delete(feedbackComment).where(eq(feedbackComment.id, commentId))
+  await db.transaction(async (tx) => {
+    // Imported comment: remember the deletion so a re-import does not bring it back (its replies are skipped too).
+    if (comment.externalId && fb.externalId) {
+      await recordImportTombstone(tx, {
+        projectId: fb.projectId,
+        entity: 'comment',
+        source: comment.externalSource,
+        externalId: commentTombstoneId(fb.externalId, comment.externalId),
+      })
+    }
+    await tx.delete(feedbackComment).where(eq(feedbackComment.id, commentId))
 
-  // Decrement comment count on the feedback item
-  await db
-    .update(feedback)
-    .set({ commentCount: sql`GREATEST(${feedback.commentCount} - 1, 0)`, updatedAt: new Date() })
-    .where(eq(feedback.id, feedbackId))
+    // Decrement comment count on the feedback item
+    await tx
+      .update(feedback)
+      .set({ commentCount: sql`GREATEST(${feedback.commentCount} - 1, 0)`, updatedAt: new Date() })
+      .where(eq(feedback.id, feedbackId))
+  })
 
   return createSuccessResponse({ deleted: true })
 })

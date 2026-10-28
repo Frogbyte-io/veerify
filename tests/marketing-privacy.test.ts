@@ -54,7 +54,7 @@ describe('eraseContact', () => {
       return []
     }
     const result = await eraseContact('org-1', '  Jane.Doe@Example.COM ')
-    expect(result).toEqual({ reviewRequestsDeleted: 2, testimonialsDeleted: 1, suppressed: true })
+    expect(result).toEqual({ reviewRequestsDeleted: 2, testimonialsDeleted: 1, importedPeople: 0, suppressed: true })
 
     const requestDelete = queries('delete from "review_request"')[0]
     expect(requestDelete.text).toContain(
@@ -112,7 +112,7 @@ describe('eraseContact', () => {
 
   it('still suppresses when nothing matches', async () => {
     const result = await eraseContact('org-1', 'nobody@example.com')
-    expect(result).toEqual({ reviewRequestsDeleted: 0, testimonialsDeleted: 0, suppressed: true })
+    expect(result).toEqual({ reviewRequestsDeleted: 0, testimonialsDeleted: 0, importedPeople: 0, suppressed: true })
     expect(queries('insert into "marketing_email_suppression"')).toHaveLength(1)
     // Without matched requests the testimonial match is by its own email only
     expect(queries('delete from "testimonial"')[0].text).not.toContain('review_request_id')

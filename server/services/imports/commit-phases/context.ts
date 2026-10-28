@@ -1,0 +1,127 @@
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { db } from '~/server/database/drizzle'
+import { feedback, importedPerson } from '~/server/database/schema/feedback'
+import type { ImportBatch, IssueInput } from '../format'
+import type { ImportSection, SectionCounts } from '../planner'
+import type { ImportRunRow } from '../runs'
+import type { TaxonomyResolution } from '../taxonomy'
+
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+export const COMMIT_PHASES = ['taxonomy', 'people', 'feedback', 'votes', 'comments', 'changelog'] as const
+export type CommitPhaseName = (typeof COMMIT_PHASES)[number]
+
+/** State shared by the phases of one advance call. Counts and `kept` are persisted with the progress. */
+export interface CommitContext {
+  run: ImportRunRow
+  batch: ImportBatch
+  /** onExisting = 'sync' (default); false means 'skip': only records not seen before are created */
+  sync: boolean
+  /** Resolved with apply:true; null once the feedback phase is behind us (later phases don't need it) */
+  taxonomy: TaxonomyResolution | null
+  effectiveStatuses: Set<string>
+  counts: Record<ImportSection, SectionCounts>
+  /** Records with at least one field kept because it was edited in Veerify */
+  kept: number
+  issue(issue: IssueInput): void
+  now(): Date
+}
+
+/**
+ * One commit phase. `items` must be deterministic for a run (progress.done indexes into it); `apply` handles one
+ * record in its own transaction and must be idempotent, because a crashed call re-applies records after the last
+ * checkpoint.
+ */
+export interface CommitPhase<S = any, T = any> {
+  name: CommitPhaseName
+  items(ctx: CommitContext): readonly T[]
+  load(ctx: CommitContext): Promise<S>
+  apply(ctx: CommitContext, state: S, item: T): Promise<void>
+}
+
+export type PersonRef = { id: string; name: string | null; email: string | null }
+
+/**
+ * The user each person was claimed by (Task 7), read inside the record's transaction with `FOR SHARE`. A claim holds
+ * the person rows `FOR UPDATE`, so the two serialize: either the claim commits first and this sees `claimedByUserId`,
+ * or this record commits first and the claim's later statements re-point what it inserted. Attribution only ever
+ * follows a verified claim, never a matching email.
+ */
+export type LockedPerson = {
+  claimedByUserId: string | null
+  name: string | null
+  email: string | null
+  erasedAt: Date | null
+}
+
+/**
+ * The same `FOR SHARE` lock, returning the person's current state: claim, name, email and `erasedAt`. Inserts take the
+ * author name and email from here, never from the phase-start map, so an erasure that committed after the phase began
+ * is honoured (contact erasure updates the person row first, which serializes against this lock). An erased person
+ * has null name and email.
+ */
+export async function lockPeople(tx: Tx, personIds: readonly string[]): Promise<Map<string, LockedPerson>> {
+  const ids = [...new Set(personIds)]
+  if (!ids.length) return new Map()
+  const rows = await tx
+    .select({
+      id: importedPerson.id,
+      claimedByUserId: importedPerson.claimedByUserId,
+      name: importedPerson.name,
+      email: importedPerson.email,
+      erasedAt: importedPerson.erasedAt,
+    })
+    .from(importedPerson)
+    .where(inArray(importedPerson.id, ids))
+    .orderBy(asc(importedPerson.id))
+    .for('share')
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      {
+        claimedByUserId: r.claimedByUserId,
+        name: r.erasedAt ? null : r.name,
+        email: r.erasedAt ? null : r.email,
+        erasedAt: r.erasedAt,
+      },
+    ])
+  )
+}
+
+export async function lockPersonClaims(tx: Tx, personIds: readonly string[]): Promise<Map<string, string | null>> {
+  const locked = await lockPeople(tx, personIds)
+  return new Map([...locked].map(([id, p]) => [id, p.claimedByUserId]))
+}
+
+/** Imported people of the run's project and source, by externalId. */
+export async function loadPeople(ctx: CommitContext): Promise<Map<string, PersonRef>> {
+  const rows = await db
+    .select({
+      id: importedPerson.id,
+      externalId: importedPerson.externalId,
+      name: importedPerson.name,
+      email: importedPerson.email,
+    })
+    .from(importedPerson)
+    .where(and(eq(importedPerson.projectId, ctx.run.projectId), eq(importedPerson.source, ctx.run.source)))
+  return new Map(rows.map((r) => [r.externalId, { id: r.id, name: r.name, email: r.email }]))
+}
+
+export type FeedbackRef = { id: string; importRunId: string | null }
+
+/** Feedback of the run's project imported from its source, by externalId. */
+export async function loadFeedback(ctx: CommitContext): Promise<Map<string, FeedbackRef>> {
+  const rows = await db
+    .select({
+      id: feedback.id,
+      externalId: feedback.externalId,
+      importRunId: sql<string | null>`${feedback.metadata}->'import'->>'runId'`,
+    })
+    .from(feedback)
+    .where(and(eq(feedback.projectId, ctx.run.projectId), eq(feedback.externalSource, ctx.run.source)))
+  return new Map(rows.filter((r) => r.externalId).map((r) => [r.externalId!, { id: r.id, importRunId: r.importRunId }]))
+}
+
+export function sourceDate(value: string | undefined, fallback: Date): Date {
+  return value ? new Date(value) : fallback
+}

@@ -1,0 +1,3 @@
+CREATE INDEX "feedback_imported_person_idx" ON "feedback" USING btree ("imported_person_id") WHERE "feedback"."imported_person_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "comment_imported_person_idx" ON "feedback_comment" USING btree ("imported_person_id") WHERE "feedback_comment"."imported_person_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "vote_imported_person_idx" ON "vote" USING btree ("imported_person_id") WHERE "vote"."imported_person_id" IS NOT NULL;
