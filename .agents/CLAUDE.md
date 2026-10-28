@@ -222,6 +222,9 @@ Public boards load their data in the browser, so the server adds a machine-reada
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llms-full.txt` (`server/routes/`) answer per host: the app host
   describes Veerify, the API and MCP; a workspace subdomain lists its projects (plus `/<project>/llms.txt`); a custom
   domain describes its project.
+- Each public feedback item has its own URL: `/<project>/p/<title-slug>-<id>` (custom domain: `/p/...`; non-UUID ids
+  are used bare). Only the trailing id matters, so renamed items keep working; the canonical link carries the current
+  slug. The board opens the item's details over itself and keeps the address bar in sync (`lib/public-site-path.ts`).
 - Any public page is available as markdown at `<page>.md` (board root: `/index.md`) or with `Accept: text/markdown`
   (handled in `server/middleware/subdomain.ts`).
 - `server/plugins/public-site-head.ts` adds title, description, canonical, Open Graph, JSON-LD and a `<noscript>`

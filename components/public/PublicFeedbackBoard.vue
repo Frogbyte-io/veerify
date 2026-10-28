@@ -192,7 +192,9 @@
                     class="w-3.5 h-3.5 text-primary shrink-0"
                     data-testid="public-feedback-pinned-icon"
                   />
-                  {{ item.title }}
+                  <a :href="paths.post(item)" class="hover:underline" @click="handleFeedbackLinkClick($event, item)">{{
+                    item.title
+                  }}</a>
                 </h3>
                 <div class="flex items-center gap-2 shrink-0">
                   <span
@@ -394,6 +396,15 @@
               <div class="flex items-start justify-between gap-2 mb-3">
                 <h2 class="text-xl font-bold flex-1">{{ selectedFeedback.title }}</h2>
                 <div class="flex items-center gap-2 shrink-0">
+                  <button
+                    class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                    :title="linkCopied ? 'Link copied' : 'Copy link'"
+                    :aria-label="linkCopied ? 'Link copied' : 'Copy link to this feedback'"
+                    data-testid="public-feedback-copy-link"
+                    @click="copyFeedbackLink"
+                  >
+                    <Icon :name="linkCopied ? 'lucide:check' : 'lucide:link'" class="w-4 h-4" />
+                  </button>
                   <DropdownMenu v-if="isAdmin">
                     <DropdownMenuTrigger as-child>
                       <button
@@ -828,6 +839,7 @@
 
 <script>
 import { feedbackBoardQuery, publicApiBase, publicCache, publicCacheKey, publicCacheScope } from '~/lib/public-cache'
+import { feedbackIdFromRef } from '~/lib/public-site-path'
 
 const FEEDBACK_DETAILS_PREFETCH_CACHE_TTL_MS = 30_000
 const FEEDBACK_DETAILS_PREFETCH_LIMIT = 3
@@ -846,6 +858,8 @@ export default {
     authRedirectTarget: { type: String, default: '' },
     // Silently re-fetches the project (stats change after a submit)
     reloadProject: { type: Function, default: () => Promise.resolve() },
+    /** `p/<post>` segment: open this feedback item's details (its own page) */
+    feedbackRef: { type: String, default: null },
   },
   data() {
     return {
@@ -859,6 +873,9 @@ export default {
       detailsLoading: false,
       detailsError: null,
       selectedFeedbackId: null,
+      // Address to restore when the details close; null when the visitor landed on the item's own URL
+      detailsReturnPath: null,
+      linkCopied: false,
       selectedFeedback: null,
       selectedFeedbackComments: [],
       detailCommentBody: '',
@@ -952,6 +969,12 @@ export default {
     },
   },
   watch: {
+    // The board stays mounted across routes; an item URL reached by history navigation opens it too
+    feedbackRef(ref) {
+      if (ref && !(this.showDetailsDialog && this.selectedFeedbackId === feedbackIdFromRef(ref))) {
+        this.openFeedbackFromUrl()
+      }
+    },
     showSubmitDialog(isOpen) {
       // The picker discards unsubmitted uploads when the dialog closes.
       if (!isOpen) this.attachmentState = { ids: [], busy: false }
@@ -974,6 +997,8 @@ export default {
   },
 
   async mounted() {
+    // The item's own URL opens its details right away, over whichever board is shown
+    this.openFeedbackFromUrl()
     if (this.currentProduct) await this.loadFeedback()
   },
   methods: {
@@ -1097,11 +1122,64 @@ export default {
       if (!item?.id) return
       this.showDetailsDialog = true
       this.selectedFeedbackId = item.id
+      // Give the open item its own address (shareable, survives reload) without leaving the board
+      if (import.meta.client) {
+        this.detailsReturnPath = window.location.pathname + window.location.search
+        this.replaceAddress(this.paths.post(item))
+      }
       await this.loadFeedbackDetails(item.id)
+    },
+    async openFeedbackFromUrl() {
+      if (!this.feedbackRef) return
+      this.detailsReturnPath = null
+      this.showDetailsDialog = true
+      this.selectedFeedbackId = feedbackIdFromRef(this.feedbackRef)
+      await this.loadFeedbackDetails(this.selectedFeedbackId)
+    },
+    // The title is a real link (crawlers, new tabs); a plain click opens the details in place
+    handleFeedbackLinkClick(event, item) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+        event.stopPropagation()
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      this.openFeedbackDetails(item)
+    },
+    replaceAddress(path) {
+      // Keeps the router's history state; only the visible URL changes
+      if (window.location.pathname + window.location.search !== path) {
+        window.history.replaceState(window.history.state, '', path)
+      }
+    },
+    async copyFeedbackLink() {
+      if (!this.selectedFeedback || !import.meta.client) return
+      try {
+        await navigator.clipboard.writeText(window.location.origin + this.paths.post(this.selectedFeedback))
+        this.linkCopied = true
+        setTimeout(() => (this.linkCopied = false), 2000)
+      } catch (err) {
+        console.error('Could not copy link:', err)
+      }
+    },
+    restoreAddressAfterDetails() {
+      if (!import.meta.client) return
+      if (this.detailsReturnPath) {
+        this.replaceAddress(this.detailsReturnPath)
+        this.detailsReturnPath = null
+        return
+      }
+      if (!this.feedbackRef) return
+      // Landed on the item's own URL: continue on the board it belongs to
+      const product = this.selectedFeedback?.product
+      const path = product?.slug && this.products.length > 1 ? this.paths.product(product.slug) : this.paths.feedback
+      navigateTo(path, { replace: true })
     },
     handleDetailsDialogChange(isOpen) {
       this.showDetailsDialog = isOpen
       if (!isOpen) {
+        this.restoreAddressAfterDetails()
+        this.linkCopied = false
         this.detailsError = null
         this.detailCommentBody = ''
         this.detailCommentError = null
@@ -1179,7 +1257,18 @@ export default {
       this.detailsError = null
       try {
         const payload = await this.fetchFeedbackDetailsPayload(feedbackId)
+        // An id from another project must not show under this project's branding
+        if (payload?.feedback?.project?.slug && payload.feedback.project.slug !== this.projectSlug) {
+          this.detailsError = 'This feedback could not be found.'
+          this.selectedFeedback = null
+          this.selectedFeedbackComments = []
+          return
+        }
         this.selectedFeedback = payload?.feedback || null
+        // Canonical address: the current title slug, whatever slug was opened
+        if (import.meta.client && this.showDetailsDialog && this.selectedFeedback && this.feedbackRef) {
+          this.replaceAddress(this.paths.post(this.selectedFeedback))
+        }
         this.selectedFeedbackComments = Array.isArray(payload?.comments) ? payload.comments : []
         this.detailIsSubscribed = Boolean(payload?.feedback?.isSubscribed)
         this.detailSubscribeChannel = payload?.feedback?.subscribeChannel || 'both'
