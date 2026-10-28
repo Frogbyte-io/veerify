@@ -206,6 +206,10 @@ export default {
         this.stopTimer()
       } catch (err) {
         const status = apiErrorStatus(err)
+        if (status === 401) {
+          await navigateTo('/login?redirect=' + encodeURIComponent('/device?code=' + this.code))
+          return
+        }
         if (status === 404) {
           this.request = null
           this.loadError = INVALID_CODE_MESSAGE

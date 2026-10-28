@@ -27,6 +27,8 @@ export async function completePublicAuthHandoffFromUrl() {
 }
 
 export async function fetchPublicAuthSession() {
-  const response = await $fetch<{ data?: { session?: any; user?: any } | null }>('/api/public/auth/session')
+  // Untyped call: the typed Nitro route map made inference for this path exceed the instantiation depth limit.
+  const fetchSession = $fetch as unknown as (url: string) => Promise<{ data?: { session?: any; user?: any } | null }>
+  const response = await fetchSession('/api/public/auth/session')
   return response?.data || { session: null, user: null }
 }
