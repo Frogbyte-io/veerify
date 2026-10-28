@@ -173,16 +173,16 @@ test('settings page only shows personal tabs and redirects the old workspace has
   for (const removed of ['organization', 'team', 'tools', 'billing', 'status']) {
     await expect(page.locator(`[data-testid="settings-tab-${removed}"]`)).toHaveCount(0)
   }
-  await expect(page.locator('[data-testid^="settings-tab-"]')).toHaveCount(4)
+  await expect(page.locator('[data-testid^="settings-tab-"]')).toHaveCount(5)
 
   await expect(async () => {
     await page.locator(selectors.settingsTabProfile).click()
-    await expect(page).toHaveURL(/#profile/)
+    await expect(page).toHaveURL(/tab=profile/)
   }).toPass({ timeout: 10_000 })
   await expect(page.getByRole('heading', { name: 'Profile Information' })).toBeVisible()
 
   await page.locator(selectors.settingsTabSecurity).click()
-  await expect(page).toHaveURL(/#security/)
+  await expect(page).toHaveURL(/tab=security/)
   await expect(page.getByRole('heading', { name: 'Security' })).toBeVisible()
   await expect(page.locator(selectors.securityTwoFactorStatusCard)).toBeVisible()
   await expect(page.locator(selectors.securityTwoFactorEnableCallout)).toBeVisible()
@@ -200,23 +200,23 @@ test('settings page only shows personal tabs and redirects the old workspace has
   expect(Math.abs((calloutIconBox?.width || 0) - (calloutIconBox?.height || 0))).toBeLessThanOrEqual(1)
 
   await page.locator(selectors.settingsTabNotifications).click()
-  await expect(page).toHaveURL(/#notifications/)
+  await expect(page).toHaveURL(/tab=notifications/)
   await expect(page.getByRole('heading', { name: 'Notification Preferences' })).toBeVisible()
 
   await page.locator(selectors.settingsTabAppearance).click()
-  await expect(page).toHaveURL(/#appearance/)
+  await expect(page).toHaveURL(/tab=appearance/)
   await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
 
   // The sections that moved out of personal settings keep working through their old hashes.
   await page.goto('/dashboard')
   await page.goto('/settings#organization')
-  await expect(page).toHaveURL(/\/workspace#general/)
+  await expect(page).toHaveURL(/\/workspace\?tab=general/)
   await page.goto('/dashboard')
   await page.goto('/settings#team')
-  await expect(page).toHaveURL(/\/workspace#projects/)
+  await expect(page).toHaveURL(/\/workspace\?tab=projects/)
   await page.goto('/dashboard')
   await page.goto('/settings#tools')
-  await expect(page).toHaveURL(/\/project\/settings#tools/)
+  await expect(page).toHaveURL(/\/project\/settings\?tab=tools/)
 })
 
 test('workspace settings render their tabs for the workspace owner', async ({ page }) => {
@@ -236,25 +236,25 @@ test('workspace settings render their tabs for the workspace owner', async ({ pa
   await expect(page.locator(selectors.organizationTitle)).toBeVisible()
 
   await page.locator(workspaceTabSelector('members')).click()
-  await expect(page).toHaveURL(/#members/)
+  await expect(page).toHaveURL(/tab=members/)
   await expect(page.getByTestId('workspace-members')).toBeVisible()
   await expect(page.locator(selectors.organizationMembersCount)).toHaveText(/\d+\s+member(s)?/)
 
   await page.locator(workspaceTabSelector('projects')).click()
-  await expect(page).toHaveURL(/#projects/)
+  await expect(page).toHaveURL(/tab=projects/)
   await expect(page.getByTestId('workspace-projects')).toBeVisible()
   await expect(page.getByTestId('workspace-project-demo')).toBeVisible({ timeout: 20_000 })
 
   await page.locator(workspaceTabSelector('keys')).click()
-  await expect(page).toHaveURL(/#keys/)
+  await expect(page).toHaveURL(/tab=keys/)
   await expect(page.getByTestId('workspace-settings-keys')).toBeVisible()
 
   await page.locator(workspaceTabSelector('integrations')).click()
-  await expect(page).toHaveURL(/#integrations/)
+  await expect(page).toHaveURL(/tab=integrations/)
   await expect(page.getByRole('heading', { name: 'Integration status' })).toBeVisible()
 
   await page.locator(workspaceTabSelector('privacy')).click()
-  await expect(page).toHaveURL(/#privacy/)
+  await expect(page).toHaveURL(/tab=privacy/)
   await expect(page.getByTestId('workspace-settings-privacy')).toBeVisible()
 })
 
@@ -473,7 +473,7 @@ test('roadmap, changelog and support are hidden until switched on in project set
     // A project admin gets an entry for adding the missing tools.
     await expect(sidebar.getByRole('link', { name: 'Add tool' })).toBeVisible()
 
-    await page.goto('/project/settings#tools')
+    await page.goto('/project/settings?tab=tools')
     await expect(page.locator(projectSettingsTabSelector('tools'))).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('project-settings-lock')).toHaveCount(0)
 
@@ -522,7 +522,7 @@ test('project members without admin rights see tools read-only and cannot add to
       await route.continue()
     })
 
-    await memberPage.goto('/project/settings#tools')
+    await memberPage.goto('/project/settings?tab=tools')
     await expect(memberPage.locator(projectSettingsTabSelector('tools'))).toBeVisible({ timeout: 20_000 })
     await expect(memberPage.getByTestId('project-settings-lock')).toContainText('Project admins can change this')
 
@@ -556,9 +556,9 @@ test('add tool shortcut is only offered to project admins', async ({ page }) => 
     await page.goto('/dashboard')
     const addTool = sidebarLocator(page).getByRole('link', { name: 'Add tool' })
     await expect(addTool).toBeVisible({ timeout: 20_000 })
-    await expect(addTool).toHaveAttribute('href', '/project/settings#tools')
+    await expect(addTool).toHaveAttribute('href', '/project/settings?tab=tools')
     await addTool.click()
-    await expect(page).toHaveURL(/\/project\/settings#tools/)
+    await expect(page).toHaveURL(/\/project\/settings\?tab=tools/)
     await expect(page.getByRole('switch', { name: 'Support', exact: true })).toBeVisible({ timeout: 20_000 })
 
     // With every tool switched on there is nothing left to add.

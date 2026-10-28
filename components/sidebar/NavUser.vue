@@ -78,11 +78,11 @@
             Add account
           </DropdownMenuItem>
           <DropdownMenuGroup>
-            <DropdownMenuItem @click="navigateTo('/settings#profile')">
+            <DropdownMenuItem @click="navigateTo('/settings?tab=profile')">
               <Icon name="lucide:badge-check" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem @click="navigateTo('/settings#notifications')">
+            <DropdownMenuItem @click="navigateTo('/settings?tab=notifications')">
               <Icon name="lucide:bell" />
               Notifications
             </DropdownMenuItem>

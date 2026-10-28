@@ -1,95 +1,98 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div data-testid="workspace-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold">Workspace settings</h1>
-        <p class="text-muted-foreground">
-          Manage your workspace, its people and projects, and the keys shared by every project
-        </p>
-      </div>
+  <PageContainer data-testid="workspace-page" :data-hydrated="isHydrated ? 'true' : 'false'">
+    <PageHeader
+      title="Workspace settings"
+      description="Manage your workspace, its people and projects, and the keys shared by every project"
+    />
 
-      <div v-if="isLoading" class="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <Skeleton class="h-64 w-full lg:col-span-1" />
-        <Skeleton class="h-64 w-full lg:col-span-3" />
-      </div>
+    <div v-if="error && !isLoading" class="py-10 text-center" data-testid="workspace-error">
+      <p class="mb-3 text-sm text-destructive">{{ error }}</p>
+      <Button variant="outline" @click="loadOrganization">Retry</Button>
+    </div>
 
-      <div v-else-if="error" class="py-10 text-center" data-testid="workspace-error">
-        <p class="mb-3 text-sm text-destructive">{{ error }}</p>
-        <Button variant="outline" @click="loadOrganization">Retry</Button>
-      </div>
+    <div v-else-if="!isLoading && !organization" class="py-10 text-center">
+      <p class="font-medium">No workspace yet</p>
+      <p class="mt-1 mb-4 text-sm text-muted-foreground">Create a workspace to manage projects and people.</p>
+      <Button as-child>
+        <NuxtLink to="/get-started">Create a workspace</NuxtLink>
+      </Button>
+    </div>
 
-      <div v-else-if="!organization" class="py-10 text-center">
-        <p class="font-medium">No workspace yet</p>
-        <p class="mt-1 mb-4 text-sm text-muted-foreground">Create a workspace to manage projects and people.</p>
-        <Button as-child>
-          <NuxtLink to="/get-started">Create a workspace</NuxtLink>
-        </Button>
-      </div>
-
-      <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <div class="lg:col-span-1">
-          <nav class="rounded-lg border bg-card p-4">
-            <ul class="space-y-2">
-              <li v-for="tab in availableTabs" :key="tab.key">
-                <button
-                  :data-testid="`workspace-tab-${tab.key}`"
-                  :aria-label="`${tab.label} settings`"
-                  :class="[
-                    'flex w-full items-center rounded-md px-3 py-2 text-left transition-colors',
-                    activeTab === tab.key
-                      ? 'bg-accent font-medium text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab(tab.key)"
-                >
-                  <Icon :name="tab.icon" class="mr-2 h-4 w-4" />
-                  {{ tab.label }}
-                </button>
-              </li>
-            </ul>
-          </nav>
-        </div>
-
-        <div class="lg:col-span-3">
-          <WorkspaceGeneral
-            v-if="activeTab === 'general'"
-            :organization="organization"
+    <SettingsTabs
+      v-else
+      :tabs="availableTabs"
+      default-tab="general"
+      test-id-prefix="workspace"
+      aria-label-suffix=" settings"
+      :loading="isLoading"
+      :aliases="tabAliases"
+    >
+      <template #default="{ active }">
+        <!-- Keyed by workspace so a switch remounts the tabs; visited tabs stay alive otherwise -->
+        <KeepAlive :max="10">
+          <component
+            :is="tabComponent(active)"
+            :key="`${organization.id}:${active}`"
+            v-bind="tabProps(active)"
             @updated="onOrganizationUpdated"
           />
-          <WorkspaceMembers v-else-if="activeTab === 'members'" :organization="organization" />
-          <WorkspaceProjects v-else-if="activeTab === 'projects'" :can-create="canManage" />
-          <WorkspaceApiKeys v-else-if="activeTab === 'keys'" />
-          <WorkspaceIntegrations v-else-if="activeTab === 'integrations'" :can-manage="canManage" />
-          <WorkspaceDataPrivacy v-else-if="activeTab === 'privacy'" :can-manage="canManage" />
-          <WorkspaceBilling v-else-if="activeTab === 'billing'" />
-          <WorkspaceStatus v-else-if="activeTab === 'status'" />
-        </div>
-      </div>
-    </div>
-  </NuxtLayout>
+        </KeepAlive>
+      </template>
+    </SettingsTabs>
+  </PageContainer>
 </template>
 
 <script>
+import WorkspaceGeneral from '~/components/workspace/WorkspaceGeneral.vue'
+import WorkspaceMembers from '~/components/workspace/WorkspaceMembers.vue'
+import WorkspaceProjects from '~/components/workspace/WorkspaceProjects.vue'
+import WorkspaceApiKeys from '~/components/workspace/WorkspaceApiKeys.vue'
+import WorkspaceIntegrations from '~/components/workspace/WorkspaceIntegrations.vue'
+import WorkspaceDataPrivacy from '~/components/workspace/WorkspaceDataPrivacy.vue'
+import WorkspaceBilling from '~/components/workspace/WorkspaceBilling.vue'
+import WorkspaceStatus from '~/components/workspace/WorkspaceStatus.vue'
 const baseTabs = [
-  { key: 'general', label: 'General', icon: 'lucide:building-2' },
-  { key: 'members', label: 'Members', icon: 'lucide:users' },
-  { key: 'projects', label: 'Projects', icon: 'lucide:folder-kanban' },
-  { key: 'keys', label: 'AI & API keys', icon: 'lucide:key-round' },
-  { key: 'integrations', label: 'Integrations', icon: 'lucide:plug-zap' },
-  { key: 'privacy', label: 'Data & privacy', icon: 'lucide:shield-check' },
+  { id: 'general', label: 'General', icon: 'lucide:building-2' },
+  { id: 'members', label: 'Members', icon: 'lucide:users' },
+  { id: 'projects', label: 'Projects', icon: 'lucide:folder-kanban' },
+  { id: 'keys', label: 'AI & API keys', icon: 'lucide:key-round' },
+  { id: 'integrations', label: 'Integrations', icon: 'lucide:plug-zap' },
+  { id: 'privacy', label: 'Data & privacy', icon: 'lucide:shield-check' },
 ]
+
+const TAB_COMPONENTS = {
+  general: 'WorkspaceGeneral',
+  members: 'WorkspaceMembers',
+  projects: 'WorkspaceProjects',
+  keys: 'WorkspaceApiKeys',
+  integrations: 'WorkspaceIntegrations',
+  privacy: 'WorkspaceDataPrivacy',
+  billing: 'WorkspaceBilling',
+  status: 'WorkspaceStatus',
+}
 
 export default {
   name: 'WorkspacePage',
 
+  // Registered locally: <component :is> takes these names as strings
+  components: {
+    WorkspaceGeneral,
+    WorkspaceMembers,
+    WorkspaceProjects,
+    WorkspaceApiKeys,
+    WorkspaceIntegrations,
+    WorkspaceDataPrivacy,
+    WorkspaceBilling,
+    WorkspaceStatus,
+  },
+
   data() {
     return {
-      activeTab: 'general',
       isHydrated: false,
       isLoading: true,
       error: null,
       organization: null,
-      deploymentMode: 'cloud',
+      deploymentMode: useRuntimeConfig().public.deploymentMode || 'cloud',
     }
   },
 
@@ -106,11 +109,16 @@ export default {
       return ['owner', 'admin'].includes(this.currentOrgRole || '')
     },
 
+    // Billing is replaced by Status on self-hosted installs (old `#billing` / `?tab=billing` links).
+    tabAliases() {
+      return this.isSelfHosted ? { billing: 'status' } : {}
+    },
+
     availableTabs() {
       const tabs = [...baseTabs]
       // Billing is hidden during the beta period; self-hosted installs get the owner-only Status tab instead.
       if (this.isSelfHosted && this.currentOrgRole === 'owner') {
-        tabs.push({ key: 'status', label: 'Status', icon: 'lucide:activity' })
+        tabs.push({ id: 'status', label: 'Status', icon: 'lucide:activity' })
       }
       return tabs
     },
@@ -122,28 +130,34 @@ export default {
 
   async mounted() {
     this.isHydrated = true
-    this.deploymentMode = useRuntimeConfig().public.deploymentMode || 'cloud'
-    await this.loadOrganization()
-    this.applyHash()
-    window.addEventListener('hashchange', this.applyHash)
     window.addEventListener('veerify:active-project-changed', this.onContextChanged)
+    await this.loadOrganization()
   },
 
   beforeUnmount() {
-    window.removeEventListener('hashchange', this.applyHash)
     window.removeEventListener('veerify:active-project-changed', this.onContextChanged)
   },
 
   methods: {
-    normalizeTabHash(hash) {
-      if (this.isSelfHosted && hash === 'billing') return 'status'
-      return hash
+    tabComponent(tab) {
+      return TAB_COMPONENTS[tab] || 'WorkspaceGeneral'
     },
 
-    applyHash() {
-      const hash = this.normalizeTabHash(window.location.hash.replace('#', ''))
-      if (hash && this.availableTabs.some((tab) => tab.key === hash)) {
-        this.activeTab = hash
+    tabProps(tab) {
+      switch (tab) {
+        case 'members':
+          return { organization: this.organization }
+        case 'projects':
+          return { canCreate: this.canManage }
+        case 'integrations':
+        case 'privacy':
+          return { canManage: this.canManage }
+        case 'keys':
+        case 'billing':
+        case 'status':
+          return {}
+        default:
+          return { organization: this.organization }
       }
     },
 
@@ -201,11 +215,6 @@ export default {
 
     onOrganizationUpdated(organization) {
       this.organization = organization
-    },
-
-    setActiveTab(tab) {
-      this.activeTab = tab
-      window.history.replaceState(null, null, `#${tab}`)
     },
   },
 }

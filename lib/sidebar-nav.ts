@@ -155,7 +155,7 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
       { title: 'Project settings', url: '/project/settings', icon: 'lucide:sliders-horizontal' },
       {
         title: 'Add tool',
-        url: '/project/settings#tools',
+        url: '/project/settings?tab=tools',
         icon: 'lucide:plus',
         requiresProjectAdmin: true,
         requiresDisabledModule: true,
@@ -173,7 +173,7 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
     label: 'You',
     items: [
       { title: 'My submissions', url: '/submissions', icon: 'lucide:list' },
-      { title: 'Notifications', url: '/settings#notifications', icon: 'lucide:bell' },
+      { title: 'Notifications', url: '/settings?tab=notifications', icon: 'lucide:bell' },
       { title: 'Settings', url: '/settings', icon: 'lucide:settings' },
     ],
   },

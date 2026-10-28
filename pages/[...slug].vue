@@ -1,27 +1,12 @@
 <template>
   <div>
-    <PublicRoadmap
-      v-if="publicOrgSlug && projectSlug && subPage === 'roadmap'"
+    <PublicProjectSite
+      v-if="publicOrgSlug && projectSlug && subPage !== 'not-found'"
       :org-slug="publicOrgSlug"
       :project-slug="projectSlug"
-    />
-    <PublicChangelog
-      v-else-if="publicOrgSlug && projectSlug && subPage === 'changelog'"
-      :org-slug="publicOrgSlug"
-      :project-slug="projectSlug"
-      :entry-slug="entrySlug"
-    />
-    <PublicTestimonials
-      v-else-if="publicOrgSlug && projectSlug && subPage === 'testimonials'"
-      :org-slug="publicOrgSlug"
-      :project-slug="projectSlug"
-    />
-    <PublicFeedbackBoard
-      v-else-if="publicOrgSlug && projectSlug && !subPage"
-      :key="`${projectSlug}/${productSlug || ''}`"
-      :org-slug="publicOrgSlug"
-      :project-slug="projectSlug"
+      :active-tab="subPage || 'feedback'"
       :product-slug="productSlug"
+      :entry-slug="entrySlug"
     />
     <NuxtLayout v-else name="clean">
       <div class="min-h-screen flex items-center justify-center bg-background">

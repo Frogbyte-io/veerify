@@ -138,11 +138,11 @@ test('authenticated user can open project settings and switch tabs', async ({ re
     await expect(page.locator('label[for="project-domain"]')).toHaveCount(0)
 
     await page.locator('[data-testid="project-settings-tab-domain"]').click()
-    await expect(page).toHaveURL(/\/project\/settings#domain$/)
+    await expect(page).toHaveURL(/\/project\/settings\?tab=domain$/)
     await expect(page.locator('#custom-domain')).toBeVisible()
 
     await page.locator('[data-testid="project-settings-tab-products"]').click()
-    await expect(page).toHaveURL(/\/project\/settings#products$/)
+    await expect(page).toHaveURL(/\/project\/settings\?tab=products$/)
     await expect(page.getByText('Settings Tabs Project').first()).toBeVisible()
   } finally {
     await request.delete(`/api/projects/${slug}`)
@@ -325,7 +325,7 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
 
   await activateProject(request, projectSlug)
   await page.goto(`/project/settings#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page).toHaveURL(/\/project\/settings#domain$/)
+  await expect(page).toHaveURL(/\/project\/settings\?tab=domain$/)
   await expect(page.getByText('Required DNS records', { exact: true })).toBeVisible()
 
   await page.locator('#custom-domain').fill('feedback.example.com')
@@ -415,7 +415,7 @@ test('custom domain status downgrades from stored verified state after a failed 
 
   await activateProject(request, projectSlug)
   await page.goto(`/project/settings#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page).toHaveURL(/\/project\/settings#domain$/)
+  await expect(page).toHaveURL(/\/project\/settings\?tab=domain$/)
   await expect(page.getByTestId('product-domain-status-title')).toHaveText('Domain verified')
 
   await page.getByRole('button', { name: 'Check DNS' }).click()

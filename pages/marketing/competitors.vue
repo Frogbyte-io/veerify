@@ -1,51 +1,47 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="marketing-competitors-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Competitor watch</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Get told when a competitor changes their pricing, changelog or homepage.
-          </p>
-        </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-      </div>
+  <PageContainer data-testid="marketing-competitors-page">
+    <PageHeader
+      title="Competitor watch"
+      description="Get told when a competitor changes their pricing, changelog or homepage."
+    />
 
-      <div v-if="!pickerSettled || isLoading" class="space-y-4">
-        <Skeleton class="h-32 w-full" />
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="space-y-6">
+        <Skeleton class="h-28 w-full" />
+        <div class="grid gap-4 lg:grid-cols-2">
+          <Skeleton class="h-48" />
+          <Skeleton class="h-48" />
+        </div>
         <Skeleton class="h-48 w-full" />
       </div>
 
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to watch competitors.</div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to watch competitors.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-      <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ error }}</span>
-        <Button variant="outline" size="sm" @click="load">Retry</Button>
-      </div>
+      <MarketingLoadError v-else-if="error" title="Failed to load competitors" :message="error" @retry="load()" />
 
-      <div
-        v-else-if="!competitors.length"
-        class="rounded-lg border border-border bg-card p-6"
-        data-testid="competitor-empty"
-      >
-        <h2 class="text-lg font-semibold">No competitors listed yet</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Add the competitors you want to follow as terms first, optionally with their domain. Then come back here to
-          pick the pages to watch.
-        </p>
-        <Button as-child variant="outline" class="mt-4">
-          <NuxtLink to="/marketing/settings">
-            <Icon name="lucide:settings" class="mr-2 h-4 w-4" />
-            Marketing settings
-          </NuxtLink>
-        </Button>
-      </div>
+      <MarketingNotice v-else-if="!competitors.length" title="No competitors listed yet" data-testid="competitor-empty">
+        Add the competitors you want to follow as terms first, optionally with their domain. Then come back here to pick
+        the pages to watch.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/marketing/settings">
+              <Icon name="lucide:settings" class="mr-2 h-4 w-4" />
+              Marketing settings
+            </NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <template v-else>
         <p
@@ -119,8 +115,8 @@
         />
         <p v-if="markError" class="text-sm text-destructive">{{ markError }}</p>
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

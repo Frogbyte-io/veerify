@@ -1,82 +1,83 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="marketing-audit-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Site audit</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Check how search engines and AI assistants see your site, and what to fix first.
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-          <Button
-            v-if="showContent"
-            :disabled="!canRun"
-            :title="runDisabledReason"
-            data-testid="audit-run"
-            @click="runAudit"
-          >
-            <Icon name="lucide:play" class="mr-2 h-4 w-4" />
-            {{ starting ? 'Starting...' : 'Run audit' }}
-          </Button>
-        </div>
-      </div>
+  <PageContainer data-testid="marketing-audit-page">
+    <PageHeader title="Site audit">
+      <template #description>
+        Check how search engines and AI assistants see your site, and what to fix first.
+        <span
+          v-if="startError"
+          class="mt-1 block min-h-5 text-destructive"
+          role="alert"
+          data-testid="audit-start-error"
+        >
+          {{ startError }}
+        </span>
+        <span v-else class="mt-1 block min-h-5" data-testid="audit-run-reason">{{
+          showContent ? runDisabledReason : ''
+        }}</span>
+      </template>
+      <template #actions>
+        <Button
+          :disabled="!showContent || !canRun"
+          :title="runDisabledReason"
+          data-testid="audit-run"
+          @click="runAudit"
+        >
+          <Icon name="lucide:play" class="mr-2 h-4 w-4" />
+          {{ starting ? 'Starting...' : 'Run audit' }}
+        </Button>
+      </template>
+    </PageHeader>
 
-      <p v-if="showContent && runDisabledReason" class="text-sm text-muted-foreground" data-testid="audit-run-reason">
-        {{ runDisabledReason }}
-      </p>
-      <p v-if="startError" class="text-sm text-destructive">{{ startError }}</p>
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
 
-      <div v-if="!pickerSettled" class="space-y-4">
-        <Skeleton class="h-40 w-full" />
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="grid gap-6 lg:grid-cols-[1fr_20rem]">
+        <div class="space-y-6">
+          <Skeleton class="h-40 w-full" />
+          <Skeleton class="h-64 w-full" />
+          <Skeleton class="h-64 w-full" />
+        </div>
         <Skeleton class="h-64 w-full" />
       </div>
 
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to run a site audit.</div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to run a site audit.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-      <div v-else-if="isLoading" class="space-y-4">
-        <Skeleton class="h-40 w-full" />
-        <Skeleton class="h-64 w-full" />
-      </div>
+      <MarketingLoadError v-else-if="error" title="Failed to load audits" :message="error" @retry="load()" />
 
-      <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ error }}</span>
-        <Button variant="outline" size="sm" @click="load">Retry</Button>
-      </div>
+      <MarketingNotice v-else-if="notVerified" title="Verify your site first" data-testid="audit-not-verified">
+        Veerify only audits sites you have proven you own. Add your site and verify it in
+        <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
+        . The first audit then runs automatically.
+      </MarketingNotice>
 
-      <div v-else-if="notVerified" class="rounded-lg border border-border bg-card p-6" data-testid="audit-not-verified">
-        <h2 class="text-lg font-semibold">Verify your site first</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Veerify only audits sites you have proven you own. Add your site and verify it in
-          <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
-          . The first audit then runs automatically.
-        </p>
-      </div>
-
-      <div v-else-if="!audits.length" class="rounded-lg border border-border bg-card p-6" data-testid="audit-empty">
-        <h2 class="text-lg font-semibold">No audits yet</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          The first audit of {{ site.origin }} starts automatically after verification. You can also run one now.
-        </p>
-      </div>
+      <MarketingNotice v-else-if="!audits.length" title="No audits yet" data-testid="audit-empty">
+        The first audit of {{ site.origin }} starts automatically after verification. You can also run one now.
+      </MarketingNotice>
 
       <template v-else>
-        <div v-if="detailLoading && !detail" class="space-y-4">
-          <Skeleton class="h-40 w-full" />
-          <Skeleton class="h-64 w-full" />
+        <div v-if="detailLoading && !detail" class="grid gap-6 lg:grid-cols-[1fr_20rem]">
+          <div class="space-y-6">
+            <Skeleton class="h-40 w-full" />
+            <Skeleton class="h-64 w-full" />
+          </div>
+          <MarketingAuditHistory :audits="audits" :selected-id="selectedId" @select="selectAudit" />
         </div>
 
-        <div v-else-if="detailError" class="flex items-center gap-2 text-sm text-destructive">
-          <span>{{ detailError }}</span>
-          <Button variant="outline" size="sm" @click="loadDetail">Retry</Button>
-        </div>
+        <MarketingLoadError
+          v-else-if="detailError"
+          title="Failed to load the audit"
+          :message="detailError"
+          @retry="loadDetail()"
+        />
 
         <div v-else-if="detail" class="grid gap-6 lg:grid-cols-[1fr_20rem]">
           <div class="space-y-6">
@@ -118,8 +119,8 @@
           <MarketingAuditHistory :audits="audits" :selected-id="selectedId" @select="selectAudit" />
         </div>
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

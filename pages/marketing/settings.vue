@@ -1,77 +1,59 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="p-4 sm:p-6 max-w-4xl mx-auto min-w-0 space-y-6" data-testid="marketing-settings-page">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing settings</h1>
-          <p class="text-muted-foreground mt-1">Your site and the terms Marketing uses for this project</p>
-        </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onLoaderError" />
+  <PageContainer data-testid="marketing-settings-page">
+    <PageHeader title="Marketing settings" description="Your site and the terms Marketing uses for this project" />
+
+    <MarketingProjectLoader @change="onProjectChange" @error="onLoaderError" />
+
+    <template v-if="!loaderError">
+      <div v-if="!pickerReady || isLoading" class="space-y-6">
+        <Skeleton class="h-56 w-full" />
+        <Skeleton class="h-56 w-full" />
+        <Skeleton class="h-20 w-full" />
       </div>
 
-      <p v-if="loaderError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
-        The project could not be loaded. Use Retry above to try again.
-      </p>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to get started.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
-      <template v-else-if="pickerReady">
-        <Card v-if="!project">
-          <CardContent class="py-10 text-center">
-            <p class="font-medium mb-1">No project yet</p>
-            <p class="text-sm text-muted-foreground mb-4">Marketing works on a project. Create one to get started.</p>
-            <Button as-child variant="outline">
-              <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+      <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
+
+      <MarketingLoadError
+        v-else-if="error"
+        title="Failed to load marketing settings"
+        :message="error"
+        @retry="loadSite()"
+      />
+
+      <template v-else>
+        <MarketingSettingsSite
+          :project="project"
+          :site="site"
+          :verification="verification"
+          :can-manage="canManage"
+          @changed="onSiteChanged"
+        />
+        <MarketingSettingsTerms :project="project" :site-added="site !== null" />
+        <Card data-testid="marketing-settings-workspace-note">
+          <CardContent class="flex flex-wrap items-center justify-between gap-3 py-4">
+            <p class="text-sm text-muted-foreground">
+              API keys, budgets, integrations and data consent are in Workspace settings.
+            </p>
+            <Button as-child variant="outline" size="sm">
+              <NuxtLink to="/workspace">
+                <Icon name="lucide:settings" class="mr-2 h-4 w-4" />
+                Workspace settings
+              </NuxtLink>
             </Button>
           </CardContent>
         </Card>
-
-        <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
-
-        <template v-else>
-          <div v-if="isLoading" class="space-y-6">
-            <Skeleton class="h-56 w-full" />
-            <Skeleton class="h-56 w-full" />
-            <Skeleton class="h-56 w-full" />
-          </div>
-
-          <Card v-else-if="error">
-            <CardContent class="text-center py-8">
-              <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-              <p class="font-medium mb-2">Failed to load marketing settings</p>
-              <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
-              <Button variant="outline" @click="loadSite()">
-                <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-                Try again
-              </Button>
-            </CardContent>
-          </Card>
-
-          <template v-else>
-            <MarketingSettingsSite
-              :project="project"
-              :site="site"
-              :verification="verification"
-              :can-manage="canManage"
-              @changed="onSiteChanged"
-            />
-            <MarketingSettingsTerms :project="project" :site-added="site !== null" />
-            <Card data-testid="marketing-settings-workspace-note">
-              <CardContent class="flex flex-wrap items-center justify-between gap-3 py-4">
-                <p class="text-sm text-muted-foreground">
-                  API keys, budgets, integrations and data consent are in Workspace settings.
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/workspace">
-                    <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
-                    Workspace settings
-                  </NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-          </template>
-        </template>
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

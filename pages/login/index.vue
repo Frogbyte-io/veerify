@@ -1,187 +1,157 @@
 <template>
   <NuxtLayout name="clean">
-    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div class="w-full max-w-sm">
-        <div class="flex flex-col gap-6">
-          <!-- Brand -->
-          <div class="flex flex-col items-center gap-2">
-            <div class="flex items-center gap-2.5">
-              <div class="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
-                <Icon name="lucide:check-check" class="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span class="text-2xl font-display font-semibold tracking-tight">Veerify</span>
+    <AuthCard title="Welcome back" description="Sign in to your account to continue">
+      <div class="grid gap-6">
+        <!-- Social Sign In Buttons -->
+        <div class="flex flex-col gap-4">
+          <Button type="button" variant="outline" class="w-full" :disabled="isLoading" @click="handleGitHubSignIn">
+            <Icon name="lucide:github" class="w-4 h-4 mr-2" />
+            Continue with GitHub
+          </Button>
+        </div>
+
+        <!-- Divider -->
+        <div
+          class="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t"
+        >
+          <span class="bg-card text-muted-foreground relative z-10 px-2"> Or continue with email </span>
+        </div>
+
+        <!-- Login Method Toggle -->
+        <div class="flex rounded-lg border border-border p-1">
+          <button
+            type="button"
+            class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+            :class="
+              loginMethod === 'password'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            "
+            @click="loginMethod = 'password'"
+          >
+            Password
+          </button>
+          <button
+            type="button"
+            class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+            :class="
+              loginMethod === 'magic-link'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            "
+            @click="loginMethod = 'magic-link'"
+          >
+            Magic Link
+          </button>
+        </div>
+
+        <!-- Password Form -->
+        <form v-if="loginMethod === 'password'" @submit.prevent="handleSubmit">
+          <div class="grid gap-6">
+            <div class="grid gap-3">
+              <Label for="email">Email</Label>
+              <Input
+                id="email"
+                data-testid="login-email"
+                v-model="email"
+                type="email"
+                placeholder="m@example.com"
+                required
+                :disabled="isLoading || !isHydrated"
+              />
             </div>
-          </div>
-
-          <Card>
-            <CardHeader class="text-center">
-              <CardTitle class="text-xl font-display"> Welcome back </CardTitle>
-              <CardDescription> Sign in to your account to continue </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div class="grid gap-6">
-                <!-- Social Sign In Buttons -->
-                <div class="flex flex-col gap-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    class="w-full"
-                    :disabled="isLoading"
-                    @click="handleGitHubSignIn"
-                  >
-                    <Icon name="lucide:github" class="w-4 h-4 mr-2" />
-                    Continue with GitHub
-                  </Button>
-                </div>
-
-                <!-- Divider -->
-                <div
-                  class="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t"
-                >
-                  <span class="bg-card text-muted-foreground relative z-10 px-2"> Or continue with email </span>
-                </div>
-
-                <!-- Login Method Toggle -->
-                <div class="flex rounded-lg border border-border p-1">
-                  <button
-                    type="button"
-                    class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                    :class="
-                      loginMethod === 'password'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    "
-                    @click="loginMethod = 'password'"
-                  >
-                    Password
-                  </button>
-                  <button
-                    type="button"
-                    class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                    :class="
-                      loginMethod === 'magic-link'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    "
-                    @click="loginMethod = 'magic-link'"
-                  >
-                    Magic Link
-                  </button>
-                </div>
-
-                <!-- Password Form -->
-                <form v-if="loginMethod === 'password'" @submit.prevent="handleSubmit">
-                  <div class="grid gap-6">
-                    <div class="grid gap-3">
-                      <Label for="email">Email</Label>
-                      <Input
-                        id="email"
-                        data-testid="login-email"
-                        v-model="email"
-                        type="email"
-                        placeholder="m@example.com"
-                        required
-                        :disabled="isLoading || !isHydrated"
-                      />
-                    </div>
-                    <div class="grid gap-3">
-                      <div class="flex items-center">
-                        <Label for="password">Password</Label>
-                        <NuxtLink to="/forgot-password" class="ml-auto text-sm underline-offset-4 hover:underline">
-                          Forgot your password?
-                        </NuxtLink>
-                      </div>
-                      <Input
-                        id="password"
-                        data-testid="login-password"
-                        v-model="password"
-                        type="password"
-                        required
-                        :disabled="isLoading || !isHydrated"
-                      />
-                    </div>
-                    <Button
-                      data-testid="login-submit"
-                      type="submit"
-                      class="w-full"
-                      :disabled="isLoading || !isHydrated"
-                    >
-                      {{ isLoading ? 'Signing in...' : 'Sign in' }}
-                    </Button>
-                  </div>
-                </form>
-
-                <!-- Magic Link Form -->
-                <form v-else @submit.prevent="handleMagicLink">
-                  <div class="grid gap-6">
-                    <div v-if="magicLinkSent" class="rounded-md border border-border bg-muted/50 p-4 text-center">
-                      <Icon name="lucide:mail-check" class="mx-auto mb-2 h-8 w-8 text-primary" />
-                      <p class="text-sm font-medium">Check your email</p>
-                      <p class="mt-1 text-xs text-muted-foreground">
-                        We sent a sign-in link to <strong>{{ email }}</strong
-                        >. Click the link in the email to sign in.
-                      </p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        class="mt-3"
-                        :disabled="isLoading"
-                        @click="magicLinkSent = false"
-                      >
-                        Use a different email
-                      </Button>
-                    </div>
-                    <template v-else>
-                      <div class="grid gap-3">
-                        <Label for="magic-email">Email</Label>
-                        <Input
-                          id="magic-email"
-                          v-model="email"
-                          type="email"
-                          placeholder="m@example.com"
-                          required
-                          :disabled="isLoading || !isHydrated"
-                        />
-                      </div>
-                      <Button type="submit" class="w-full" :disabled="isLoading || !isHydrated">
-                        <Icon name="lucide:wand-sparkles" class="w-4 h-4 mr-2" />
-                        {{ isLoading ? 'Sending link...' : 'Send magic link' }}
-                      </Button>
-                    </template>
-                  </div>
-                </form>
-
-                <!-- Sign Up Link -->
-                <div class="text-center text-sm">
-                  Don't have an account?
-                  <NuxtLink :to="signupLink" class="underline underline-offset-4"> Sign up </NuxtLink>
-                </div>
+            <div class="grid gap-3">
+              <div class="flex items-center">
+                <Label for="password">Password</Label>
+                <NuxtLink to="/forgot-password" class="ml-auto text-sm underline-offset-4 hover:underline">
+                  Forgot your password?
+                </NuxtLink>
               </div>
+              <Input
+                id="password"
+                data-testid="login-password"
+                v-model="password"
+                type="password"
+                required
+                :disabled="isLoading || !isHydrated"
+              />
+            </div>
+            <Button data-testid="login-submit" type="submit" class="w-full" :disabled="isLoading || !isHydrated">
+              {{ isLoading ? 'Signing in...' : 'Sign in' }}
+            </Button>
+          </div>
+        </form>
 
-              <!-- Error Message -->
-              <div
-                v-if="error"
-                data-testid="login-error"
-                class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+        <!-- Magic Link Form -->
+        <form v-else @submit.prevent="handleMagicLink">
+          <div class="grid gap-6">
+            <div v-if="magicLinkSent" class="rounded-md border border-border bg-muted/50 p-4 text-center">
+              <Icon name="lucide:mail-check" class="mx-auto mb-2 h-8 w-8 text-primary" />
+              <p class="text-sm font-medium">Check your email</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                We sent a sign-in link to <strong>{{ email }}</strong
+                >. Click the link in the email to sign in.
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                class="mt-3"
+                :disabled="isLoading"
+                @click="magicLinkSent = false"
               >
-                {{ error }}
+                Use a different email
+              </Button>
+            </div>
+            <template v-else>
+              <div class="grid gap-3">
+                <Label for="magic-email">Email</Label>
+                <Input
+                  id="magic-email"
+                  v-model="email"
+                  type="email"
+                  placeholder="m@example.com"
+                  required
+                  :disabled="isLoading || !isHydrated"
+                />
               </div>
-            </CardContent>
-          </Card>
-          <div class="text-muted-foreground text-center text-xs text-balance">
-            By clicking continue, you agree to our
-            <NuxtLink to="/terms" class="underline underline-offset-4 hover:text-primary">Terms of Service</NuxtLink>
-            and
-            <NuxtLink to="/privacy" class="underline underline-offset-4 hover:text-primary">Privacy Policy</NuxtLink>.
+              <Button type="submit" class="w-full" :disabled="isLoading || !isHydrated">
+                <Icon name="lucide:wand-sparkles" class="w-4 h-4 mr-2" />
+                {{ isLoading ? 'Sending link...' : 'Send magic link' }}
+              </Button>
+            </template>
           </div>
+        </form>
+
+        <!-- Sign Up Link -->
+        <div class="text-center text-sm">
+          Don't have an account?
+          <NuxtLink :to="signupLink" class="underline underline-offset-4"> Sign up </NuxtLink>
         </div>
       </div>
-    </div>
+
+      <!-- Error Message -->
+      <div
+        v-if="error"
+        data-testid="login-error"
+        class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+      >
+        {{ error }}
+      </div>
+      <template #footer>
+        <div class="text-muted-foreground text-center text-xs text-balance">
+          By clicking continue, you agree to our
+          <NuxtLink to="/terms" class="underline underline-offset-4 hover:text-primary">Terms of Service</NuxtLink>
+          and
+          <NuxtLink to="/privacy" class="underline underline-offset-4 hover:text-primary">Privacy Policy</NuxtLink>.
+        </div>
+      </template>
+    </AuthCard>
   </NuxtLayout>
 </template>
 
 <script>
+import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
 import { authClient } from '~/lib/auth-client'
 import { resolvePostAuthRedirectTarget, resolveSafeRedirectTarget } from '~/lib/auth-redirect'
 
@@ -260,6 +230,8 @@ export default {
           } else if (target.startsWith('http://') || target.startsWith('https://')) {
             window.location.href = target
           } else {
+            // A different user may have been signed in on this tab before
+            clearDashboardBootstrapCache()
             await navigateTo(target)
           }
         }

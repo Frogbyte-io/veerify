@@ -1,10 +1,6 @@
 <template>
   <div class="space-y-6" data-testid="changelog-editor">
-    <div v-if="isLoading" class="space-y-4">
-      <Skeleton class="h-10 w-full" />
-      <Skeleton class="h-20 w-full" />
-      <Skeleton class="h-64 w-full" />
-    </div>
+    <ChangelogEditorSkeleton v-if="isLoading" />
 
     <Card v-else-if="loadError">
       <CardContent class="text-center py-8">

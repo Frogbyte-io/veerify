@@ -1,56 +1,47 @@
 <template>
   <NuxtLayout name="clean">
-    <div class="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
-      <div class="w-full max-w-md">
-        <!-- Loading while checking auth -->
-        <div v-if="isChecking" class="flex justify-center">
-          <Icon name="lucide:loader-2" class="w-8 h-8 animate-spin text-muted-foreground" />
+    <AuthCard
+      wide
+      title="Start collecting feedback"
+      description="Create a workspace to set up feedback boards, manage projects, and collaborate with your colleagues."
+    >
+      <!-- Loading while checking auth -->
+      <div v-if="isChecking" class="space-y-4" data-testid="get-started-loading">
+        <Skeleton class="h-5 w-3/4 mx-auto" />
+        <Skeleton class="h-24 w-full" />
+        <Skeleton class="h-10 w-full" />
+      </div>
+
+      <!-- Unauthenticated: show CTA -->
+      <div v-else class="space-y-4">
+        <div class="grid gap-3 rounded-lg border p-4">
+          <div class="flex items-start gap-3">
+            <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+            <p class="text-sm">Public feedback boards for your users</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+            <p class="text-sm">Upvoting and prioritization</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+            <p class="text-sm">Projects for each of your brands, shared with your colleagues</p>
+          </div>
         </div>
 
-        <!-- Unauthenticated: show CTA -->
-        <Card v-else>
-          <CardHeader class="text-center">
-            <div class="flex justify-center mb-4">
-              <div class="flex items-center justify-center w-14 h-14 rounded-full bg-primary/10">
-                <Icon name="lucide:building-2" class="w-7 h-7 text-primary" />
-              </div>
-            </div>
-            <CardTitle class="text-2xl">Start collecting feedback</CardTitle>
-            <CardDescription class="text-base">
-              Create a workspace to set up feedback boards, manage projects, and collaborate with your colleagues.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <div class="grid gap-3 rounded-lg border p-4">
-              <div class="flex items-start gap-3">
-                <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
-                <p class="text-sm">Public feedback boards for your users</p>
-              </div>
-              <div class="flex items-start gap-3">
-                <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
-                <p class="text-sm">Upvoting and prioritization</p>
-              </div>
-              <div class="flex items-start gap-3">
-                <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
-                <p class="text-sm">Projects for each of your brands, shared with your colleagues</p>
-              </div>
-            </div>
+        <Button class="w-full" size="lg" @click="goToSignUp">
+          Create your workspace
+          <Icon name="lucide:arrow-right" class="w-4 h-4 ml-2" />
+        </Button>
 
-            <Button class="w-full" size="lg" @click="goToSignUp">
-              Create your workspace
-              <Icon name="lucide:arrow-right" class="w-4 h-4 ml-2" />
-            </Button>
-
-            <p class="text-center text-sm text-muted-foreground">
-              Already have an account?
-              <NuxtLink :to="loginUrl" class="text-primary underline underline-offset-4 hover:text-primary/80">
-                Sign in
-              </NuxtLink>
-            </p>
-          </CardContent>
-        </Card>
+        <p class="text-center text-sm text-muted-foreground">
+          Already have an account?
+          <NuxtLink :to="loginUrl" class="text-primary underline underline-offset-4 hover:text-primary/80">
+            Sign in
+          </NuxtLink>
+        </p>
       </div>
-    </div>
+    </AuthCard>
   </NuxtLayout>
 </template>
 

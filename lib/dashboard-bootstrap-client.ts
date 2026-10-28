@@ -1,3 +1,5 @@
+import { resetActiveProject } from '~/lib/active-project'
+
 const DASHBOARD_BOOTSTRAP_CACHE_MAX_AGE_MS = 5 * 60 * 1000
 
 export type DashboardBootstrap = {
@@ -52,6 +54,9 @@ export function setDashboardBootstrapCache(data: DashboardBootstrap | null) {
 }
 
 export function clearDashboardBootstrapCache() {
+  // Every caller changes who or where the user is (sign-out, project or workspace switch,
+  // invitation, onboarding), so the cached active project is stale too.
+  resetActiveProject()
   dashboardBootstrapCache.data = null
   dashboardBootstrapCache.loadedAt = 0
   dashboardBootstrapCache.pendingRequest = null

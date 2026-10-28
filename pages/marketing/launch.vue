@@ -1,46 +1,41 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="marketing-launch-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Launch kit</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            A checklist of places to launch and list your product, with your progress on each.
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-          <Button v-if="showContent" data-testid="launch-add" @click="addOpen = true">
-            <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
-            Add custom directory
-          </Button>
-        </div>
-      </div>
+  <PageContainer data-testid="marketing-launch-page">
+    <PageHeader
+      title="Launch kit"
+      description="A checklist of places to launch and list your product, with your progress on each."
+    >
+      <template #actions>
+        <Button :disabled="!showContent" data-testid="launch-add" @click="addOpen = true">
+          <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
+          Add custom directory
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div v-if="!pickerSettled" class="space-y-4">
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="space-y-6">
+        <Skeleton class="h-32 w-full" />
         <Skeleton class="h-24 w-full" />
-        <Skeleton class="h-64 w-full" />
-      </div>
-
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to use the launch kit.</div>
-
-      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
-
-      <div v-else-if="isLoading" class="space-y-4">
-        <Skeleton class="h-24 w-full" />
+        <Skeleton class="h-16 w-full" />
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Skeleton v-for="n in 6" :key="n" class="h-56 w-full" />
         </div>
       </div>
 
-      <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ error }}</span>
-        <Button variant="outline" size="sm" @click="load">Retry</Button>
-      </div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to use the launch kit.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
+
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
+
+      <MarketingLoadError v-else-if="error" title="Failed to load the launch kit" :message="error" @retry="load()" />
 
       <template v-else-if="kit">
         <div class="rounded-lg border border-border bg-card p-4 text-sm" data-testid="launch-intro">
@@ -99,9 +94,7 @@
           <Button variant="outline" size="sm" @click="refresh">Retry</Button>
         </p>
 
-        <div v-if="!visible.length" class="text-sm text-muted-foreground" data-testid="launch-empty">
-          No directories match these filters.
-        </div>
+        <MarketingNotice v-if="!visible.length" title="No directories match these filters" data-testid="launch-empty" />
         <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <MarketingLaunchDirectory
             v-for="item in visible"
@@ -120,8 +113,8 @@
           @forbidden="onForbidden"
         />
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

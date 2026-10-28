@@ -24,7 +24,7 @@
             <NotificationBell />
           </div>
         </header>
-        <div class="flex min-w-0 flex-1 flex-col gap-4 p-4 pt-0">
+        <div class="flex min-w-0 flex-1 flex-col gap-4 px-4 pt-2 pb-10 sm:px-6 lg:px-8">
           <EmailVerificationNudge />
           <slot />
         </div>

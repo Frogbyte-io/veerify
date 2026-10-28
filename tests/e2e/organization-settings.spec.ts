@@ -111,16 +111,16 @@ test('owner can view, update, and delete the workspace from workspace settings',
   await expect(page.locator(workspaceTabSelector('general'))).toBeVisible({ timeout: 20_000 })
 
   await page.locator(workspaceTabSelector('general')).click()
-  await expect(page).toHaveURL(/#general/)
+  await expect(page).toHaveURL(/tab=general/)
   await expect(page.locator(selectors.organizationTitle)).toBeVisible()
 
   await page.locator(workspaceTabSelector('members')).click()
-  await expect(page).toHaveURL(/#members/)
+  await expect(page).toHaveURL(/tab=members/)
   await expect(page.locator(selectors.organizationMembersCount)).toHaveText(/\d+\s+member(s)?/)
   await expect(page.locator('[data-testid="organization-member-role"]').first()).toHaveText(/owner|admin|member/i)
 
   await page.locator(workspaceTabSelector('general')).click()
-  await expect(page).toHaveURL(/#general/)
+  await expect(page).toHaveURL(/tab=general/)
 
   const updatedName = `${originalName} Updated`
   const updatedSlug = `${baseSlug}-updated`
@@ -240,7 +240,7 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
       await expect(page.locator(workspaceTabSelector('status'))).toBeVisible({ timeout: 20_000 })
 
       await page.locator(workspaceTabSelector('status')).click()
-      await expect(page).toHaveURL(/#status/)
+      await expect(page).toHaveURL(/tab=status/)
       await expect(page.locator(selectors.settingsStatusPanel)).toBeVisible()
       await expect(page.locator(selectors.statusServiceDatabase)).toBeVisible()
       await expect(page.locator(selectors.statusServiceStorage)).toBeVisible()
@@ -251,7 +251,7 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
       await expect(page.locator(workspaceTabSelector('billing'))).toBeVisible({ timeout: 20_000 })
 
       await page.locator(workspaceTabSelector('billing')).click()
-      await expect(page).toHaveURL(/#billing/)
+      await expect(page).toHaveURL(/tab=billing/)
       await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
 
       const contactEmail = `billing-${Date.now()}@example.com`

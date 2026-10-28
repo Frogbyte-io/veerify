@@ -1,87 +1,72 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="marketing-announcements-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Announcements</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Draft posts for X, LinkedIn, Bluesky and your newsletter from each published changelog entry. Titles of
-            feedback linked to an entry are included only with your workspace's data consent for feedback text, and
-            never for hidden or support-derived items.
-          </p>
-        </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-      </div>
+  <PageContainer data-testid="marketing-announcements-page">
+    <PageHeader
+      title="Announcements"
+      description="Draft posts for X, LinkedIn, Bluesky and your newsletter from each published changelog entry. Titles of feedback linked to an entry are included only with your workspace's data consent for feedback text, and never for hidden or support-derived items."
+    />
 
-      <p
-        v-if="targetMissing"
-        class="flex items-center gap-2 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground"
-        role="status"
-        data-testid="announcements-entry-not-found"
-      >
-        <Icon name="lucide:info" class="h-4 w-4 shrink-0" />
-        Entry not found or not published yet
-      </p>
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
 
-      <div v-if="!pickerSettled" class="space-y-4">
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="space-y-6">
+        <Skeleton class="h-48 w-full" />
         <Skeleton class="h-48 w-full" />
         <Skeleton class="h-48 w-full" />
       </div>
 
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to draft announcements.</div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to draft announcements.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-      <div v-else-if="isLoading" class="space-y-4">
-        <Skeleton class="h-48 w-full" />
-        <Skeleton class="h-48 w-full" />
-      </div>
+      <MarketingLoadError v-else-if="error" title="Failed to load announcements" :message="error" @retry="load()" />
 
-      <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ error }}</span>
-        <Button variant="outline" size="sm" @click="load">Retry</Button>
-      </div>
-
-      <div
+      <MarketingNotice
         v-else-if="!changelogEnabled"
-        class="rounded-lg border border-border bg-card p-6"
+        title="The changelog is off for this project"
         data-testid="announcements-changelog-off"
       >
-        <h2 class="text-lg font-semibold">The changelog is off for this project</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Announcement drafts come from published changelog entries. Turn the changelog on for this project, then
-          publish an entry.
-        </p>
-        <Button as-child variant="outline" class="mt-4">
-          <NuxtLink to="/dashboard/changelog">
-            <Icon name="lucide:newspaper" class="mr-2 h-4 w-4" />
-            Go to the changelog
-          </NuxtLink>
-        </Button>
-      </div>
+        Announcement drafts come from published changelog entries. Turn the changelog on for this project, then publish
+        an entry.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/dashboard/changelog">
+              <Icon name="lucide:newspaper" class="mr-2 h-4 w-4" />
+              Go to the changelog
+            </NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
-      <div
-        v-else-if="!entries.length"
-        class="rounded-lg border border-border bg-card p-6"
-        data-testid="announcements-empty"
-      >
-        <h2 class="text-lg font-semibold">No published entries yet</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Publish a changelog entry and it shows up here, ready for announcement drafts.
-        </p>
-        <Button as-child variant="outline" class="mt-4">
-          <NuxtLink to="/dashboard/changelog">
-            <Icon name="lucide:newspaper" class="mr-2 h-4 w-4" />
-            Go to the changelog
-          </NuxtLink>
-        </Button>
-      </div>
+      <MarketingNotice v-else-if="!entries.length" title="No published entries yet" data-testid="announcements-empty">
+        Publish a changelog entry and it shows up here, ready for announcement drafts.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/dashboard/changelog">
+              <Icon name="lucide:newspaper" class="mr-2 h-4 w-4" />
+              Go to the changelog
+            </NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <template v-else>
+        <p
+          v-if="targetMissing"
+          class="flex items-center gap-2 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground"
+          role="status"
+          data-testid="announcements-entry-not-found"
+        >
+          <Icon name="lucide:info" class="h-4 w-4 shrink-0" />
+          Entry not found or not published yet
+        </p>
+
         <div
           v-if="!hasUsableKey"
           class="rounded-lg border border-border bg-card p-4 text-sm"
@@ -114,8 +99,8 @@
           {{ loadingMore ? 'Loading...' : 'Load more' }}
         </Button>
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

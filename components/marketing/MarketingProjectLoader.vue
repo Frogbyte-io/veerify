@@ -1,14 +1,16 @@
 <template>
-  <div data-testid="marketing-project-loader">
-    <div v-if="error" class="flex items-center gap-2 text-sm text-destructive">
-      <span>Failed to load the project</span>
-      <Button variant="outline" size="sm" @click="load">Retry</Button>
-    </div>
-  </div>
+  <MarketingLoadError
+    v-if="error"
+    data-testid="marketing-project-loader"
+    title="Failed to load the project"
+    :message="error"
+    @retry="load()"
+  />
 </template>
 
 <script>
-import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import { apiErrorMessage } from '~/lib/api-error'
+import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
 
 /**
  * Loads the active project for the marketing pages (marketing belongs to the
@@ -16,7 +18,8 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
  * (id, slug, name, role, settings, isPublic, organization, products, modules),
  * or null when the user has no project yet, once after the initial load and
  * again whenever the active project is switched. Emits `error` when loading
- * fails; renders a Retry button in that case and nothing otherwise.
+ * fails; renders the page's single error card with a retry in that case and
+ * nothing otherwise. Pages hide their content on `error` and add no error of their own.
  */
 export default {
   name: 'MarketingProjectLoader',
@@ -26,6 +29,7 @@ export default {
   data() {
     return {
       error: null,
+      lastEmitted: null,
     }
   },
 
@@ -43,26 +47,31 @@ export default {
   },
 
   methods: {
-    async load() {
+    toProject(context) {
+      if (!context?.project) return null
+      return {
+        ...context.project,
+        organization: context.organization,
+        products: context.products,
+        modules: context.modules,
+      }
+    },
+    emitIfChanged(context) {
+      const project = this.toProject(context)
+      const key = JSON.stringify(project)
+      if (key === this.lastEmitted) return
+      this.lastEmitted = key
+      this.$emit('change', project)
+    },
+    async load(event) {
       this.error = null
+      // Render from the shared cache at once; the request below only revalidates it.
+      const cached = cachedActiveProject()
+      if (cached !== undefined && !event) this.emitIfChanged(cached)
       try {
-        const response = await $fetch('/api/projects/active')
-        const context = response?.data
-        if (!context?.project) {
-          this.$emit('change', null)
-          return
-        }
-        this.$emit('change', {
-          ...context.project,
-          organization: context.organization,
-          products: context.products,
-          modules: context.modules,
-        })
+        this.emitIfChanged(await loadActiveProject({ force: Boolean(event) }))
       } catch (err) {
-        if (apiErrorStatus(err) === 409) {
-          this.$emit('change', null)
-          return
-        }
+        if (cached !== undefined && !event) return
         this.error = apiErrorMessage(err, 'Failed to load the project')
         this.$emit('error', this.error)
       }

@@ -1,39 +1,51 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="ai-visibility-page">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">AI visibility</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            See how often AI assistants recommend your product, and which sources they rely on.
-          </p>
-        </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-      </div>
+  <PageContainer data-testid="ai-visibility-page">
+    <PageHeader
+      title="AI visibility"
+      description="See how often AI assistants recommend your product, and which sources they rely on."
+    >
+      <template #actions>
+        <Button
+          class="gap-2"
+          :disabled="!canRunNow"
+          :title="runDisabledReason"
+          data-testid="visibility-run-now"
+          @click="startRun"
+        >
+          <Icon name="lucide:play" class="h-4 w-4" />
+          Run now
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div v-if="!pickerSettled" class="space-y-4">
-        <Skeleton class="h-24 w-full" />
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || initialLoading" class="space-y-6">
+        <Skeleton class="h-40 w-full" />
         <Skeleton class="h-48 w-full" />
+        <Skeleton class="h-28 w-full" />
+        <Skeleton class="h-64 w-full" />
       </div>
 
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to get started.</div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to get started.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <!-- Marketing off (403) -->
       <MarketingDisabled v-else-if="marketingOff" :project="project" :message="marketingOffMessage" />
 
-      <div v-else-if="setupLoading" class="space-y-4">
-        <Skeleton class="h-24 w-full" />
-        <Skeleton class="h-48 w-full" />
-      </div>
-
-      <div v-else-if="setupError" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ setupError }}</span>
-        <Button variant="outline" size="sm" @click="loadSetup">Retry</Button>
-      </div>
+      <MarketingLoadError
+        v-else-if="setupError"
+        title="Failed to load AI visibility"
+        :message="setupError"
+        @retry="loadAll()"
+      />
 
       <template v-else-if="project && setup">
         <!-- Setup checklist -->
@@ -59,23 +71,12 @@
 
         <!-- Run -->
         <Card v-if="setup.hasSite" data-testid="visibility-run">
-          <CardHeader class="flex flex-row items-start justify-between gap-4 space-y-0">
-            <div>
-              <CardTitle role="heading" aria-level="2">Run</CardTitle>
-              <CardDescription>
-                Runs happen weekly. Each prompt is sent to every connected provider several times, using your own API
-                keys.
-              </CardDescription>
-            </div>
-            <Button
-              class="gap-2"
-              :disabled="!setup.canRun || runActive || starting"
-              data-testid="visibility-run-now"
-              @click="startRun"
-            >
-              <Icon name="lucide:play" class="h-4 w-4" />
-              Run now
-            </Button>
+          <CardHeader>
+            <CardTitle role="heading" aria-level="2">Run</CardTitle>
+            <CardDescription>
+              Runs happen weekly. Each prompt is sent to every connected provider several times, using your own API
+              keys. Use Run now above to start one.
+            </CardDescription>
           </CardHeader>
           <CardContent class="space-y-2">
             <p v-if="runError" class="text-sm text-destructive">{{ runError }}</p>
@@ -137,8 +138,8 @@
           :prompt-text="dialogPrompt ? dialogPrompt.text : ''"
         />
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>
@@ -162,6 +163,7 @@ export default {
       marketingOff: false,
       marketingOffMessage: '',
       setup: null,
+      initialLoading: false,
       setupLoading: false,
       setupError: null,
       runs: [],
@@ -194,6 +196,13 @@ export default {
       if (!s.hasUsableKey) issues.push('Add a valid Anthropic, OpenAI, Gemini or Perplexity API key')
       if (s.hasSite && s.activePromptCount === 0) issues.push('Add at least one active prompt below')
       return issues
+    },
+    canRunNow() {
+      return Boolean(this.setup?.canRun) && !this.initialLoading && !this.runActive && !this.starting
+    },
+    runDisabledReason() {
+      if (this.initialLoading || !this.setup || this.setup.canRun) return ''
+      return 'Finish the setup first.'
     },
     latestRun() {
       return this.runs[0] || null
@@ -249,11 +258,27 @@ export default {
       this.runError = null
       this.marketingOff = false
       this.dialogOpen = false
+      this.initialLoading = false
       if (!project) return
-      await this.loadSetup()
-      if (this.isCurrent(project.id) && this.setup?.hasSite) {
-        await Promise.all([this.loadRuns(), this.loadSummary()])
+      await this.loadAll()
+    },
+
+    /** Everything the page shows, fetched in parallel behind one skeleton. */
+    async loadAll() {
+      if (!this.project) return
+      const projectId = this.project.id
+      this.initialLoading = true
+      this.setupError = null
+      this.runsError = null
+      this.summaryError = null
+      await Promise.all([this.loadSetup(), this.loadRuns(), this.loadSummary()])
+      if (!this.isCurrent(projectId)) return
+      // Without a site there is nothing to run or summarise, so failures there are not worth showing.
+      if (!this.setup?.hasSite) {
+        this.runsError = null
+        this.summaryError = null
       }
+      this.initialLoading = false
     },
 
     async loadSetup(quiet = false) {

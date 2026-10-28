@@ -1,53 +1,40 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="mx-auto max-w-5xl space-y-6 p-6" data-testid="marketing-mentions-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Mentions</h1>
-          <p class="text-sm text-muted-foreground">
-            Posts on Hacker News, Reddit and Bluesky that name your brand, your competitors or the problem you solve.
-          </p>
-        </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-      </div>
+  <PageContainer data-testid="marketing-mentions-page">
+    <PageHeader
+      title="Mentions"
+      description="Posts on Hacker News, Reddit and Bluesky that name your brand, your competitors or the problem you solve."
+    />
 
-      <!-- Waiting for the active project -->
-      <div v-if="!pickerReady" class="space-y-3" data-testid="mentions-picking">
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <!-- Waiting for the project or the first page of mentions -->
+      <div v-if="!pickerReady || isInitialLoading" class="space-y-3" data-testid="mentions-loading">
         <Skeleton class="h-9 w-80" />
         <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
       </div>
 
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
       <!-- No project -->
-      <Card v-else-if="!project">
-        <CardContent class="py-10 text-center text-sm text-muted-foreground">
-          Create a project, then switch Marketing on for it.
-        </CardContent>
-      </Card>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one, then switch Marketing on for it.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <!-- Marketing off -->
       <MarketingDisabled v-else-if="forbidden" :project="project" :message="forbiddenMessage" />
 
-      <!-- Initial loading -->
-      <div v-else-if="isInitialLoading" class="space-y-3" data-testid="mentions-loading">
-        <Skeleton class="h-9 w-80" />
-        <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
-      </div>
-
       <!-- Initial error (no data to show yet) -->
-      <Card v-else-if="error && !hasLoaded" data-testid="mentions-error">
-        <CardContent class="py-10 text-center">
-          <Icon name="lucide:circle-alert" class="mx-auto mb-3 h-8 w-8 text-destructive" />
-          <p class="mb-3 text-sm text-muted-foreground">{{ error }}</p>
-          <Button variant="outline" @click="reload">
-            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
-            Try again
-          </Button>
-        </CardContent>
-      </Card>
+      <MarketingLoadError
+        v-else-if="error && !hasLoaded"
+        data-testid="mentions-error"
+        title="Failed to load mentions"
+        :message="error"
+        @retry="reload()"
+      />
 
       <!-- Not verified -->
       <Card v-else-if="site && !site.verified" data-testid="mentions-not-verified">
@@ -174,16 +161,13 @@
           <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
         </div>
 
-        <Card v-else-if="error" data-testid="mentions-error">
-          <CardContent class="py-10 text-center">
-            <Icon name="lucide:circle-alert" class="mx-auto mb-3 h-8 w-8 text-destructive" />
-            <p class="mb-3 text-sm text-muted-foreground">{{ error }}</p>
-            <Button variant="outline" @click="reload">
-              <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
-              Try again
-            </Button>
-          </CardContent>
-        </Card>
+        <MarketingLoadError
+          v-else-if="error"
+          data-testid="mentions-error"
+          title="Failed to load mentions"
+          :message="error"
+          @retry="reload()"
+        />
 
         <Card v-else-if="items.length === 0" data-testid="mentions-empty">
           <CardContent class="py-10 text-center text-sm text-muted-foreground">
@@ -220,8 +204,8 @@
           @retry="loadSources"
         />
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

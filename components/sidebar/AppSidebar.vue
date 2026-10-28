@@ -3,6 +3,11 @@ import ProjectSwitcher from './ProjectSwitcher.vue'
 import NavUser from './NavUser.vue'
 import { useSidebar } from '~/components/ui/sidebar'
 import type { ModuleSettings } from '~/lib/modules'
+import {
+  activeProjectStore,
+  loadActiveProject as loadSharedActiveProject,
+  type ActiveProjectContext,
+} from '~/lib/active-project'
 import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups, showProductSubItems } from '~/lib/sidebar-nav'
 
 interface SidebarProps {
@@ -127,39 +132,26 @@ onBeforeUnmount(() => {
 const hasActiveOrganization = useState<boolean | null>('hasActiveOrganization', () => null)
 
 type ProductSummary = { id: string; name: string; slug: string }
-type ActiveProjectResponse = {
-  data?: {
-    project?: { id?: string; role?: 'admin' | 'member' }
-    organization?: { role?: string }
-    products?: ProductSummary[]
-    modules?: Partial<ModuleSettings>
-  }
-}
 
 // Nothing is assumed on until the active project has loaded: tools stay hidden rather than
 // flashing on and off, and the "Add tool" entry only appears for a known project admin.
-const projectModules = ref<Partial<ModuleSettings>>({})
-const products = ref<ProductSummary[]>([])
-const isProjectAdmin = ref(false)
+// The shared cache (lib/active-project.ts) keeps the last value, so navigating never blanks the nav.
+const lastContext = computed<ActiveProjectContext | null>(() => activeProjectStore.context ?? null)
+const projectModules = computed<Partial<ModuleSettings>>(() => lastContext.value?.modules || {})
+const products = computed<ProductSummary[]>(() => lastContext.value?.products || [])
+const isProjectAdmin = computed(() => {
+  const context = lastContext.value
+  const orgRole = context?.organization?.role
+  return context?.project?.role === 'admin' || orgRole === 'owner' || orgRole === 'admin'
+})
 const marketingOpen = ref(import.meta.client ? window.location.pathname.startsWith('/marketing') : false)
 
-async function loadActiveProject() {
+async function loadActiveProject(event?: Event) {
   if (!import.meta.client) return
   try {
-    const response = await ($fetch as unknown as (url: string) => Promise<ActiveProjectResponse>)(
-      '/api/projects/active'
-    )
-    const context = response?.data
-    if (!context) return
-    projectModules.value = context.modules || {}
-    products.value = context.products || []
-    const orgRole = context.organization?.role
-    isProjectAdmin.value = context.project?.role === 'admin' || orgRole === 'owner' || orgRole === 'admin'
+    await loadSharedActiveProject({ force: Boolean(event) })
   } catch {
-    // 409 = no project yet (ProjectSwitcher routes to onboarding); other failures keep the last state.
-    projectModules.value = {}
-    products.value = []
-    isProjectAdmin.value = false
+    // Failures keep the last state; 409 (no project) resolves to null and ProjectSwitcher routes to onboarding.
   }
 }
 

@@ -1,51 +1,43 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="marketing-search-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Search</h1>
-          <p class="mt-1 text-sm text-muted-foreground">Clicks, impressions and queries from Google Search Console.</p>
-        </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-      </div>
+  <PageContainer data-testid="marketing-search-page">
+    <PageHeader title="Search" description="Clicks, impressions and queries from Google Search Console." />
 
-      <div v-if="!pickerSettled" class="space-y-4">
-        <Skeleton class="h-24 w-full" />
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="space-y-6">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Skeleton class="h-24" />
+          <Skeleton class="h-24" />
+          <Skeleton class="h-24" />
+          <Skeleton class="h-24" />
+        </div>
+        <Skeleton class="h-64 w-full" />
         <Skeleton class="h-64 w-full" />
       </div>
 
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">
-        Create a project to see its search performance.
-      </div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to see its search performance.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
       <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-      <div v-else-if="isLoading" class="space-y-4">
-        <Skeleton class="h-24 w-full" />
-        <Skeleton class="h-64 w-full" />
-      </div>
+      <MarketingLoadError v-else-if="error" title="Failed to load search data" :message="error" @retry="load()" />
 
-      <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ error }}</span>
-        <Button variant="outline" size="sm" @click="load">Retry</Button>
-      </div>
-
-      <div
+      <MarketingNotice
         v-else-if="!data || !data.site || !data.site.verified"
-        class="rounded-lg border border-border bg-card p-6"
+        title="Verify your site first"
         data-testid="search-not-verified"
       >
-        <h2 class="text-lg font-semibold">Verify your site first</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Search Console data is only shown for sites you have proven you own. Add your site and verify it in
-          <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
-          .
-        </p>
-      </div>
+        Search Console data is only shown for sites you have proven you own. Add your site and verify it in
+        <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
+        .
+      </MarketingNotice>
 
       <template v-else>
         <p v-if="callbackError" class="text-sm text-destructive" role="alert" data-testid="search-callback-error">
@@ -100,8 +92,8 @@
           />
         </template>
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </PageContainer>
 </template>
 
 <script>
