@@ -171,7 +171,6 @@ Phases 1 and 2 are merged (PRs #91, #99).
   - **Unit tests:**
     - `generateUserCode` returns 8 characters, all from the alphabet.
   - `normalizeUserCode(' bcdf-ghjk ')` returns `'BCDFGHJK'` (lowercase, dash and spaces are handled). `normalizeUserCode('BCDF-GHJA')` returns `'BCDFGHJ'`, because `A` isn't in the alphabet.
-    dropped. Using alphabet letters only, `normalizeUserCode('bcdf-ghjk')` returns `'BCDFGHJK'`.
     - `formatUserCode('BCDFGHJK')` returns `'BCDF-GHJK'`.
   - **Integration tests:**
     - The full happy path: create, then poll gives `authorization_pending`, then approve, then poll gives a key that
