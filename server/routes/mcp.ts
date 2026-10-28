@@ -13,6 +13,7 @@ import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { createVeerifyMcpServer } from '~/server/mcp/server'
 import { createApiCaller } from '~/server/mcp/api-bridge'
 import { readMcpJsonBody } from '~/server/mcp/request-body'
+import { getPublicBaseUrl } from '~/server/utils/device-http'
 import { getClientIp } from '~/server/utils/rate-limit'
 
 const WWW_AUTHENTICATE = 'Bearer realm="veerify"'
@@ -20,8 +21,8 @@ const CONTEXT_HEADERS = ['x-veerify-organization', 'x-veerify-project'] as const
 
 /** Points a client without a key at Settings or device login, using the configured base URL. */
 function missingKeyHint(): string {
-  const baseUrl = (process.env.BETTER_AUTH_URL || 'http://localhost:3000').replace(/\/+$/, '')
-  return `No API key. Create one in Settings → API keys, or use device login: POST ${baseUrl}/api/device/code`
+  const baseUrl = getPublicBaseUrl()
+  return `No valid API key. Create one in Settings → API keys, or use device login: POST ${baseUrl}/api/device/code`
 }
 
 async function requireCredentialPrincipal(event: H3Event): Promise<AuthSession> {
