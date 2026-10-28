@@ -38,7 +38,7 @@
       <slot v-if="loading" name="loading">
         <Skeleton class="h-64 w-full rounded-lg" />
       </slot>
-      <slot v-else :active="activeTab" />
+      <slot v-else :active="activeTab" :warm="warmTabs" />
     </div>
   </div>
 </template>
@@ -50,9 +50,10 @@
  * switching tabs does not fill the history. A legacy `#hash` is converted to `?tab=` on mount and
  * whenever it changes (for example sidebar links such as `/settings#notifications`).
  *
- * The page wraps its tab component in `<KeepAlive>` inside the default slot (scoped `active`),
- * so revisiting a tab neither remounts nor refetches. Hovering or focusing a tab emits
- * `prefetch` once per tab so the page can warm that tab's code or data.
+ * The default slot gets `active` and `warm`: the page renders every warm tab and shows only the
+ * active one (`v-show`). A tab becomes warm when it is visited or hovered/focused, so hovering
+ * mounts it hidden and its data is already loaded by the time it is clicked, and revisiting a
+ * tab neither remounts nor refetches.
  */
 export default {
   name: 'SettingsTabs',
@@ -73,9 +74,17 @@ export default {
   data() {
     return {
       prefetched: {},
+      // Tabs to keep mounted: visited ones and hovered ones (mounting fetches their data early)
+      warmed: [],
     }
   },
   computed: {
+    // The active tab first, then every other warmed tab that still exists
+    warmTabs() {
+      const known = new Set(this.tabs.map((tab) => tab.id))
+      const ids = [this.activeTab, ...this.warmed.filter((id) => id !== this.activeTab)]
+      return ids.filter((id) => id && (!this.tabs.length || known.has(id)))
+    },
     fallbackTab() {
       return this.defaultTab || this.tabs[0]?.id || ''
     },
@@ -104,6 +113,7 @@ export default {
     activeTab: {
       immediate: true,
       handler(value) {
+        if (value && !this.warmed.includes(value)) this.warmed.push(value)
         this.$emit('change', value)
       },
     },
@@ -120,6 +130,7 @@ export default {
     prefetch(id) {
       if (this.prefetched[id]) return
       this.prefetched[id] = true
+      if (!this.warmed.includes(id)) this.warmed.push(id)
       this.$emit('prefetch', id)
     },
     applyHash() {

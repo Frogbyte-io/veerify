@@ -12,10 +12,10 @@
       aria-label-suffix=" settings"
       :hash-redirects="hashRedirects"
     >
-      <template #default="{ active }">
-        <KeepAlive>
-          <component :is="componentMap[active] || 'SettingsProfile'" :key="active" />
-        </KeepAlive>
+      <template #default="{ active, warm }">
+        <div v-for="tab in warm" v-show="tab === active" :key="tab">
+          <component :is="componentMap[tab] || 'SettingsProfile'" />
+        </div>
       </template>
     </SettingsTabs>
   </PageContainer>
