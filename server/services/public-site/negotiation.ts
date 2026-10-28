@@ -1,7 +1,7 @@
 import { getHeader, getRequestURL, setHeader, setResponseStatus, type H3Event } from 'h3'
 import { markdownTwinPath, parsePublicPath } from '~/lib/public-site-path'
 import { acceptsMarkdownOverHtml } from './accept'
-import { loadPublicOrganization, loadPublicProjectContext } from './context'
+import { loadPagePost, loadPublicOrganization, loadPublicProjectContext } from './context'
 import { renderOrgLlmsTxt, renderPageMarkdown } from './render'
 
 /**
@@ -33,7 +33,10 @@ export async function maybeSendPublicPageMarkdown(event: H3Event): Promise<strin
     markdown = org ? renderOrgLlmsTxt(org.organization, org.projects) : null
   } else if (parsed && projectSlug) {
     const context = await loadPublicProjectContext(event, orgSlug, projectSlug)
-    markdown = context ? renderPageMarkdown(context.snapshot, context.urls, parsed.page) : null
+    if (context) {
+      const post = await loadPagePost(context.snapshot, parsed.page)
+      markdown = renderPageMarkdown(context.snapshot, context.urls, parsed.page, post)
+    }
   }
 
   setHeader(event, 'Content-Type', 'text/markdown; charset=utf-8')

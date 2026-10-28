@@ -5,7 +5,8 @@ import { organization } from '~/server/database/schema/auth'
 import { project } from '~/server/database/schema/feedback'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
 import { appDomains } from '~/server/utils/public-host'
-import { loadPublicProjectSnapshot, type PublicProjectSnapshot } from './snapshot'
+import { feedbackIdFromRef, type PublicPage } from '~/lib/public-site-path'
+import { loadPublicFeedbackPost, loadPublicProjectSnapshot, type PublicProjectSnapshot } from './snapshot'
 import type { OrgProjectLink, ProjectUrls } from './render'
 
 /** Request origin as the visitor sees it (TLS usually terminates at the proxy). */
@@ -71,4 +72,10 @@ export async function loadPublicOrganization(event: H3Event, orgSlug: string) {
     }),
   }))
   return { organization: { name: org.name, slug: orgSlug }, projects: links }
+}
+
+/** The feedback item a post page points at (null for other pages, or when it is not public). */
+export async function loadPagePost(snapshot: PublicProjectSnapshot, page: PublicPage) {
+  if (page.kind !== 'post') return null
+  return loadPublicFeedbackPost(snapshot, feedbackIdFromRef(page.ref))
 }

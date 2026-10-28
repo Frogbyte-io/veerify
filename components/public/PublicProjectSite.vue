@@ -31,6 +31,7 @@
         :main-app-url="mainAppUrl"
         :auth-redirect-target="authRedirectTarget"
         :reload-project="reloadProject"
+        :feedback-ref="feedbackRef"
       />
     </template>
   </PublicProjectShell>
@@ -51,6 +52,8 @@ export default {
     activeTab: { type: String, default: 'feedback' },
     productSlug: { type: String, default: null },
     entrySlug: { type: String, default: null },
+    // `p/<post>` segment: a feedback item opened over the feedback tab
+    feedbackRef: { type: String, default: null },
   },
   data() {
     return { pageTitle: '' }

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { markdownTwinPath, parsePublicPath } from '~/lib/public-site-path'
+import {
+  feedbackIdFromRef,
+  feedbackPostRef,
+  markdownTwinPath,
+  parsePublicPath,
+  titleSlug,
+} from '~/lib/public-site-path'
 import { acceptsMarkdownOverHtml } from '~/server/services/public-site/accept'
 import {
   buildPublicHeadTags,
+  postUrl,
   markdownUrl,
   nestHeadings,
   projectSitemapEntries,
@@ -12,7 +19,7 @@ import {
   renderRobotsTxt,
   renderSitemap,
 } from '~/server/services/public-site/render'
-import type { PublicProjectSnapshot } from '~/server/services/public-site/snapshot'
+import type { PublicFeedbackPost, PublicProjectSnapshot } from '~/server/services/public-site/snapshot'
 
 function snapshot(overrides: Partial<PublicProjectSnapshot> = {}): PublicProjectSnapshot {
   return {
@@ -43,7 +50,7 @@ function snapshot(overrides: Partial<PublicProjectSnapshot> = {}): PublicProject
     ],
     feedback: [
       {
-        id: 'f1',
+        id: '3f2b8c1e-6a4d-4e2f-9b1a-0c7d5e8f9a21',
         productId: 'a',
         title: 'Reusable [legs]',
         body: 'Land it\n# not a heading',
@@ -110,6 +117,31 @@ describe('parsePublicPath', () => {
   })
 })
 
+describe('feedback post URLs', () => {
+  const uuid = '3f2b8c1e-6a4d-4e2f-9b1a-0c7d5e8f9a21'
+
+  it('parses /p/<ref> but keeps /p alone as a product board', () => {
+    expect(parsePublicPath(`/rocket/p/hello-${uuid}`, false)?.page).toEqual({ kind: 'post', ref: `hello-${uuid}` })
+    expect(parsePublicPath(`/p/${uuid}`, true)?.page).toEqual({ kind: 'post', ref: uuid })
+    expect(parsePublicPath('/rocket/p', false)?.page).toEqual({ kind: 'board', productSlug: 'p' })
+    expect(parsePublicPath('/rocket/p/a/b', false)).toBeNull()
+  })
+
+  it('builds readable refs and reads the id back', () => {
+    expect(titleSlug('Ünïcode & "quotes" — OK?')).toBe('unicode-quotes-ok')
+    const ref = feedbackPostRef({ id: uuid, title: 'Dark mode, please!' })
+    expect(ref).toBe(`dark-mode-please-${uuid}`)
+    expect(feedbackIdFromRef(ref)).toBe(uuid)
+    // Stale or missing slugs still resolve
+    expect(feedbackIdFromRef(`old-title-${uuid}`)).toBe(uuid)
+    expect(feedbackIdFromRef(uuid)).toBe(uuid)
+    // Non-UUID ids are used bare
+    expect(feedbackPostRef({ id: 'seed_feedback_1', title: 'X' })).toBe('seed_feedback_1')
+    expect(feedbackIdFromRef('seed_feedback_1')).toBe('seed_feedback_1')
+    expect(feedbackPostRef({ id: uuid, title: '!!!' })).toBe(uuid)
+  })
+})
+
 describe('markdownTwinPath', () => {
   it('maps .md URLs to their page', () => {
     expect(markdownTwinPath('/index.md')).toBe('/')
@@ -144,8 +176,10 @@ describe('llms.txt', () => {
     expect(txt.startsWith('# Rocket\n\n> Rockets for everyone\n')).toBe(true)
     expect(txt).toContain('- [Roadmap](https://acme.veerify.io/rocket/roadmap)')
     expect(txt).toContain('- [Booster](https://acme.veerify.io/rocket/booster)')
-    // Link text brackets are escaped; links go to the product board
-    expect(txt).toContain('- [Reusable \\[legs\\]](https://acme.veerify.io/rocket/booster): 42 votes · Planned')
+    // Link text brackets are escaped; links go to the item's own page
+    expect(txt).toContain(
+      '- [Reusable \\[legs\\]](https://acme.veerify.io/rocket/p/reusable-legs-3f2b8c1e-6a4d-4e2f-9b1a-0c7d5e8f9a21): 42 votes · Planned'
+    )
     expect(txt).toContain('- [Launch day](https://acme.veerify.io/rocket/changelog/launch-day): 2026-10-20 — We flew')
     expect(txt).toContain('https://acme.veerify.io/rocket/llms-full.txt')
   })
@@ -224,6 +258,8 @@ describe('sitemap and robots', () => {
       'https://acme.veerify.io/rocket',
       'https://acme.veerify.io/rocket/booster',
       'https://acme.veerify.io/rocket/capsule',
+      'https://acme.veerify.io/rocket/p/reusable-legs-3f2b8c1e-6a4d-4e2f-9b1a-0c7d5e8f9a21',
+      'https://acme.veerify.io/rocket/p/f2',
       'https://acme.veerify.io/rocket/roadmap',
       'https://acme.veerify.io/rocket/changelog',
       'https://acme.veerify.io/rocket/changelog/launch-day',
@@ -240,5 +276,46 @@ describe('sitemap and robots', () => {
     expect(robots).toContain('User-agent: ClaudeBot\n')
     expect(robots.match(/Disallow: \/api\//g)).toHaveLength(2)
     expect(robots.trimEnd().endsWith('Sitemap: https://x.test/sitemap.xml')).toBe(true)
+  })
+})
+
+describe('feedback post page', () => {
+  function post(): PublicFeedbackPost {
+    const s = snapshot()
+    return {
+      ...s.feedback[0]!,
+      authorName: 'Ada',
+      comments: [
+        { id: 'c1', authorName: 'Bob', body: 'Yes!\n## please', createdAt: new Date('2026-09-03'), isReply: false },
+        { id: 'c2', authorName: 'Ada', body: 'Thanks', createdAt: new Date('2026-09-04'), isReply: true },
+      ],
+    }
+  }
+
+  it('renders the item and its public discussion as markdown', () => {
+    const md = renderPageMarkdown(snapshot(), urls, { kind: 'post', ref: 'stale-slug' }, post())!
+    expect(md).toMatch(/^# Reusable \[legs\]/)
+    expect(md).toContain('Status: Planned')
+    expect(md).toContain('by Ada')
+    expect(md).toContain('Board: https://acme.veerify.io/rocket/booster')
+    expect(md).toContain('## Comments (2)')
+    expect(md).toContain('> ## please')
+    expect(md).toContain('**Ada** (reply)')
+  })
+
+  it('is null without a loaded item', () => {
+    expect(renderPageMarkdown(snapshot(), urls, { kind: 'post', ref: 'x' })).toBeNull()
+    expect(buildPublicHeadTags(snapshot(), urls, { kind: 'post', ref: 'x' })).toBeNull()
+  })
+
+  it('uses the canonical slug and DiscussionForumPosting markup', () => {
+    const p = post()
+    const head = buildPublicHeadTags(snapshot(), urls, { kind: 'post', ref: `old-${p.id}` }, p)!
+    const html = head.tags.join('\n')
+    expect(html).toContain(`<link rel="canonical" href="${postUrl(urls, p)}">`)
+    expect(html).toContain(`href="${postUrl(urls, p)}.md"`)
+    expect(html).toContain('"@type":"DiscussionForumPosting"')
+    expect(html).toContain('"userInteractionCount":42')
+    expect(html).toContain('<meta property="og:type" content="article">')
   })
 })

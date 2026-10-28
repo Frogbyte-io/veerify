@@ -1,8 +1,8 @@
-import { getRequestURL } from 'h3'
+import { getRequestURL, setResponseStatus } from 'h3'
 import { parsePublicPath } from '~/lib/public-site-path'
 import { renderMarkdown } from '~/server/utils/markdown'
 import { siteOf } from '~/server/services/public-site/documents'
-import { loadPublicOrganization, loadPublicProjectContext } from '~/server/services/public-site/context'
+import { loadPagePost, loadPublicOrganization, loadPublicProjectContext } from '~/server/services/public-site/context'
 import {
   buildPublicHeadTags,
   originOf,
@@ -90,8 +90,15 @@ export default defineNitroPlugin((nitroApp) => {
 
       const context = await loadPublicProjectContext(event, site.orgSlug, projectSlug)
       if (!context) return
-      const head = buildPublicHeadTags(context.snapshot, context.urls, parsed.page)
-      const markdown = renderPageMarkdown(context.snapshot, context.urls, parsed.page)
+      const post = await loadPagePost(context.snapshot, parsed.page)
+      if (parsed.page.kind === 'post' && !post) {
+        // Unknown, hidden or private item: the board still renders, but the URL is a 404 to crawlers
+        setResponseStatus(event, 404)
+        html.head.push('<meta name="robots" content="noindex">')
+        return
+      }
+      const head = buildPublicHeadTags(context.snapshot, context.urls, parsed.page, post)
+      const markdown = renderPageMarkdown(context.snapshot, context.urls, parsed.page, post)
       if (!head || !markdown) return
 
       html.head = setTitle(html.head, head.title)

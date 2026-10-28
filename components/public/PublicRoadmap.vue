@@ -166,12 +166,13 @@
             <span>{{ formatDate(selectedFeedback.createdAt) }}</span>
           </div>
           <NuxtLink
-            :to="feedbackBoardPath"
+            :to="paths.post(selectedFeedback)"
             prefetch-on="interaction"
             class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            data-testid="roadmap-feedback-open-post"
           >
-            <Icon name="lucide:external-link" class="w-4 h-4" />
-            View on feedback board
+            <Icon name="lucide:message-square" class="w-4 h-4" />
+            Vote and discuss
           </NuxtLink>
         </div>
       </DialogContent>
