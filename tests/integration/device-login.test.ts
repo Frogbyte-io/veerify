@@ -11,6 +11,9 @@ import { deviceAuthorization, userApiKey } from '../../server/database/schema/cr
  * racing for one approval (Review Focus 1), slow_down and the active key cap.
  */
 
+const sendDeviceKeyIssuedEmail = vi.hoisted(() => vi.fn(async (_options: unknown) => undefined))
+vi.mock('../../lib/email', () => ({ sendDeviceKeyIssuedEmail }))
+
 vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
   Object.assign(new Error(input.statusMessage), input)
 )
@@ -23,6 +26,7 @@ const {
   findPendingByUserCode,
   normalizeUserCode,
   pollDeviceToken,
+  purgeExpiredDeviceAuthorizations,
 } = await import('../../server/services/device-login')
 const { MAX_ACTIVE_KEYS, generateUserApiKey, hashUserApiKey } = await import('../../server/utils/user-api-keys')
 
@@ -49,6 +53,28 @@ async function rowFor(userCode: string) {
     .from(deviceAuthorization)
     .where(eq(deviceAuthorization.userCode, normalizeUserCode(userCode)))
   return row!
+}
+
+async function resetPollTimer(userCode: string) {
+  await db
+    .update(deviceAuthorization)
+    .set({ lastPolledAt: null })
+    .where(eq(deviceAuthorization.userCode, normalizeUserCode(userCode)))
+}
+
+async function expireAt(userCode: string, at: Date) {
+  await db
+    .update(deviceAuthorization)
+    .set({ expiresAt: at })
+    .where(eq(deviceAuthorization.userCode, normalizeUserCode(userCode)))
+}
+
+async function exists(userCode: string) {
+  const rows = await db
+    .select({ id: deviceAuthorization.id })
+    .from(deviceAuthorization)
+    .where(eq(deviceAuthorization.userCode, normalizeUserCode(userCode)))
+  return rows.length === 1
 }
 
 async function keysOf(userId: string) {
@@ -128,6 +154,94 @@ describe('device login service', () => {
     await db.update(deviceAuthorization).set({ lastPolledAt: null }).where(eq(deviceAuthorization.id, row.id))
     expect(await pollDeviceToken(created.deviceCode)).toMatchObject({ ok: false, error: 'invalid_grant' })
     expect(await keysOf(userId)).toHaveLength(1)
+  })
+
+  it('emails the user once when a key is issued, and never on a later poll', async () => {
+    const userId = await newUser('mail')
+    const created = await newRequest('Mail agent')
+    await approveDeviceAuthorization(created.userCode, userId)
+    await resetPollTimer(created.userCode)
+    sendDeviceKeyIssuedEmail.mockClear()
+    expect(await pollDeviceToken(created.deviceCode)).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(sendDeviceKeyIssuedEmail).toHaveBeenCalledTimes(1))
+    expect(sendDeviceKeyIssuedEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: `dlg-mail-${suffix}@example.com`,
+        keyName: 'Mail agent',
+        settingsUrl: expect.stringMatching(/\/settings#api-keys$/),
+      })
+    )
+    await resetPollTimer(created.userCode)
+    await pollDeviceToken(created.deviceCode)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(sendDeviceKeyIssuedEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fail the token response when the email fails', async () => {
+    const userId = await newUser('mailfail')
+    const created = await newRequest()
+    await approveDeviceAuthorization(created.userCode, userId)
+    await resetPollTimer(created.userCode)
+    sendDeviceKeyIssuedEmail.mockClear()
+    sendDeviceKeyIssuedEmail.mockRejectedValueOnce(new Error('smtp down'))
+    expect(await pollDeviceToken(created.deviceCode)).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(sendDeviceKeyIssuedEmail).toHaveBeenCalledTimes(1))
+  })
+
+  it('sends no email for pending, denied or expired requests', async () => {
+    const userId = await newUser('nomail')
+    sendDeviceKeyIssuedEmail.mockClear()
+
+    const pending = await newRequest()
+    await pollDeviceToken(pending.deviceCode)
+
+    const denied = await newRequest()
+    await denyDeviceAuthorization(denied.userCode, userId)
+    expect(await pollDeviceToken(denied.deviceCode)).toMatchObject({ error: 'access_denied' })
+
+    const expired = await newRequest()
+    await db
+      .update(deviceAuthorization)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(deviceAuthorization.userCode, normalizeUserCode(expired.userCode)))
+    expect(await pollDeviceToken(expired.deviceCode)).toMatchObject({ error: 'expired_token' })
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(sendDeviceKeyIssuedEmail).not.toHaveBeenCalled()
+  })
+
+  it('purges authorizations that expired more than a day ago and keeps newer ones', async () => {
+    const old = await newRequest()
+    const recent = await newRequest()
+    const live = await newRequest()
+    const day = 86_400_000
+    await expireAt(old.userCode, new Date(Date.now() - day - 60_000))
+    await expireAt(recent.userCode, new Date(Date.now() - day + 60_000))
+
+    expect(await purgeExpiredDeviceAuthorizations()).toBeGreaterThanOrEqual(1)
+    expect(await exists(old.userCode)).toBe(false)
+    expect(await exists(recent.userCode)).toBe(true)
+    expect(await exists(live.userCode)).toBe(true)
+  })
+
+  it('opportunistically purges old rows when a new request is created', async () => {
+    const old = await newRequest()
+    await expireAt(old.userCode, new Date(Date.now() - 2 * 86_400_000))
+    await newRequest()
+    expect(await exists(old.userCode)).toBe(false)
+  })
+
+  it('allows 1 s of slack before a poll counts as too fast', async () => {
+    const created = await newRequest()
+    const setLastPolled = (msAgo: number) =>
+      db
+        .update(deviceAuthorization)
+        .set({ lastPolledAt: new Date(Date.now() - msAgo) })
+        .where(eq(deviceAuthorization.userCode, normalizeUserCode(created.userCode)))
+    await setLastPolled(4500)
+    expect(await pollDeviceToken(created.deviceCode)).toMatchObject({ error: 'authorization_pending' })
+    await setLastPolled(3500)
+    expect(await pollDeviceToken(created.deviceCode)).toMatchObject({ error: 'slow_down' })
   })
 
   it('names the key "Device login" without a client name, and caps it at 60 characters', async () => {

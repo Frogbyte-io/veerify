@@ -786,7 +786,7 @@ export const openapiPaths = {
                 "client_name": {
                   "type": "string",
                   "maxLength": 60,
-                  "description": "Shown to the user on the approval page and used as the key name"
+                  "description": "Shown to the user on the approval page and used as the key name. Control and format characters are removed"
                 }
               }
             }
@@ -862,7 +862,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "The pending request: userCode, clientName, expiresAt"
+          "description": "The pending request: userCode, clientName, createdAt, expiresAt"
         },
         "401": {
           "description": "Not authenticated"
@@ -911,7 +911,7 @@ export const openapiPaths = {
           "description": "Not authenticated"
         },
         "403": {
-          "description": "Browser session only"
+          "description": "Browser session only, or a cross-site request (Sec-Fetch-Site / Origin check)"
         },
         "404": {
           "description": "Code not found or expired"
@@ -957,7 +957,7 @@ export const openapiPaths = {
           "description": "Not authenticated"
         },
         "403": {
-          "description": "Browser session only"
+          "description": "Browser session only, or a cross-site request (Sec-Fetch-Site / Origin check)"
         },
         "404": {
           "description": "Code not found or expired"

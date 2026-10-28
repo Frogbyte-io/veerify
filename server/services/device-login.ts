@@ -1,7 +1,11 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto'
-import { and, eq, gt } from 'drizzle-orm'
+import { and, eq, gt, inArray, lt } from 'drizzle-orm'
+import { createConsola } from 'consola'
+import { sendDeviceKeyIssuedEmail } from '~/lib/email'
+import { user } from '~/server/database/schema/auth'
 import { db } from '~/server/database/drizzle'
 import { deviceAuthorization, userApiKey } from '~/server/database/schema/credentials'
+import { getPublicBaseUrl } from '~/server/utils/device-http'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { MAX_ACTIVE_KEYS, countActiveUserApiKeys, generateUserApiKey } from '~/server/utils/user-api-keys'
 
@@ -17,12 +21,19 @@ export const DEVICE_KEY_TTL_DAYS = 90
 /** No vowels (no accidental words) and no look-alikes (0/O, 1/I/L are absent). */
 export const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ'
 
+const logger = createConsola().withTag('veerify').withTag('device-login')
+
 const DEVICE_CODE_PREFIX = 'vfy_dev_'
 const USER_CODE_LENGTH = 8
 const SLOW_DOWN_INCREMENT_SECONDS = 5
 const MAX_CREATE_ATTEMPTS = 5
 const MAX_KEY_NAME_LENGTH = 60
 const DEFAULT_KEY_NAME = 'Device login'
+/** The poll interval may be undercut by this much (network jitter) before a poll counts as too fast. */
+const POLL_SLACK_MS = 1000
+/** Expired rows are kept this long (so a late poll still says expired_token), then purged. */
+const PURGE_AFTER_EXPIRY_MS = 86_400_000
+const OPPORTUNISTIC_PURGE_LIMIT = 100
 
 export type DeviceTokenError =
   | 'authorization_pending'
@@ -73,6 +84,32 @@ function keyName(clientName: string | null | undefined): string {
   return trimmed || DEFAULT_KEY_NAME
 }
 
+/** Deletes authorizations that expired more than a day ago. Returns the number of rows removed. */
+export async function purgeExpiredDeviceAuthorizations(): Promise<number> {
+  const deleted = await db
+    .delete(deviceAuthorization)
+    .where(lt(deviceAuthorization.expiresAt, new Date(Date.now() - PURGE_AFTER_EXPIRY_MS)))
+    .returning({ id: deviceAuthorization.id })
+  return deleted.length
+}
+
+/** Bounded variant run on every create, so an unauthenticated flood cannot outgrow the scheduled purge. */
+async function purgeSomeExpired(): Promise<void> {
+  const cutoff = new Date(Date.now() - PURGE_AFTER_EXPIRY_MS)
+  await db
+    .delete(deviceAuthorization)
+    .where(
+      inArray(
+        deviceAuthorization.id,
+        db
+          .select({ id: deviceAuthorization.id })
+          .from(deviceAuthorization)
+          .where(lt(deviceAuthorization.expiresAt, cutoff))
+          .limit(OPPORTUNISTIC_PURGE_LIMIT)
+      )
+    )
+}
+
 function isUniqueViolation(error: unknown, constraint: string): boolean {
   for (let e: unknown = error; e && typeof e === 'object'; e = (e as { cause?: unknown }).cause) {
     const pg = e as { code?: string; constraint?: string }
@@ -89,6 +126,7 @@ export async function createDeviceAuthorization(input: {
   clientName?: string | null
 }): Promise<{ deviceCode: string; userCode: string; expiresIn: number; interval: number }> {
   const clientName = input.clientName?.trim() || null
+  await purgeSomeExpired().catch((error) => logger.warn('Opportunistic device authorization purge failed', error))
   for (let attempt = 1; ; attempt++) {
     const deviceCode = DEVICE_CODE_PREFIX + randomBytes(32).toString('base64url')
     const userCode = generateUserCode()
@@ -135,7 +173,7 @@ export function notFound(): never {
 /** The pending, unexpired request for a user code, or null (unknown, decided and expired all look the same). */
 export async function findPendingByUserCode(
   userCode: string
-): Promise<{ id: string; clientName: string | null; expiresAt: Date } | null> {
+): Promise<{ id: string; clientName: string | null; expiresAt: Date; createdAt: Date } | null> {
   const code = normalizeUserCode(userCode)
   if (code.length !== USER_CODE_LENGTH) return null
   const [row] = await db
@@ -143,6 +181,7 @@ export async function findPendingByUserCode(
       id: deviceAuthorization.id,
       clientName: deviceAuthorization.clientName,
       expiresAt: deviceAuthorization.expiresAt,
+      createdAt: deviceAuthorization.createdAt,
     })
     .from(deviceAuthorization)
     .where(pendingByUserCode(code, new Date()))
@@ -185,7 +224,8 @@ export async function denyDeviceAuthorization(userCode: string, userId: string):
  */
 export async function pollDeviceToken(deviceCode: string): Promise<DeviceTokenResult> {
   const hash = hashDeviceCode(deviceCode)
-  return db.transaction(async (tx) => {
+  let issued: { userId: string; keyName: string; issuedAt: Date } | null = null
+  const result = await db.transaction(async (tx): Promise<DeviceTokenResult> => {
     const [row] = await tx
       .select()
       .from(deviceAuthorization)
@@ -197,7 +237,7 @@ export async function pollDeviceToken(deviceCode: string): Promise<DeviceTokenRe
     const now = new Date()
     if (now.getTime() >= row.expiresAt.getTime()) return tokenError('expired_token')
 
-    if (row.lastPolledAt && now.getTime() - row.lastPolledAt.getTime() < row.interval * 1000) {
+    if (row.lastPolledAt && now.getTime() - row.lastPolledAt.getTime() < row.interval * 1000 - POLL_SLACK_MS) {
       await tx
         .update(deviceAuthorization)
         .set({ interval: row.interval + SLOW_DOWN_INCREMENT_SECONDS, lastPolledAt: now })
@@ -216,10 +256,11 @@ export async function pollDeviceToken(deviceCode: string): Promise<DeviceTokenRe
 
     const { key, keyPrefix, keyHash } = generateUserApiKey()
     const keyId = randomUUID()
+    const name = keyName(row.clientName)
     await tx.insert(userApiKey).values({
       id: keyId,
       userId: row.userId,
-      name: keyName(row.clientName),
+      name,
       keyPrefix,
       keyHash,
       createdVia: 'device',
@@ -240,6 +281,30 @@ export async function pollDeviceToken(deviceCode: string): Promise<DeviceTokenRe
       })
     }
 
+    issued = { userId: row.userId, keyName: name, issuedAt: now }
     return { ok: true, accessToken: key, expiresIn: DEVICE_KEY_TTL_DAYS * 86_400 }
   })
+  // The transaction has committed. The notification must never block or fail the token response.
+  if (result.ok && issued) void notifyKeyIssued(issued)
+  return result
+}
+
+async function notifyKeyIssued(issued: { userId: string; keyName: string; issuedAt: Date }): Promise<void> {
+  try {
+    const [owner] = await db
+      .select({ email: user.email, name: user.name })
+      .from(user)
+      .where(eq(user.id, issued.userId))
+      .limit(1)
+    if (!owner?.email) return
+    await sendDeviceKeyIssuedEmail({
+      to: owner.email,
+      name: owner.name,
+      keyName: issued.keyName,
+      issuedAt: issued.issuedAt,
+      settingsUrl: `${getPublicBaseUrl()}/settings#api-keys`,
+    })
+  } catch (error) {
+    logger.error('Failed to send the device key issued email', error)
+  }
 }

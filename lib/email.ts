@@ -1,6 +1,7 @@
 import {
   getCustomDomainConnectedTemplate,
   getCustomDomainVerifiedTemplate,
+  getDeviceKeyIssuedTemplate,
   getEmailVerificationTemplate,
   getFeedbackConfirmationTemplate,
   getMagicLinkTemplate,
@@ -201,6 +202,14 @@ interface CustomDomainEmailOptions {
   domain: string
 }
 
+interface DeviceKeyIssuedEmailOptions {
+  to: string
+  name: string
+  keyName: string
+  issuedAt: Date
+  settingsUrl: string
+}
+
 const dedicatedTransports = new Map<string, Transporter>()
 
 /** One pooled transporter per distinct dedicated config, built on first use. */
@@ -279,6 +288,18 @@ export async function sendMagicLinkEmail(options: MagicLinkEmailOptions) {
 
 export async function sendOrganizationInvitationEmail(options: OrganizationInvitationEmailOptions) {
   const template = getOrganizationInvitationTemplate(options)
+
+  const result = await sendEmail({
+    to: options.to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  })
+  return result
+}
+
+export async function sendDeviceKeyIssuedEmail(options: DeviceKeyIssuedEmailOptions) {
+  const template = getDeviceKeyIssuedTemplate(options)
 
   const result = await sendEmail({
     to: options.to,
