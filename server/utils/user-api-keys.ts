@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { getHeader } from 'h3'
 import type { H3Event } from 'h3'
-import { and, eq } from 'drizzle-orm'
+import { and, count, eq, gt, isNull, or } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { organization, user } from '~/server/database/schema/auth'
 import { userApiKey } from '~/server/database/schema/credentials'
@@ -13,6 +13,8 @@ import { requireRateLimit } from '~/server/utils/rate-limit'
 import { ErrorCode, createErrorResponse } from '~/server/utils/response'
 
 export const USER_KEY_PREFIX = 'vfy_usr_'
+/** Maximum number of active (unrevoked, unexpired) personal API keys per user. */
+export const MAX_ACTIVE_KEYS = 25
 
 const RATE_LIMIT = { maxRequests: 600, windowSeconds: 60, identifier: 'user-api-key' }
 /** `lastUsedAt` is only rewritten once it is older than this, to avoid a write per request. */
@@ -27,6 +29,24 @@ export function hashUserApiKey(key: string): string {
 export function generateUserApiKey(): { key: string; keyPrefix: string; keyHash: string } {
   const key = USER_KEY_PREFIX + randomBytes(32).toString('base64url')
   return { key, keyPrefix: key.slice(0, 12), keyHash: hashUserApiKey(key) }
+}
+
+type Database = typeof db
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/** Counts the user's active keys: not revoked, and without an expiry or expiring in the future. */
+export async function countActiveUserApiKeys(userId: string, tx: Database | Transaction = db): Promise<number> {
+  const [active] = await tx
+    .select({ count: count() })
+    .from(userApiKey)
+    .where(
+      and(
+        eq(userApiKey.userId, userId),
+        isNull(userApiKey.revokedAt),
+        or(isNull(userApiKey.expiresAt), gt(userApiKey.expiresAt, new Date()))
+      )
+    )
+  return Number(active?.count ?? 0)
 }
 
 export function readBearerUserApiKey(event: H3Event): string | null {
