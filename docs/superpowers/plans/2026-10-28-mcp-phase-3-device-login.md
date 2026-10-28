@@ -60,7 +60,7 @@ Phases 1 and 2 are merged (PRs #91, #99).
 - **Rate limits** (`requireRateLimit`):
   - `/api/device/code`: 10 per 60 s per IP, identifier `'device-code'`.
   - User-code lookup, approve and deny: 10 per 60 s per user, identifier `'device-approve'`.
-  - `/api/device/token`: 60 per 60 s per IP, identifier `'device-token'`.
+  - `/api/device/token`: 600 per 60 s per IP, identifier `'device-token'`.
 - **Expiry**: a request older than 600 s can't be approved or redeemed.
 - **MCP**: `call_api` refuses `/api/device/`, so a key can't drive the flow through MCP. Add it to
   `BLOCKED_API_PREFIXES`.

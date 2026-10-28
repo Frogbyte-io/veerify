@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Device login]
  *     summary: Poll for the device login token (RFC 8628)
- *     description: "Public. Poll no faster than the interval. Accepts JSON or application/x-www-form-urlencoded. Errors are RFC 8628 bodies with HTTP 400: authorization_pending, slow_down, access_denied, expired_token, invalid_grant, invalid_request. The issued key is a personal API key valid for 90 days. Rate limited to 60 requests per 60 s per IP."
+ *     description: "Public. Poll no faster than the interval. Accepts JSON or application/x-www-form-urlencoded. Errors are RFC 8628 bodies with HTTP 400: authorization_pending, slow_down, access_denied, expired_token, invalid_grant, invalid_request. The issued key is a personal API key valid for 90 days. Rate limited to 600 requests per 60 s per IP; over the limit the response is the RFC error slow_down (HTTP 400)."
  *     operationId: pollDeviceToken
  *     requestBody:
  *       required: true
@@ -35,11 +35,11 @@
  *                 token_type: { type: string, example: Bearer }
  *                 expires_in: { type: integer, example: 7776000 }
  *       400: { description: "RFC 8628 error body: { error, error_description }" }
- *       429: { description: "Rate limit exceeded" }
- */
+ *  */
 import { z } from 'zod'
 import { pollDeviceToken } from '~/server/services/device-login'
-import { requireRateLimit } from '~/server/utils/rate-limit'
+import { deviceBodyTooLarge } from '~/server/utils/device-http'
+import { checkRateLimit } from '~/server/utils/rate-limit'
 
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 
@@ -49,9 +49,19 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  await requireRateLimit(event, { maxRequests: 60, windowSeconds: 60, identifier: 'device-token' })
   setResponseHeader(event, 'Cache-Control', 'no-store')
   setResponseHeader(event, 'Pragma', 'no-cache')
+
+  // RFC 8628 clients treat a non-RFC 429 as fatal, so a rejected limit is the retryable slow_down error.
+  if (!(await checkRateLimit(event, { maxRequests: 600, windowSeconds: 60, identifier: 'device-token' }))) {
+    setResponseStatus(event, 400)
+    return { error: 'slow_down', error_description: 'Too many requests; slow down' }
+  }
+
+  if (deviceBodyTooLarge(event)) {
+    setResponseStatus(event, 400)
+    return { error: 'invalid_request', error_description: 'Request body too large' }
+  }
 
   // readBody parses JSON and form-urlencoded bodies according to the content-type.
   const parsed = bodySchema.safeParse(await readBody(event).catch(() => undefined))

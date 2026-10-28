@@ -124,7 +124,7 @@ function pendingByUserCode(userCode: string, now: Date) {
   )
 }
 
-function notFound(): never {
+export function notFound(): never {
   throw createError({
     statusCode: 404,
     statusMessage: 'Not Found',

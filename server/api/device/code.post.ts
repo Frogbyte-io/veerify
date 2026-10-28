@@ -33,6 +33,7 @@
  */
 import { z } from 'zod'
 import { createDeviceAuthorization } from '~/server/services/device-login'
+import { deviceBodyTooLarge } from '~/server/utils/device-http'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 
 const bodySchema = z.object({ client_name: z.string().trim().max(60).optional() })
@@ -42,6 +43,11 @@ export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'Cache-Control', 'no-store')
   setResponseHeader(event, 'Pragma', 'no-cache')
 
+  if (deviceBodyTooLarge(event)) {
+    setResponseStatus(event, 400)
+    return { error: 'invalid_request', error_description: 'Request body too large' }
+  }
+
   const parsed = bodySchema.safeParse((await readBody(event).catch(() => undefined)) ?? {})
   if (!parsed.success) {
     setResponseStatus(event, 400)
@@ -49,7 +55,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const created = await createDeviceAuthorization({ clientName: parsed.data.client_name })
-  const baseUrl = (process.env.BETTER_AUTH_URL || getRequestURL(event).origin).replace(/\/+$/, '')
+  const baseUrl = (process.env.BETTER_AUTH_URL || 'http://localhost:3000').replace(/\/+$/, '')
   const verificationUri = `${baseUrl}/device`
   return {
     device_code: created.deviceCode,

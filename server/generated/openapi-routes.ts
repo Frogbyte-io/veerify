@@ -974,7 +974,7 @@ export const openapiPaths = {
         "Device login"
       ],
       "summary": "Poll for the device login token (RFC 8628)",
-      "description": "Public. Poll no faster than the interval. Accepts JSON or application/x-www-form-urlencoded. Errors are RFC 8628 bodies with HTTP 400: authorization_pending, slow_down, access_denied, expired_token, invalid_grant, invalid_request. The issued key is a personal API key valid for 90 days. Rate limited to 60 requests per 60 s per IP.",
+      "description": "Public. Poll no faster than the interval. Accepts JSON or application/x-www-form-urlencoded. Errors are RFC 8628 bodies with HTTP 400: authorization_pending, slow_down, access_denied, expired_token, invalid_grant, invalid_request. The issued key is a personal API key valid for 90 days. Rate limited to 600 requests per 60 s per IP; over the limit the response is the RFC error slow_down (HTTP 400).",
       "operationId": "pollDeviceToken",
       "requestBody": {
         "required": true,
@@ -1045,9 +1045,6 @@ export const openapiPaths = {
         },
         "400": {
           "description": "RFC 8628 error body: { error, error_description }"
-        },
-        "429": {
-          "description": "Rate limit exceeded"
         }
       }
     }

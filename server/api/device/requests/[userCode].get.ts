@@ -16,10 +16,9 @@
  *       404: { description: "Code not found or expired" }
  *       429: { description: "Rate limit exceeded" }
  */
-import { findPendingByUserCode, formatUserCode, normalizeUserCode } from '~/server/services/device-login'
+import { findPendingByUserCode, formatUserCode, normalizeUserCode, notFound } from '~/server/services/device-login'
 import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 import { requireRateLimit } from '~/server/utils/rate-limit'
-import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 export default defineEventHandler(async (event) => {
   const session = await requireInteractiveSession(event)
@@ -32,13 +31,7 @@ export default defineEventHandler(async (event) => {
 
   const userCode = getRouterParam(event, 'userCode') ?? ''
   const pending = await findPendingByUserCode(userCode)
-  if (!pending) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Code not found or expired'),
-    })
-  }
+  if (!pending) notFound()
   return {
     data: {
       userCode: formatUserCode(normalizeUserCode(userCode)),

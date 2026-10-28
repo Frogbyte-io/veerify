@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   params: {} as Record<string, string>,
   status: undefined as number | undefined,
   headers: {} as Record<string, string>,
+  requestHeaders: {} as Record<string, string>,
 }))
 
 const requireInteractiveSession = vi.hoisted(() =>
@@ -17,6 +18,7 @@ const requireInteractiveSession = vi.hoisted(() =>
     return { user: { id: 'user-1' } }
   })
 )
+const checkRateLimit = vi.hoisted(() => vi.fn(async (_e: unknown, _c: unknown) => true))
 const requireRateLimit = vi.hoisted(() => vi.fn(async (_e: unknown, _c: unknown) => undefined))
 const service = vi.hoisted(() => ({
   createDeviceAuthorization: vi.fn(),
@@ -39,9 +41,14 @@ vi.stubGlobal('setResponseHeader', (_e: unknown, name: string, value: string) =>
   state.headers[name] = value
 })
 vi.stubGlobal('getRequestURL', () => new URL('http://req.example/api/device/code'))
+vi.stubGlobal(
+  'getHeader',
+  (e: { node?: { req: { headers: Record<string, string> } } }, name: string) =>
+    state.requestHeaders[name] ?? e?.node?.req?.headers?.[name]
+)
 
 vi.mock('~/server/utils/auth-middleware', () => ({ requireInteractiveSession }))
-vi.mock('~/server/utils/rate-limit', () => ({ requireRateLimit }))
+vi.mock('~/server/utils/rate-limit', () => ({ requireRateLimit, checkRateLimit }))
 vi.mock('~/server/utils/response', () => ({
   createSuccessResponse: (data: unknown) => ({ success: true, data }),
   createErrorResponse: (code: string, message: string, details?: unknown) => ({
@@ -52,6 +59,13 @@ vi.mock('~/server/utils/response', () => ({
 }))
 vi.mock('~/server/services/device-login', () => ({
   ...service,
+  notFound: () => {
+    throw Object.assign(new Error('Not Found'), {
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: { success: false, error: { code: 'NOT_FOUND', message: 'Code not found or expired' } },
+    })
+  },
   formatUserCode: (c: string) => `${c.slice(0, 4)}-${c.slice(4)}`,
   normalizeUserCode: (c: string) => c.toUpperCase().replace(/[^BCDFGHJKLMNPQRSTVWXZ]/g, ''),
 }))
@@ -78,7 +92,14 @@ const notFoundError = () =>
 
 beforeEach(() => {
   vi.clearAllMocks()
-  Object.assign(state, { body: undefined, principal: false, params: {}, status: undefined, headers: {} })
+  Object.assign(state, {
+    body: undefined,
+    principal: false,
+    params: {},
+    status: undefined,
+    headers: {},
+    requestHeaders: {},
+  })
   process.env.BETTER_AUTH_URL = 'https://app.example.com'
 })
 
@@ -120,6 +141,17 @@ describe('POST /api/device/code', () => {
     expect(service.createDeviceAuthorization).toHaveBeenCalledWith({ clientName: undefined })
   })
 
+  it('falls back to localhost, not the request origin, when BETTER_AUTH_URL is unset', async () => {
+    delete process.env.BETTER_AUTH_URL
+    service.createDeviceAuthorization.mockResolvedValue({
+      deviceCode: 'd',
+      userCode: 'BCDF-GHJK',
+      expiresIn: 600,
+      interval: 5,
+    })
+    expect((await codeHandler({})).verification_uri).toBe('http://localhost:3000/device')
+  })
+
   it('rejects an over-long client_name as invalid_request', async () => {
     state.body = { client_name: 'x'.repeat(61) }
     expect(await codeHandler({})).toMatchObject({ error: 'invalid_request' })
@@ -149,11 +181,53 @@ describe('POST /api/device/token', () => {
     expect(state.status).toBe(200)
     expect(state.headers['Cache-Control']).toBe('no-store')
     expect(state.headers.Pragma).toBe('no-cache')
-    expect(requireRateLimit).toHaveBeenCalledWith(expect.anything(), {
-      maxRequests: 60,
+    expect(checkRateLimit).toHaveBeenCalledWith(expect.anything(), {
+      maxRequests: 600,
       windowSeconds: 60,
       identifier: 'device-token',
     })
+  })
+
+  it('returns 400 slow_down with no-store when the IP limit rejects, without polling', async () => {
+    checkRateLimit.mockResolvedValueOnce(false)
+    state.body = { device_code: 'vfy_dev_x' }
+    const res = await tokenHandler({})
+    expect(state.status).toBe(400)
+    expect(res).toEqual({ error: 'slow_down', error_description: 'Too many requests; slow down' })
+    expect(state.headers['Cache-Control']).toBe('no-store')
+    expect(state.headers.Pragma).toBe('no-cache')
+    expect(service.pollDeviceToken).not.toHaveBeenCalled()
+  })
+
+  it('rejects an oversized body as invalid_request before reading it (token and code)', async () => {
+    state.requestHeaders['content-length'] = String(8 * 1024 + 1)
+    state.body = { device_code: 'x' }
+    expect(await tokenHandler({})).toMatchObject({ error: 'invalid_request' })
+    expect(state.status).toBe(400)
+    state.status = undefined
+    expect(await codeHandler({})).toMatchObject({ error: 'invalid_request' })
+    expect(state.status).toBe(400)
+    expect(service.pollDeviceToken).not.toHaveBeenCalled()
+    expect(service.createDeviceAuthorization).not.toHaveBeenCalled()
+  })
+
+  it('reads a real form-urlencoded body through the token handler', async () => {
+    vi.stubGlobal('readBody', h3ReadBody)
+    try {
+      const req = new IncomingMessage(new Socket())
+      req.method = 'POST'
+      const raw = `grant_type=${encodeURIComponent(GRANT)}&device_code=vfy_dev_form`
+      req.headers['content-type'] = 'application/x-www-form-urlencoded'
+      req.headers['content-length'] = String(Buffer.byteLength(raw))
+      req.push(raw)
+      req.push(null)
+      service.pollDeviceToken.mockResolvedValue({ ok: true, accessToken: 'vfy_usr_f', expiresIn: 1 })
+      const res = await tokenHandler(createEvent(req, new ServerResponse(req)))
+      expect(service.pollDeviceToken).toHaveBeenCalledWith('vfy_dev_form')
+      expect(res).toMatchObject({ access_token: 'vfy_usr_f' })
+    } finally {
+      vi.stubGlobal('readBody', async () => state.body)
+    }
   })
 
   it('rejects a wrong grant_type and a missing device_code as invalid_request', async () => {
