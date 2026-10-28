@@ -10,7 +10,7 @@
  *     parameters:
  *       - { name: userCode, in: path, required: true, schema: { type: string }, example: "BCDF-GHJK" }
  *     responses:
- *       200: { description: "The pending request: userCode, clientName, expiresAt" }
+ *       200: { description: "The pending request: userCode, clientName, createdAt, expiresAt" }
  *       401: { description: "Not authenticated" }
  *       403: { description: "Browser session only" }
  *       404: { description: "Code not found or expired" }
@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
     data: {
       userCode: formatUserCode(normalizeUserCode(userCode)),
       clientName: pending.clientName,
+      createdAt: pending.createdAt,
       expiresAt: pending.expiresAt,
     },
   }

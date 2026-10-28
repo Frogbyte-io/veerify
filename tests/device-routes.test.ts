@@ -55,7 +55,12 @@ vi.mock('~/server/utils/response', () => ({
     success: false,
     error: { code, message, details },
   }),
-  ErrorCode: { VALIDATION_ERROR: 'VALIDATION_ERROR', NOT_FOUND: 'NOT_FOUND', CONFLICT: 'CONFLICT' },
+  ErrorCode: {
+    VALIDATION_ERROR: 'VALIDATION_ERROR',
+    NOT_FOUND: 'NOT_FOUND',
+    CONFLICT: 'CONFLICT',
+    FORBIDDEN: 'FORBIDDEN',
+  },
 }))
 vi.mock('~/server/services/device-login', () => ({
   ...service,
@@ -150,6 +155,18 @@ describe('POST /api/device/code', () => {
       interval: 5,
     })
     expect((await codeHandler({})).verification_uri).toBe('http://localhost:3000/device')
+  })
+
+  it('strips control, format and bidi characters from client_name before trimming', async () => {
+    service.createDeviceAuthorization.mockResolvedValue({
+      deviceCode: 'd',
+      userCode: 'BCDF-GHJK',
+      expiresIn: 600,
+      interval: 5,
+    })
+    state.body = { client_name: '‮ Claude\u0000 Code​\n ' }
+    await codeHandler({})
+    expect(service.createDeviceAuthorization).toHaveBeenCalledWith({ clientName: 'Claude Code' })
   })
 
   it('rejects an over-long client_name as invalid_request', async () => {
@@ -295,8 +312,11 @@ describe('lookup', () => {
   it('returns the formatted code, client name and expiry', async () => {
     const expiresAt = new Date('2026-10-28T12:00:00Z')
     state.params = { userCode: 'bcdfghjk' }
-    service.findPendingByUserCode.mockResolvedValue({ id: 'i', clientName: 'Claude', expiresAt })
-    expect(await lookupHandler({})).toEqual({ data: { userCode: 'BCDF-GHJK', clientName: 'Claude', expiresAt } })
+    const createdAt = new Date('2026-10-28T11:50:00Z')
+    service.findPendingByUserCode.mockResolvedValue({ id: 'i', clientName: 'Claude', expiresAt, createdAt })
+    expect(await lookupHandler({})).toEqual({
+      data: { userCode: 'BCDF-GHJK', clientName: 'Claude', createdAt, expiresAt },
+    })
   })
 
   it('gives identical 404 bodies for unknown and expired codes', async () => {
@@ -312,6 +332,45 @@ describe('lookup', () => {
       d: b.data,
     })
     expect(a.data.error).toMatchObject({ code: 'NOT_FOUND', message: 'Code not found or expired' })
+  })
+})
+
+describe.each([
+  ['approve', () => approveHandler],
+  ['deny', () => denyHandler],
+])('cross-site defence on %s', (_name, handler) => {
+  beforeEach(() => {
+    state.params = { userCode: 'BCDF-GHJK' }
+  })
+
+  it.each([
+    ['Sec-Fetch-Site cross-site', { 'sec-fetch-site': 'cross-site' }],
+    ['Sec-Fetch-Site same-site', { 'sec-fetch-site': 'same-site' }],
+    ['Sec-Fetch-Site none', { 'sec-fetch-site': 'none' }],
+    ['a foreign Origin', { origin: 'https://evil.example' }],
+    ['a malformed Origin', { origin: 'null' }],
+    [
+      'same-origin fetch metadata but a foreign Origin',
+      { 'sec-fetch-site': 'same-origin', origin: 'https://evil.example' },
+    ],
+  ])('returns 403 for %s before authenticating', async (_label, headers) => {
+    Object.assign(state.requestHeaders, headers)
+    await expect(handler()({})).rejects.toMatchObject({
+      statusCode: 403,
+      data: { error: { code: 'FORBIDDEN', message: 'Cross-site request blocked' } },
+    })
+    expect(requireInteractiveSession).not.toHaveBeenCalled()
+    expect(service.approveDeviceAuthorization).not.toHaveBeenCalled()
+    expect(service.denyDeviceAuthorization).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['no fetch metadata and no Origin', {}],
+    ['same-origin Sec-Fetch-Site', { 'sec-fetch-site': 'same-origin' }],
+    ['an Origin equal to the request origin', { origin: 'http://req.example' }],
+  ])('allows %s', async (_label, headers) => {
+    Object.assign(state.requestHeaders, headers)
+    await expect(handler()({})).resolves.toBeTruthy()
   })
 })
 

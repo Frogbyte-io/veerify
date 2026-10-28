@@ -12,16 +12,18 @@
  *     responses:
  *       200: { description: "Approved; data.status is approved" }
  *       401: { description: "Not authenticated" }
- *       403: { description: "Browser session only" }
+ *       403: { description: "Browser session only, or a cross-site request (Sec-Fetch-Site / Origin check)" }
  *       404: { description: "Code not found or expired" }
  *       409: { description: "Already 25 active API keys" }
  *       429: { description: "Rate limit exceeded" }
  */
 import { approveDeviceAuthorization } from '~/server/services/device-login'
+import { requireSameOrigin } from '~/server/utils/device-http'
 import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 
 export default defineEventHandler(async (event) => {
+  requireSameOrigin(event)
   const session = await requireInteractiveSession(event)
   await requireRateLimit(event, {
     maxRequests: 10,

@@ -48,6 +48,14 @@ test('signed-out user logs in, approves a device request and the agent gets a ke
   await expect(page.getByTestId('device-client-name')).toHaveText(clientName, { timeout: 20_000 })
   await expect(page.getByTestId('device-user-code')).toHaveText(device.user_code)
   await expect(page.getByTestId('device-countdown')).toHaveText(/^\d{2}:\d{2}$/)
+  await expect(page.getByTestId('device-title')).toContainText(
+    `An agent calling itself "${clientName}" wants to act as you in Veerify`
+  )
+  await expect(page.getByTestId('device-request')).toContainText(
+    'Check that this code matches the one your agent shows you.'
+  )
+  await expect(page.getByTestId('device-request')).toContainText('Only approve if you started this request yourself.')
+  await expect(page.getByTestId('device-requested-ago')).toHaveText(/^Requested /)
 
   await page.getByTestId('device-allow').click()
   await expect(page.getByTestId('device-result')).toContainText('Approved')
@@ -81,4 +89,10 @@ test('user denies a device request and the agent gets access_denied', async ({ p
   const token = await pollToken(request, device.device_code)
   expect(token.status).toBe(400)
   expect(token.body.error).toBe('access_denied')
+})
+
+test('the approval page cannot be framed', async ({ request }) => {
+  const response = await request.get('/device')
+  expect(response.headers()['x-frame-options']).toBe('DENY')
+  expect(response.headers()['content-security-policy']).toContain("frame-ancestors 'none'")
 })

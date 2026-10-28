@@ -13,7 +13,7 @@
  *           schema:
  *             type: object
  *             properties:
- *               client_name: { type: string, maxLength: 60, description: "Shown to the user on the approval page and used as the key name" }
+ *               client_name: { type: string, maxLength: 60, description: "Shown to the user on the approval page and used as the key name. Control and format characters are removed" }
  *     responses:
  *       200:
  *         description: "Device authorization response"
@@ -33,10 +33,17 @@
  */
 import { z } from 'zod'
 import { createDeviceAuthorization } from '~/server/services/device-login'
-import { deviceBodyTooLarge } from '~/server/utils/device-http'
+import { deviceBodyTooLarge, getPublicBaseUrl } from '~/server/utils/device-http'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 
-const bodySchema = z.object({ client_name: z.string().trim().max(60).optional() })
+/** Control, format and bidi characters are dropped so a client cannot spoof or hide text on the approval page. */
+const bodySchema = z.object({
+  client_name: z
+    .string()
+    .transform((value) => value.replace(/[\p{Cc}\p{Cf}]/gu, '').trim())
+    .pipe(z.string().max(60))
+    .optional(),
+})
 
 export default defineEventHandler(async (event) => {
   await requireRateLimit(event, { maxRequests: 10, windowSeconds: 60, identifier: 'device-code' })
@@ -55,8 +62,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const created = await createDeviceAuthorization({ clientName: parsed.data.client_name })
-  const baseUrl = (process.env.BETTER_AUTH_URL || 'http://localhost:3000').replace(/\/+$/, '')
-  const verificationUri = `${baseUrl}/device`
+  const verificationUri = `${getPublicBaseUrl()}/device`
   return {
     device_code: created.deviceCode,
     user_code: created.userCode,

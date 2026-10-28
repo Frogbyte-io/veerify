@@ -20,8 +20,12 @@
         </div>
 
         <div v-else-if="request" class="grid gap-4" data-testid="device-request">
-          <h2 class="text-lg font-semibold text-center">
-            <strong data-testid="device-client-name">{{ clientDisplayName }}</strong> wants to act as you in Veerify
+          <h2 class="text-lg font-semibold text-center" data-testid="device-title">
+            <template v-if="request.clientName">
+              An agent calling itself "<strong data-testid="device-client-name">{{ request.clientName }}</strong
+              >" wants to act as you in Veerify
+            </template>
+            <template v-else>An agent wants to act as you in Veerify</template>
           </h2>
           <p class="text-sm text-muted-foreground text-center">
             It will be able to do anything you can do. You can revoke it any time in Settings → API keys.
@@ -29,6 +33,16 @@
           <p class="text-sm font-medium text-center">Only approve if you started this request yourself.</p>
           <p data-testid="device-user-code" class="text-center font-mono text-3xl tracking-widest">
             {{ request.userCode }}
+          </p>
+          <p class="text-sm text-muted-foreground text-center">
+            Check that this code matches the one your agent shows you.
+          </p>
+          <p
+            v-if="requestedAgoText"
+            class="text-xs text-muted-foreground text-center"
+            data-testid="device-requested-ago"
+          >
+            {{ requestedAgoText }}
           </p>
 
           <p v-if="isExpired" class="text-sm text-destructive text-center" role="alert" data-testid="device-expired">
@@ -121,8 +135,12 @@ export default {
     }
   },
   computed: {
-    clientDisplayName() {
-      return this.request?.clientName || 'An agent'
+    requestedAgoText() {
+      if (!this.request?.createdAt) return ''
+      const seconds = Math.max(0, Math.floor((this.now - new Date(this.request.createdAt).getTime()) / 1000))
+      if (seconds < 60) return 'Requested less than a minute ago'
+      const minutes = Math.floor(seconds / 60)
+      return `Requested ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
     },
     remainingMs() {
       if (!this.request?.expiresAt) return 0
