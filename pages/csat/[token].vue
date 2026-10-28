@@ -170,9 +170,12 @@ function readErrorMessage(error: unknown, fallback: string): string {
   return typeof details.message === 'string' ? details.message : fallback
 }
 
+// Untyped call: the typed Nitro route map makes inference for this path exceed the instantiation depth limit.
+const fetchCsat = $fetch as unknown as <T>(url: string, options?: { method?: 'POST'; body?: unknown }) => Promise<T>
+
 async function loadSurvey() {
   try {
-    const payload = await $fetch<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
+    const payload = await fetchCsat<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
     readResponse(payload)
 
     const requestedRating = route.query.rating
@@ -197,12 +200,12 @@ async function submitRating(rating: number) {
   isSubmitting.value = true
   submitError.value = ''
   try {
-    const payload = await $fetch<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`, {
+    const payload = await fetchCsat<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`, {
       method: 'POST',
       body: { rating },
     })
     selectedRating.value = rating
-    const refreshed = await $fetch<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
+    const refreshed = await fetchCsat<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
     readResponse(refreshed)
     if (!response.value) readResponse(payload)
   } catch (error: unknown) {
@@ -217,11 +220,11 @@ async function submitComment() {
   isSubmitting.value = true
   submitError.value = ''
   try {
-    await $fetch<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`, {
+    await fetchCsat<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`, {
       method: 'POST',
       body: { comment: comment.value.trim() },
     })
-    const refreshed = await $fetch<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
+    const refreshed = await fetchCsat<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
     readResponse(refreshed)
   } catch (error: unknown) {
     submitError.value = readErrorMessage(error, 'We could not save your note. Please try again.')

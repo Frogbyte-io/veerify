@@ -134,6 +134,48 @@ interface CustomDomainNotificationOptions {
   domain: string
 }
 
+interface DeviceKeyIssuedOptions {
+  name: string
+  keyName: string
+  issuedAt: Date
+  settingsUrl: string
+}
+
+export function getDeviceKeyIssuedTemplate({ name, keyName, issuedAt, settingsUrl }: DeviceKeyIssuedOptions) {
+  const subject = 'New API key created via device login'
+  const when = issuedAt.toUTCString()
+
+  const safeName = escapeHtml(name)
+  const safeKeyName = escapeHtml(keyName)
+  const safeUrl = escapeHtml(settingsUrl)
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #333;">New API key created</h1>
+      <p>Hi ${safeName},</p>
+      <p>An agent was approved through device login and a new API key was created for your account.</p>
+      <p>Key name: <strong>${safeKeyName}</strong><br />Created: ${escapeHtml(when)}</p>
+      <p><strong>If this wasn't you, revoke it now in Settings → API keys.</strong></p>
+      <p><a href="${safeUrl}" style="color: #2563eb;">Open API keys</a></p>
+    </div>
+  `
+
+  const text = `New API key created
+
+Hi ${name},
+
+An agent was approved through device login and a new API key was created for your account.
+
+Key name: ${keyName}
+Created: ${when}
+
+If this wasn't you, revoke it now in Settings → API keys:
+${settingsUrl}
+`
+
+  return { subject, html, text }
+}
+
 export function getEmailVerificationTemplate({ name, verificationUrl }: EmailVerificationOptions) {
   const subject = 'Verify your email address'
 

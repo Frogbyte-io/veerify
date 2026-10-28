@@ -20,6 +20,7 @@ export const PUBLIC_HOST_APP_ROUTES = [
   '/get-started',
   '/support',
   '/marketing',
+  '/device',
 ]
 
 /** Routes that need a session on the app host. */

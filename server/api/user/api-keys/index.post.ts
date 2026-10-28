@@ -24,15 +24,12 @@
  *       409: { description: "Already 25 active keys" }
  */
 import { z } from 'zod'
-import { and, count, eq, gt, isNull, or } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { userApiKey } from '~/server/database/schema/credentials'
 import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
-import { generateUserApiKey } from '~/server/utils/user-api-keys'
-
-const MAX_ACTIVE_KEYS = 25
+import { MAX_ACTIVE_KEYS, countActiveUserApiKeys, generateUserApiKey } from '~/server/utils/user-api-keys'
 
 const createKeySchema = z.object({
   name: z.string().trim().min(1).max(60),
@@ -44,17 +41,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, createKeySchema)
   const now = new Date()
 
-  const [active] = await db
-    .select({ count: count() })
-    .from(userApiKey)
-    .where(
-      and(
-        eq(userApiKey.userId, session.user.id),
-        isNull(userApiKey.revokedAt),
-        or(isNull(userApiKey.expiresAt), gt(userApiKey.expiresAt, now))
-      )
-    )
-  if ((active?.count ?? 0) >= MAX_ACTIVE_KEYS) {
+  if ((await countActiveUserApiKeys(session.user.id)) >= MAX_ACTIVE_KEYS) {
     throw createError({
       statusCode: 409,
       statusMessage: 'Conflict',

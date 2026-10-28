@@ -32,6 +32,10 @@ export default defineEventHandler(() => {
       { name: 'GitHub', description: 'GitHub integration endpoints' },
       { name: 'App API', description: 'Public API for apps submitting feedback with a project app key' },
       { name: 'User', description: 'Your account and personal API keys' },
+      {
+        name: 'Device login',
+        description: 'Agent device login: request a code, approve it in the browser, redeem a key',
+      },
       { name: 'MCP', description: 'Model Context Protocol endpoint for agents' },
       { name: 'Imports', description: 'Import feedback, roadmap and changelog from other sources' },
       {
