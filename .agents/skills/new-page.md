@@ -45,13 +45,16 @@ Only add if the prefix is not already covered by an existing entry.
 
 ```vue
 <template>
-  <div class="flex flex-col gap-6 p-6">
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">Page Title</h1>
-      <p class="text-muted-foreground text-sm">Brief description of this page.</p>
-    </div>
+  <!-- The dashboard layout comes from route meta (nuxt.config.ts). Never wrap the page in <NuxtLayout>. -->
+  <PageContainer>
+    <PageHeader title="Page Title" description="Brief description of this page.">
+      <template #actions>
+        <!-- Render actions from the first paint; disable them while loading -->
+        <Button :disabled="isLoading">Action</Button>
+      </template>
+    </PageHeader>
 
-    <!-- Loading state -->
+    <!-- Loading state: shaped like the content. One element per branch. -->
     <div v-if="isLoading" class="flex flex-col gap-4">
       <Skeleton class="h-32 w-full rounded-lg" />
       <Skeleton class="h-32 w-full rounded-lg" />
@@ -67,7 +70,7 @@ Only add if the prefix is not already covered by an existing entry.
     <div v-else>
       <!-- page content here -->
     </div>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
@@ -108,23 +111,16 @@ export default {
 
 ```vue
 <template>
-  <div class="flex min-h-screen items-center justify-center">
-    <Card class="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Page Title</CardTitle>
-        <CardDescription>Description here.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <!-- form content -->
-      </CardContent>
-    </Card>
-  </div>
+  <NuxtLayout name="clean">
+    <AuthCard title="Page Title" description="Description here.">
+      <!-- form content -->
+    </AuthCard>
+  </NuxtLayout>
 </template>
 
 <script>
 export default {
   name: 'PageName',
-  layout: 'clean',
 
   data() {
     return {
@@ -154,7 +150,9 @@ export default {
 
 - [ ] File is at the correct path under `pages/`
 - [ ] Protected route prefix is in `middleware/auth.global.ts` `protectedRoutes` array (if protected)
-- [ ] Layout is set via `layout: 'clean'` for auth pages (dashboard is the default, no need to set explicitly)
+- [ ] Dashboard page: its top-level folder is in `DASHBOARD_PAGE` in `nuxt.config.ts`, and it has no `<NuxtLayout>` wrapper
+- [ ] Dashboard page uses `PageContainer` + `PageHeader` (width `narrow` for detail/editor pages, `full` for boards)
+- [ ] Clean page wraps its content in `<NuxtLayout name="clean">` and uses `AuthCard`
 - [ ] Options API used — no `<script setup>`, no `ref()`, no `reactive()`
 - [ ] Loading state uses `<Skeleton>` — no placeholder/fake data
 - [ ] Error state has a retry mechanism

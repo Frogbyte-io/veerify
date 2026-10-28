@@ -56,7 +56,7 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 ├── middleware/
 │   └── auth.global.ts           # Client-side route guard (protected vs auth routes)
 ├── pages/                       # File-based routing (Nuxt convention)
-│   ├── index.vue                # Redirect: /dashboard if authed, /login otherwise
+│   ├── [...slug].vue            # Public project site, and `/` (redirect to /dashboard or /login)
 │   ├── login/index.vue
 │   ├── signup/index.vue
 │   ├── forgot-password/index.vue
@@ -516,13 +516,19 @@ Veerify wins. Agent guide: `docs/mcp.md`.
 
 ### Layouts
 
-- Auth pages (`login`, `signup`, `forgot-password`) use the `clean` layout:
-  ```vue
-  <script>
-  export default { layout: 'clean' }
-  </script>
-  ```
-- All dashboard pages automatically use the `dashboard` layout (set as default or explicitly)
+- Dashboard pages get the `dashboard` layout from route meta, assigned by the `pages:extend` hook in
+  `nuxt.config.ts` (`DASHBOARD_PAGE`). The layout then stays mounted across navigation, so the sidebar never reloads.
+  **Never wrap a dashboard page in `<NuxtLayout>`.** A new top-level dashboard section needs its folder added to
+  `DASHBOARD_PAGE`.
+- Clean pages (auth, public token pages) wrap their content in `<NuxtLayout name="clean">` and use `AuthCard`.
+- Dashboard pages render `PageContainer` (width `default` = `max-w-6xl`, `narrow` = `max-w-3xl` for detail and
+  editor pages, `full` for boards and the inbox) with a `PageHeader` first. The layout owns the gutters: no `p-6`.
+- Header actions render from the first paint (disabled while loading), skeletons match the content's shape, and each
+  `v-if` loading/content branch is a single element (multi-root `<template v-if>` branches break hydration).
+- Settings-style pages use `SettingsTabs` (`?tab=` in the URL; visited and hovered tabs stay mounted).
+- Pages that work in the active project read it from `lib/active-project.ts` (`loadActiveProject`), not a raw fetch.
+- The public site is one persistent `PublicProjectShell` (`PublicProjectSite`); tab data goes through
+  `lib/public-cache.ts`.
 
 ### Route Categories
 
