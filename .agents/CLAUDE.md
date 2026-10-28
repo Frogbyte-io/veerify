@@ -215,6 +215,21 @@ Personal API keys (`vfy_usr_...`, Settings → API keys) let an agent act as a u
   requests per 60 s per key. `call_api` refuses `/api/auth/`, `/api/cron/`, `/api/public/auth/`, `/api/user/api-keys`
   and `/api/test`.
 
+### Crawlers and AI agents
+
+Public boards load their data in the browser, so the server adds a machine-readable layer (`server/services/public-site/`):
+
+- `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llms-full.txt` (`server/routes/`) answer per host: the app host
+  describes Veerify, the API and MCP; a workspace subdomain lists its projects (plus `/<project>/llms.txt`); a custom
+  domain describes its project.
+- Any public page is available as markdown at `<page>.md` (board root: `/index.md`) or with `Accept: text/markdown`
+  (handled in `server/middleware/subdomain.ts`).
+- `server/plugins/public-site-head.ts` adds title, description, canonical, Open Graph, JSON-LD and a `<noscript>`
+  copy of the content to SSR HTML.
+- Only what anonymous visitors can see is included: public projects/products, non-hidden feedback (no support-derived
+  items), published changelog entries, and only tools that are on. Snapshots are cached for 60 s per project.
+- New public pages: add them to `lib/public-site-path.ts` and the renderers in `server/services/public-site/render.ts`.
+
 ### Route Guard — `middleware/auth.global.ts`
 
 Runs on the **client only** (`process.server` check skips SSR/build). Categorises routes:
