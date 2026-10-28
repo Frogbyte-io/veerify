@@ -1,8 +1,5 @@
-import { findPublicProjectByDomain } from '~/server/utils/project-access'
-
-function normalizeHostname(value: string) {
-  return value.trim().toLowerCase().replace(/\.$/, '')
-}
+import { resolvePublicHost } from '~/server/utils/public-host'
+import { maybeSendPublicPageMarkdown } from '~/server/services/public-site/negotiation'
 
 function isPageRequest(pathname: string) {
   return (
@@ -22,37 +19,18 @@ export default defineEventHandler(async (event) => {
     return
   }
 
-  const host = getHeader(event, 'host') || ''
-  const appDomain = normalizeHostname(process.env.APP_DOMAIN || 'localhost')
-  const dashboardDomain = normalizeHostname(
-    process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
-  )
-  const hostWithoutPort = normalizeHostname(host.split(':')[0] || '')
-
-  if (hostWithoutPort === appDomain || hostWithoutPort === dashboardDomain) {
+  const host = await resolvePublicHost(event)
+  if (host.kind === 'custom-domain') {
+    event.context.publicOrgSlug = host.orgSlug
+    event.context.publicProjectSlug = host.projectSlug
+  } else if (host.kind === 'subdomain') {
+    event.context.publicOrgSlug = host.orgSlug
+  } else {
     return
   }
 
-  const publicProject = await findPublicProjectByDomain(hostWithoutPort)
-  if (publicProject) {
-    event.context.publicOrgSlug = publicProject.organization.slug
-    event.context.publicProjectSlug = publicProject.project.slug
-    return
-  }
-
-  if (hostWithoutPort.endsWith('.' + appDomain)) {
-    const subdomain = hostWithoutPort.slice(0, -(appDomain.length + 1))
-    if (subdomain && !subdomain.includes('.')) {
-      event.context.publicOrgSlug = subdomain
-      return
-    }
-  }
-
-  if (appDomain === 'localhost' && hostWithoutPort.endsWith('.localhost')) {
-    const subdomain = hostWithoutPort.slice(0, -'.localhost'.length)
-    if (subdomain && !subdomain.includes('.')) {
-      event.context.publicOrgSlug = subdomain
-      return
-    }
-  }
+  // Agents get the page's content as markdown (`<page>.md`, or `Accept: text/markdown`)
+  // instead of the client-rendered app shell.
+  setHeader(event, 'Vary', 'Accept')
+  return maybeSendPublicPageMarkdown(event)
 })
