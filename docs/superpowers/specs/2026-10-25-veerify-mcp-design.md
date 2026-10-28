@@ -114,7 +114,30 @@ pattern is already reviewed and in production):
   two can never be confused at the parser.
 - Managed in **Settings → Security** (or a new "API keys" tab in user settings): list, create, revoke.
 
-**OAuth login** — Better-Auth's MCP/OAuth support (`mcp` / `oidcProvider` plugins ship in 1.5.0; a newer
+**Device login (Phase 3, decided with the user on 2026-10-28)**: an agent that can only send a message asks the user
+to approve it, and receives a personal API key. This follows RFC 8628 (OAuth 2.0 Device Authorization Grant), but the
+issued credential is a `vfy_usr_` personal key rather than a session. That keeps every Phase 1 guarantee: rate limits,
+per-key context, self-protection, revocation in Settings, and `/mcp` accepting keys only. Better-Auth's
+`device-authorization` plugin issues login sessions instead, so the flow is implemented in Veerify.
+
+1. The agent calls `POST /api/device/code` with optional `{ clientName }`. No login is required, and the endpoint is
+   rate-limited. It returns `{ device_code, user_code, verification_uri, verification_uri_complete, expires_in: 600,
+interval: 5 }`. `user_code` looks like `WXYZ-1234`, drawn from an alphabet without look-alike characters.
+   `verification_uri` is `<host>/device`.
+2. The agent shows the user the link.
+3. On `/device` the user signs in (browser session only; a key can't approve), confirms the code, sees "**<client>**
+   wants to act as you in Veerify", and chooses Allow or Deny.
+4. The agent polls `POST /api/device/token` with `{ device_code }`. It gets RFC 8628 errors: `authorization_pending`,
+   `slow_down`, `access_denied` or `expired_token`. Once the user approves, it gets
+   `{ access_token: "vfy_usr_…", token_type: "Bearer" }`, exactly once.
+5. The key is named after the client, is marked as created by device login, and expires after 90 days (my call). It
+   shows in Settings → API keys and can be revoked there.
+
+Approval grants full access, the same as an API key (the user accepted the default; scoped approvals come later). The
+polling secret is stored only as a hash. Each code is single-use for both approval and redemption. User-code entry is
+rate-limited. Unauthenticated `/mcp` responses point to device login.
+
+**OAuth login (later; not in Phase 3)**: Better-Auth's MCP/OAuth support (`mcp` / `oidcProvider` plugins ship in 1.5.0; a newer
 `oauth-provider` package may be the recommended path by build time — builder checks current Better-Auth docs and
 picks; see _Left to the builder_). Requirements regardless of plugin:
 
@@ -322,7 +345,8 @@ Imports can be large, and MCP tool arguments shouldn't carry megabytes, so runs 
    CI check, setup docs. Usable end-to-end with an API key.
 2. **Import**: schema changes, import service and REST, import MCP tools, claiming on signup, port Sleekplan/CSV
    converters and tests, delete `sleekplan-export`.
-3. **OAuth login**: Better-Auth OAuth provider, discovery metadata, consent screen, connected-apps management.
+3. **Device login**: an RFC 8628-style flow that issues a personal key (see _Credentials → Device login_). Standard
+   MCP OAuth (Better-Auth OAuth provider, discovery metadata, connectors for Claude.ai and ChatGPT) comes later.
 4. **Curated setup tools** and a short agent guide (MCP `instructions` string + a docs page with recipes:
    "migrate from Canny", "turn GitHub issues into feedback", "set up a custom domain with Cloudflare").
 
