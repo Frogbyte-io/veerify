@@ -123,6 +123,7 @@ async function exerciseKey(cookieContext: APIRequestContext, bareContext: APIReq
     // No credential at all
     const anonymous = await rpc(bareContext, null, INITIALIZE)
     expect(anonymous.status()).toBe(401)
+    expect(JSON.stringify(await anonymous.json())).toContain('/api/device/code')
     expect(anonymous.headers()['www-authenticate']).toBe('Bearer realm="veerify"')
 
     // A cookie session is not enough: /mcp accepts only personal API keys
@@ -131,6 +132,7 @@ async function exerciseKey(cookieContext: APIRequestContext, bareContext: APIReq
       data: INITIALIZE,
     })
     expect(cookieOnly.status()).toBe(401)
+    expect(JSON.stringify(await cookieOnly.json())).toContain('device')
     expect(cookieOnly.headers()['www-authenticate']).toBe('Bearer realm="veerify"')
 
     // Cookie plus a valid key: the key wins and the request acts as the key

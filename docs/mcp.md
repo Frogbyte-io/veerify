@@ -63,6 +63,7 @@ request, send these headers (on the MCP connection or on direct API calls):
 - `/api/cron/` and `/api/test`: internal and test-only routes;
 - `/api/public/auth/`: public-auth handoff;
 - `/api/user/api-keys`: an agent must not create or revoke keys;
+- `/api/device/`: device login approval is for a human in a browser;
 - anything outside `/api/` (URLs, other hosts), traversal such as `/api/../api/auth/x`, double encoding, and paths
   containing `;` or non-ASCII characters: these could be used to dodge the checks above.
 
@@ -194,6 +195,61 @@ Use `source: "github-issues"` and the issue number as `externalId`, and repeat t
 before are matched by `source` plus `externalId`, so only new issues, comments and votes are created and changed titles
 or bodies update. Anything the team edited in Veerify in the meantime is kept (see `kept` in the preview). Closed or
 deleted issues are not removed from Veerify.
+
+## Headless agents: device login
+
+An agent with no key and no browser can ask the user to approve it (OAuth device flow, RFC 8628). A `/mcp` request
+without a valid key gets 401 with `error.details.hint` pointing here.
+
+```bash
+HOST=https://<your-veerify-host>
+
+# 1. Start. client_name (max 60 characters) is shown to the user and becomes the key name.
+resp=$(curl -s -X POST "$HOST/api/device/code" -H 'content-type: application/json' -d '{"client_name":"My agent"}')
+device_code=$(echo "$resp" | jq -r .device_code)
+interval=$(echo "$resp" | jq -r .interval)
+
+# 2. Show the user this link and wait for them to approve it.
+echo "Open: $(echo "$resp" | jq -r .verification_uri_complete)"
+
+# 3. Poll every `interval` seconds.
+while true; do
+  sleep "$interval"
+  tok=$(curl -s -X POST "$HOST/api/device/token" -H 'content-type: application/json' \
+    -d "{\"device_code\":\"$device_code\"}")
+  err=$(echo "$tok" | jq -r '.error // empty')
+  [ -z "$err" ] && break
+  [ "$err" = "slow_down" ] && interval=$((interval + 5))
+  [ "$err" = "authorization_pending" ] || [ "$err" = "slow_down" ] || { echo "$tok"; exit 1; }
+done
+
+# 4. Use the key as the bearer for /mcp and /api/.
+access_token=$(echo "$tok" | jq -r .access_token)
+```
+
+`/api/device/code` is public, rate limited to 10 per 60 s per IP, and returns `device_code`, `user_code`,
+`verification_uri`, `verification_uri_complete`, `expires_in` (600 s) and `interval` (5 s). The user opens the link,
+signs in if needed, checks the client name and chooses Allow or Deny on the `/device` page.
+
+`/api/device/token` accepts JSON or form-encoded `{ device_code, grant_type? }`. On success it returns 200
+`{ access_token: "vfy_usr_...", token_type: "Bearer", expires_in: 7776000 }`. Failures are 400
+`{ error, error_description }`:
+
+| `error`                 | Meaning and what to do                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| `authorization_pending` | The user has not decided yet. Keep polling.                                                 |
+| `slow_down`             | Polling too fast (or the per-IP limit of 600 per 60 s was hit). Add 5 s to the interval.    |
+| `access_denied`         | The user denied the request, or they already have 25 active keys. Stop.                     |
+| `expired_token`         | The 10 minute window passed. Start over with a new code.                                    |
+| `invalid_grant`         | Unknown or already redeemed `device_code`. Start over.                                      |
+| `invalid_request`       | Malformed request (missing `device_code`, bad `grant_type`, body too large). Fix and retry. |
+
+Security notes:
+
+- Only approve a request you started yourself. The page warns "Only approve if you started this request yourself."
+- The issued key has full access, the same as a key you create in Settings, and expires after 90 days.
+- It appears in Settings, then API keys, as "via device login", counts toward the 25-key cap and can be revoked there.
+- Agents cannot use `/api/device/` through `call_api`; approving needs a browser session.
 
 ## 7. Coverage of the API
 

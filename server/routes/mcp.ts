@@ -18,6 +18,12 @@ import { getClientIp } from '~/server/utils/rate-limit'
 const WWW_AUTHENTICATE = 'Bearer realm="veerify"'
 const CONTEXT_HEADERS = ['x-veerify-organization', 'x-veerify-project'] as const
 
+/** Points a client without a key at Settings or device login, using the configured base URL. */
+function missingKeyHint(): string {
+  const baseUrl = (process.env.BETTER_AUTH_URL || 'http://localhost:3000').replace(/\/+$/, '')
+  return `No API key. Create one in Settings → API keys, or use device login: POST ${baseUrl}/api/device/code`
+}
+
 async function requireCredentialPrincipal(event: H3Event): Promise<AuthSession> {
   let principal: AuthSession
   try {
@@ -25,6 +31,10 @@ async function requireCredentialPrincipal(event: H3Event): Promise<AuthSession> 
   } catch (error) {
     if ((error as { statusCode?: number })?.statusCode === 401) {
       setResponseHeader(event, 'WWW-Authenticate', WWW_AUTHENTICATE)
+      const failure = error as { data?: { error?: { details?: Record<string, unknown> } } }
+      if (failure.data?.error) {
+        failure.data.error.details = { ...failure.data.error.details, hint: missingKeyHint() }
+      }
     }
     throw error
   }
@@ -36,7 +46,8 @@ async function requireCredentialPrincipal(event: H3Event): Promise<AuthSession> 
       statusMessage: 'Unauthorized',
       data: createErrorResponse(
         ErrorCode.UNAUTHORIZED,
-        'The MCP endpoint requires a personal API key (Bearer vfy_usr_…)'
+        'The MCP endpoint requires a personal API key (Bearer vfy_usr_…)',
+        { hint: missingKeyHint() }
       ),
     })
   }

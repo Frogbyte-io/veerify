@@ -214,6 +214,10 @@ Personal API keys (`vfy_usr_...`, Settings → API keys) let an agent act as a u
 - `/mcp` (`server/routes/mcp.ts`, tools in `server/mcp/`) is POST-only, key principals only, 4 MiB body limit, 600
   requests per 60 s per key. `call_api` refuses `/api/auth/`, `/api/cron/`, `/api/public/auth/`, `/api/user/api-keys`
   and `/api/test`.
+- Device login (RFC 8628, `server/services/device-login.ts`): `/api/device/code` and `/api/device/token` are public; the
+  `/device` page and `/api/device/requests/*` need a browser session. An approved request mints a `createdVia: 'device'`
+  key (90 days, full access, counts toward the 25-key cap). `/mcp` 401s carry `error.details.hint` pointing at it.
+  `call_api` refuses `/api/device/`.
 
 ### Crawlers and AI agents
 
@@ -484,6 +488,8 @@ A `project_member` row with role `admin` makes them a project admin.
 | `POST /api/v1/feedback`                                                                     | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)                        |
 | `/api/projects/[slug]/api-keys`                                                             | Required | Project admins manage app keys (Feedback settings → App keys)                                                   |
 | `/api/user/api-keys` (+ `/[keyId]`)                                                         | Required | Browser session only (`requireInteractiveSession`); 403 for personal keys. Max 25 active keys per user          |
+| `POST /api/device/code`, `POST /api/device/token`                                           | Public   | Device login start and poll; rate limited per IP; errors are RFC 8628 bodies                                    |
+| `/api/device/requests/[userCode]` (+ `/approve`, `/deny`)                                   | Required | Browser session only; approving mints a 90-day personal key                                                     |
 | `/api/projects/[slug]/imports` (+ `/[runId]`, `/records`, `/preview`, `/commit`, `/cancel`) | Required | Project admins only (`requireProjectBySlug` with `admin: true`); work with keys. MCP tools `import_*` wrap them |
 | `GET /api/imports/schema`                                                                   | Required | The `veerify-import/1` JSON Schema and example                                                                  |
 | `POST /mcp`                                                                                 | User key | Personal key principals only (cookie-only gets 401); acts with the key owner's permissions                      |
