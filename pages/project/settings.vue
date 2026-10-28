@@ -52,7 +52,7 @@
       :loading="isLoading || !projectData"
       :skeleton-count="7"
     >
-      <template #default="{ active }">
+      <template #default="{ active, warm }">
         <p
           v-if="!canAdmin && active !== 'danger'"
           class="mb-4 flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
@@ -62,17 +62,16 @@
           Project admins can change this.
         </p>
         <fieldset :disabled="!canAdmin && active !== 'danger'" class="min-w-0 border-0 p-0 m-0">
-          <!-- Keyed by project so a switch remounts the tabs; visited tabs stay alive otherwise -->
-          <KeepAlive :max="10">
+          <!-- Keyed by project so a switch remounts the tabs; warm (visited or hovered) tabs stay mounted -->
+          <div v-for="tab in warm" v-show="tab === active" :key="`${projectData.id}:${tab}`">
             <component
-              :is="TAB_COMPONENTS[active] || 'ProjectSettingsGeneral'"
-              :key="`${projectData.id}:${active}`"
-              v-bind="tabProps(active)"
+              :is="TAB_COMPONENTS[tab] || 'ProjectSettingsGeneral'"
+              v-bind="tabProps(tab)"
               @updated="onProjectUpdated"
               @deleted="onProjectDeleted"
               @products-changed="load({ silent: true })"
             />
-          </KeepAlive>
+          </div>
         </fieldset>
       </template>
     </SettingsTabs>
