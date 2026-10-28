@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
       lastUsedAt: userApiKey.lastUsedAt,
       expiresAt: userApiKey.expiresAt,
       revokedAt: userApiKey.revokedAt,
+      createdVia: userApiKey.createdVia,
     })
     .from(userApiKey)
     .where(eq(userApiKey.userId, session.user.id))
