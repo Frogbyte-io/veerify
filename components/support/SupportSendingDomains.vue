@@ -3,10 +3,16 @@
     <CardHeader>
       <div class="flex items-start justify-between gap-3">
         <div>
-          <CardTitle>Sending domains</CardTitle>
+          <CardTitle class="flex items-center gap-2">
+            <Icon name="lucide:globe" class="h-5 w-5" />
+            Domains
+          </CardTitle>
           <CardDescription>
             Register your own domain so replies are sent from your address. Publish the DNS records below, then Veerify
             checks them automatically.
+            <span v-if="usageLine" class="whitespace-nowrap" data-testid="support-sending-domains-usage">
+              {{ usageLine }}
+            </span>
           </CardDescription>
         </div>
         <Button
@@ -364,6 +370,17 @@ export default {
 
     isOperatorManaged() {
       return this.data?.capabilities ? this.data.capabilities.register === false : false
+    },
+
+    /** "N of M in this workspace"; falls back to the project-level counts when `usage` is missing. */
+    usageLine() {
+      const usage = this.data?.usage
+      if (usage && typeof usage.used?.domains === 'number' && typeof usage.limits?.domains === 'number') {
+        return `${usage.used.domains} of ${usage.limits.domains} in this workspace.`
+      }
+      const limit = this.data?.limits?.maxDomains
+      if (this.data && typeof limit === 'number') return `${this.data.domains.length} of ${limit} in this workspace.`
+      return ''
     },
 
     hasActiveRows() {

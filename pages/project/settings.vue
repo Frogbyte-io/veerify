@@ -50,7 +50,7 @@
       default-tab="general"
       test-id-prefix="project-settings"
       :loading="isLoading || !projectData"
-      :skeleton-count="7"
+      :skeleton-count="8"
     >
       <template #default="{ active }">
         <p
@@ -88,6 +88,7 @@ import ProjectSettingsAccess from '~/components/project/ProjectSettingsAccess.vu
 import ProjectSettingsTools from '~/components/project/ProjectSettingsTools.vue'
 import ProjectSettingsAppearance from '~/components/project/ProjectSettingsAppearance.vue'
 import ProjectSettingsDomain from '~/components/project/ProjectSettingsDomain.vue'
+import ProjectSettingsEmail from '~/components/project/ProjectSettingsEmail.vue'
 import ProjectSettingsEmbed from '~/components/project/ProjectSettingsEmbed.vue'
 import ProjectSettingsDanger from '~/components/project/ProjectSettingsDanger.vue'
 
@@ -98,6 +99,7 @@ const TAB_COMPONENTS = {
   tools: 'ProjectSettingsTools',
   appearance: 'ProjectSettingsAppearance',
   domain: 'ProjectSettingsDomain',
+  email: 'ProjectSettingsEmail',
   embed: 'ProjectSettingsEmbed',
   danger: 'ProjectSettingsDanger',
 }
@@ -112,6 +114,7 @@ export default {
     ProjectSettingsTools,
     ProjectSettingsAppearance,
     ProjectSettingsDomain,
+    ProjectSettingsEmail,
     ProjectSettingsEmbed,
     ProjectSettingsDanger,
   },
@@ -155,6 +158,7 @@ export default {
         { id: 'tools', label: 'Tools', icon: 'lucide:layout-grid' },
         { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
         { id: 'domain', label: 'Domain', icon: 'lucide:globe' },
+        { id: 'email', label: 'Email', icon: 'lucide:mail' },
         { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
         { id: 'danger', label: 'Danger zone', icon: 'lucide:alert-triangle', requiresDelete: true },
       ]
@@ -201,6 +205,7 @@ export default {
         case 'embed':
           return { project, organization: this.organization, products: this.products }
         case 'products':
+        case 'email':
           return { project, products: this.products }
         case 'access':
           return { project, organization: this.organization }
