@@ -480,7 +480,7 @@ test('roadmap, changelog and support are hidden until switched on in project set
     for (const [label, href] of [
       ['Roadmap', '/dashboard/roadmap'],
       ['Changelog', '/dashboard/changelog'],
-      ['Support', '/inbox'],
+      ['Inbox', '/inbox'],
     ] as const) {
       const toggle = page.getByRole('switch', { name: label, exact: true })
       await expect(toggle).toBeEnabled()
@@ -526,7 +526,7 @@ test('project members without admin rights see tools read-only and cannot add to
     await expect(memberPage.locator(projectSettingsTabSelector('tools'))).toBeVisible({ timeout: 20_000 })
     await expect(memberPage.getByTestId('project-settings-lock')).toContainText('Project admins can change this')
 
-    const supportSwitch = memberPage.getByRole('switch', { name: 'Support', exact: true })
+    const supportSwitch = memberPage.getByRole('switch', { name: 'Inbox', exact: true })
     await expect(supportSwitch).toBeDisabled()
     await supportSwitch.click({ force: true })
     expect(putRequests).toBe(0)
@@ -559,7 +559,7 @@ test('add tool shortcut is only offered to project admins', async ({ page }) => 
     await expect(addTool).toHaveAttribute('href', '/project/settings?tab=tools')
     await addTool.click()
     await expect(page).toHaveURL(/\/project\/settings\?tab=tools/)
-    await expect(page.getByRole('switch', { name: 'Support', exact: true })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('switch', { name: 'Inbox', exact: true })).toBeVisible({ timeout: 20_000 })
 
     // With every tool switched on there is nothing left to add.
     const allOn = await page.request.put(`/api/projects/${project.slug}`, {

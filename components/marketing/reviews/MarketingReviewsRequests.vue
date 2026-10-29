@@ -74,7 +74,7 @@
 <script>
 import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 
-const TRIGGER_LABELS = { csat: 'Support rating', shipped: 'Shipped', manual: 'Manual' }
+const TRIGGER_LABELS = { csat: 'Helpdesk rating', shipped: 'Shipped', manual: 'Manual' }
 
 export default {
   name: 'MarketingReviewsRequests',

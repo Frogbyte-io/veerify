@@ -86,7 +86,7 @@
           @click="$emit('escalate', mention.id)"
         >
           <Icon name="lucide:life-buoy" class="mr-1.5 h-3.5 w-3.5" />
-          Escalate to support
+          Escalate to inbox
         </Button>
         <Button v-if="conversationLink" as-child variant="ghost" size="sm" data-testid="mention-view-conversation">
           <NuxtLink :to="conversationLink">
