@@ -1,7 +1,7 @@
 # Project email addresses — Design
 
 **Created:** October 28, 2026
-**Status:** Agreed in brainstorm; Veerify phases E1–E2 can start now, E3 waits for the Frogmail contract.
+**Status:** E1 and E2 implemented (branch `t3/brainstorm-frogmail-domain-inboxes`). E3 waits for the Frogmail contract.
 **Sketches:** [sketches.html](sketches.html)
 **Builds on:** [custom sending domains](../2026-10-22-custom-sending-domains/design.md),
 [projects and products](../2026-10-23-projects-products/design.md), [support platform](../2026-08-11-support-platform/design.md)
@@ -16,19 +16,19 @@ domain can have a catch-all.
 
 ## Decisions
 
-| Topic                    | Decision                                                                                                                                                              |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Who                      | Paid feature for every workspace on the Veerify cloud. Inert when self-hosted without a Frogmail key.                                                                 |
-| Domains                  | Anywhere (Porkbun, Cloudflare, …). The customer pastes DNS records; automatic DNS is out of scope for v1.                                                             |
-| Receiving                | Frogmail over Amazon SES inbound: one MX `10 inbound-smtp.us-east-1.amazonaws.com`. Works on the apex and on subdomains.                                              |
-| Existing mail system     | Brand-new domains use the apex. To keep an existing provider (Google Workspace etc.), use a subdomain (`hello@mail.newsite.com`). One hostname cannot be split.       |
-| Forwarding               | Done by Frogmail, not Veerify. Re-sent as `"Jane via hello@newsite.com" <hello@newsite.com>` with `Reply-To: Jane`. Any external destination, after a click-to-confirm. |
-| Spam                     | SES verdicts. Spam and viruses are never forwarded; they land in the inbox's Spam folder.                                                                             |
-| Inbox                    | **One inbox for everything**: the existing support inbox. Assign, resolve, archive, mark spam, delete.                                                                |
-| Tool name                | **Support → Inbox**. Mail is not only support any more.                                                                                                               |
-| Ownership                | Domains and addresses belong to the **project** (brand). An address can be tagged with a product.                                                                     |
-| Replies                  | From Veerify, as the receiving address, through the existing Frogmail SMTP outbox. No third-party mail client.                                                        |
-| Back-compat              | None needed. Tables are renamed outright.                                                                                                                             |
+| Topic                | Decision                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who                  | Paid feature for every workspace on the Veerify cloud. Inert when self-hosted without a Frogmail key.                                                                   |
+| Domains              | Anywhere (Porkbun, Cloudflare, …). The customer pastes DNS records; automatic DNS is out of scope for v1.                                                               |
+| Receiving            | Frogmail over Amazon SES inbound: one MX `10 inbound-smtp.us-east-1.amazonaws.com`. Works on the apex and on subdomains.                                                |
+| Existing mail system | Brand-new domains use the apex. To keep an existing provider (Google Workspace etc.), use a subdomain (`hello@mail.newsite.com`). One hostname cannot be split.         |
+| Forwarding           | Done by Frogmail, not Veerify. Re-sent as `"Jane via hello@newsite.com" <hello@newsite.com>` with `Reply-To: Jane`. Any external destination, after a click-to-confirm. |
+| Spam                 | SES verdicts. Spam and viruses are never forwarded; they land in the inbox's Spam folder.                                                                               |
+| Inbox                | **One inbox for everything**: the existing support inbox. Assign, resolve, archive, mark spam, delete.                                                                  |
+| Tool name            | **Support → Inbox**. Mail is not only support any more.                                                                                                                 |
+| Ownership            | Domains and addresses belong to the **project** (brand). An address can be tagged with a product.                                                                       |
+| Replies              | From Veerify, as the receiving address, through the existing Frogmail SMTP outbox. No third-party mail client.                                                          |
+| Back-compat          | None needed. Tables are renamed outright.                                                                                                                               |
 
 ### Naming: Inbox
 
@@ -52,7 +52,7 @@ sender → MX (SES inbound, us-east-1) → Frogmail: verdicts, store, route by a
     ├─ forward("https://<veerify>/api/support/inbound/mailgun")   inbox delivery (exists today)
     ├─ forward("me@frogbyte.io")                                  only if the destination is confirmed and verdicts pass
     └─ stop()
-  route catch_all / match_recipient(".*@newsite.com") → as configured for "*"
+  route match_recipient("^.*@newsite\.com$") (priority 100) → as configured for "*"
 ```
 
 Veerify owns the configuration and the inbox. Frogmail owns receiving, forwarding, destination confirmation and
@@ -62,15 +62,15 @@ abuse limits. Veerify never re-sends inbound mail itself.
 
 ## Data model
 
-| Change                                                 | Columns                                                                                                                                                                                 |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `support_sending_domain` → **`project_mail_domain`**   | Existing columns, plus `receivingStatus` (`missing_mx` / `active` / `conflict`). `receivesViaProvider` stays.                                                                           |
-| `support_inbox_address` → **`project_mail_address`**   | `inboxId` becomes nullable (null = forward only); `domainId`; `localPart` (`*` = catch-all, one per domain); `productId` nullable; `behaviour` (`mail` / `helpdesk`); `forwardEnabled`. |
-| **`mail_forward_destination`** (new)                   | `domainId`, `email`, `frogmailDestinationId`, `status` and `statusReason` mirrored from Frogmail (`pending` / `verified` / `revoked` / `suspended`), `verifiedAt`, `lastEventAt`. Unique (`domainId`, `email`): consent is per receiving domain, as in Frogmail. |
-| **`project_mail_address_forward`** (new)               | `addressId`, `destinationId`. Several addresses on one domain share one confirmed destination.                                                                                          |
-| `conversation`                                         | `spamAt`, `deletedAt`. Status `closed` is shown as **Archived**. Spam and Trash are folders, not statuses. Trash is purged after 30 days.                                               |
-| **`mail_entitlement`** (new)                           | `organizationId` (unique), `tier` (`standard` / `owner`), `updatedAt`, `updatedBy`. No row means `standard`.                                                                            |
-| `support_inbox.forwardAddress`                         | Dropped. It was never used; forwarding lives on addresses.                                                                                                                              |
+| Change                                               | Columns                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `support_sending_domain` → **`project_mail_domain`** | Existing columns, plus `receivingStatus` (`missing_mx` / `active` / `conflict`). `receivesViaProvider` stays.                                                                                                                                                    |
+| `support_inbox_address` → **`project_mail_address`** | `domainId`; `productId` nullable; `behaviour` (`mail` / `helpdesk`). A catch-all is the address `*@domain` (one per domain via the unique address). E3 adds a nullable `inboxId` (forward only) and `forwardEnabled`.                                            |
+| **`mail_forward_destination`** (new)                 | `domainId`, `email`, `frogmailDestinationId`, `status` and `statusReason` mirrored from Frogmail (`pending` / `verified` / `revoked` / `suspended`), `verifiedAt`, `lastEventAt`. Unique (`domainId`, `email`): consent is per receiving domain, as in Frogmail. |
+| **`project_mail_address_forward`** (new)             | `addressId`, `destinationId`. Several addresses on one domain share one confirmed destination.                                                                                                                                                                   |
+| `conversation`                                       | `mailAddressId` (the receiving address), `behaviour` (snapshot at creation), `spamAt`, `deletedAt`. Status `closed` is shown as **Archived**. Spam and Trash are folders, not statuses. Trash is purged after 30 days.                                           |
+| **`mail_entitlement`** (new)                         | `organizationId` (unique), `tier` (`standard` / `owner`), `updatedAt`, `updatedBy`. No row means `standard`.                                                                                                                                                     |
+| `support_inbox.forwardAddress`                       | Dropped. It was never used; forwarding lives on addresses.                                                                                                                                                                                                       |
 
 Platform addresses (`kind = 'platform'`, on `SUPPORT_PLATFORM_MAIL_DOMAIN`) stay as they are. They are how a
 customer forwards in from a domain we do not receive for.
@@ -124,12 +124,12 @@ Limits count per **workspace** (organization), the future paying customer in the
 
 ## Phases
 
-| Phase  | Scope                                                                                                                                                               | Depends on               |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **E1** | Rename Support → Inbox in the UI and dashboard routes. Archive, Spam and Trash for conversations. Address behaviour (Mail / Helpdesk).                               | —                        |
-| **E2** | Table renames, Email tab, domains moved there, address editor with inbox delivery and catch-all routes, `mail_entitlement`, `lib/mail-plans.ts`, `mail:set-tier`. | —                        |
-| **E3** | Forward destinations, Inbox + forward, SES MX in the DNS wizard, subdomain receiving, forward usage and pause, bounce handling.                                      | Frogmail contract        |
-| **E4** | Docs (`docs/deployment-mail.md`, `docs/mcp.md`, OpenAPI), MCP tools for addresses, staging test against real Frogmail.                                              | E3                       |
+| Phase  | Scope                                                                                                                                                             | Depends on        |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| **E1** | Rename Support → Inbox in the UI and dashboard routes. Archive, Spam and Trash for conversations. Address behaviour (Mail / Helpdesk).                            | —                 |
+| **E2** | Table renames, Email tab, domains moved there, address editor with inbox delivery and catch-all routes, `mail_entitlement`, `lib/mail-plans.ts`, `mail:set-tier`. | —                 |
+| **E3** | Forward destinations, Inbox + forward, SES MX in the DNS wizard, subdomain receiving, forward usage and pause, bounce handling.                                   | Frogmail contract |
+| **E4** | Docs (`docs/deployment-mail.md`, `docs/mcp.md`, OpenAPI), MCP tools for addresses, staging test against real Frogmail.                                            | E3                |
 
 E2 already works with Frogmail as it is today: inbox delivery goes through the existing `forward(url)` routes, on
 domains where an operator has enabled Cloudflare receiving.
@@ -146,7 +146,7 @@ Source: Frogmail `docs/plans/2026-10-28-ses-inbound-forwarding.md` §10. How Vee
 - **Routes** are created only after Veerify's own ownership TXT and Frogmail verification both pass. All customers
   share one Frogmail project, so Veerify's TXT proof is what separates customers.
 - **Routes:** one route per address, `match_recipient("^addr$")` at priority 10 with `stop()`. Catch-all is
-  `match_recipient(".*@domain")` at priority 100. Never `catch_all()`: in the shared project it would span every
+  `match_recipient("^.*@domain\.com$")` at priority 100 (Frogmail reads the anchored form as the domain catch-all). Never `catch_all()`: in the shared project it would span every
   customer's domains.
 - **Destinations:** created implicitly by `forward("x@y")`. Status comes from the route response, the native
   lifecycle webhook (a new receiver with native signing) and a reconcile pass in the 5-minute domain poller.
