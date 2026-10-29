@@ -60,6 +60,13 @@ export interface InboundMessage {
   receivedAt: Date
   /** Header names lowercased, so lookups do not depend on provider casing. */
   rawHeaders: Record<string, string>
+  /**
+   * The provider's spam verdict says spam. A spam message opens its conversation
+   * in the Spam folder and never triggers an auto-reply, SLA, automation or
+   * reopen. False when the provider gives no verdict, and for "possibly spam"
+   * (SES `GRAY`): only a definite verdict moves mail out of the inbox.
+   */
+  isSpam: boolean
 }
 
 /**

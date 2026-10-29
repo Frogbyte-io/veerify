@@ -10,6 +10,15 @@
  *       recipients, projects with support disabled - because a 4xx makes a mail
  *       provider retry the same message indefinitely. Processing failures
  *       return 500 so the provider retries a recorded, reclaimable event.
+ *       The inbox is found by the recipients' exact addresses first, then by a
+ *       catch-all (`*@domain`) of a recipient's exact domain. A new conversation
+ *       records the matched address and its behaviour (`mail` conversations get
+ *       no auto-reply, SLA, CSAT or automation). A message the provider flags
+ *       as spam (Mailgun/Frogmail `X-Mailgun-Sflag: Yes` or `frogmail-verdicts`
+ *       spam/virus FAIL; Postmark `X-Spam-Status: Yes`) opens its conversation
+ *       in Spam, or is appended to an existing one without reopening it, and
+ *       triggers no auto-reply or automation. A reply to a conversation in
+ *       Spam stays in Spam the same way; a reply to one in Trash restores it.
  *     operationId: receiveSupportInboundEmail
  *     security: []
  *     parameters:
@@ -30,7 +39,9 @@ import { eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
 import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
-import { resolveInboxByAddress } from '~/server/utils/support-access'
+import { resolveInboxForRecipients } from '~/server/utils/support-access'
+import { helpdeskAppliesTo } from '~/server/utils/conversation-behaviour'
+import { DEFAULT_MAIL_ADDRESS_BEHAVIOUR, isMailAddressBehaviour, type MailAddressBehaviour } from '~/lib/mail-address'
 import { allocateConversationDisplayId } from '~/server/utils/support-counter'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { resolveThread, updatesForInboundReply } from '~/server/utils/inbound-threading'
@@ -227,12 +238,10 @@ export default defineEventHandler(async (event) => {
     // ---- 5. Resolve the inbox from the envelope, else To/Cc --------------
     // The envelope recipient the provider delivered to wins (Bcc, forwarding,
     // aliases); To/Cc are only consulted when the provider reported none.
+    // Exact addresses for every recipient win over any catch-all (`*@domain`);
+    // a catch-all only covers its own exact domain.
     const recipients = inboundRoutingRecipients(message)
-    let matched: Awaited<ReturnType<typeof resolveInboxByAddress>> = null
-    for (const recipient of recipients) {
-      matched = await resolveInboxByAddress(recipient.address)
-      if (matched) break
-    }
+    const matched = await resolveInboxForRecipients(recipients.map((recipient) => recipient.address))
 
     if (!matched) {
       // Recorded, not 404'd: a 404 makes the provider retry forever, and the
@@ -243,7 +252,11 @@ export default defineEventHandler(async (event) => {
       return accepted('no-matching-inbox')
     }
 
-    const { inbox } = matched
+    const { inbox, address: matchedAddress } = matched
+    // Snapshotted onto a conversation this message opens.
+    const addressBehaviour: MailAddressBehaviour = isMailAddressBehaviour(matchedAddress.behaviour)
+      ? matchedAddress.behaviour
+      : DEFAULT_MAIL_ADDRESS_BEHAVIOUR
 
     if (!(await attachInboundEventInbox(claimToken, inbox.id))) {
       throw new Error('Inbound claim lost before inbox attachment')
@@ -346,6 +359,10 @@ export default defineEventHandler(async (event) => {
 
       let conversationId = thread.conversationId
       let isNewConversation = false
+      // Quiet: the message is filed but nothing reacts to it - no reopen, SLA,
+      // unread re-mark, auto-reply or automation. True for a spam message, and
+      // for any message threaded onto a conversation in Spam.
+      let quiet = message.isSpam
       let initialSla: Awaited<ReturnType<typeof resolveSlaAssignment>> = null
       const threadingCollision =
         thread.matchedBy === 'ambiguous-message-id'
@@ -365,6 +382,9 @@ export default defineEventHandler(async (event) => {
           .from(contact)
           .where(eq(contact.id, contactId))
           .limit(1)
+        // The provider's spam verdict files a new conversation straight into Spam.
+        const spamAt = message.isSpam ? new Date() : null
+        // Null for a `mail` address or a spam message: no SLA.
         initialSla = await resolveSlaAssignment(
           {
             projectId: inbox.projectId,
@@ -373,6 +393,7 @@ export default defineEventHandler(async (event) => {
             companyId: contactRow?.companyId,
             tagIds: [],
             start: message.receivedAt,
+            conversation: { behaviour: addressBehaviour, spamAt, deletedAt: null },
           },
           tx
         )
@@ -385,6 +406,11 @@ export default defineEventHandler(async (event) => {
           displayId,
           subject: message.subject,
           status: 'open',
+          // The address the mail arrived on and its behaviour at this moment;
+          // replies threaded onto the conversation later never change these.
+          mailAddressId: matchedAddress.id,
+          behaviour: addressBehaviour,
+          spamAt,
           ...(initialSla ?? {}),
           // Agent 2's threading matches replies against this. Writing it is
           // what makes their `thread-key` branch reachable at all.
@@ -420,95 +446,107 @@ export default defineEventHandler(async (event) => {
             resolutionDueAt: conversation.resolutionDueAt,
             slaPausedAt: conversation.slaPausedAt,
             slaPausedMinutes: conversation.slaPausedMinutes,
+            behaviour: conversation.behaviour,
+            spamAt: conversation.spamAt,
+            deletedAt: conversation.deletedAt,
           })
           .from(conversation)
           .where(eq(conversation.id, conversationId))
           .for('update')
           .limit(1)
 
-        const updates: Partial<typeof conversation.$inferInsert> = updatesForInboundReply(
-          existingThread,
-          message.receivedAt,
-          new Date()
-        )
-        if (existingThread.slaPausedAt) {
-          const [policyRow] = existingThread.slaPolicyId
-            ? await tx
-                .select({ hours: businessHours })
-                .from(slaPolicy)
-                .leftJoin(businessHours, eq(slaPolicy.businessHoursId, businessHours.id))
-                .where(eq(slaPolicy.id, existingThread.slaPolicyId))
-                .limit(1)
-            : []
-          const resumed = resumeSlaDeadlines({
-            deadlines: {
-              firstResponseDueAt: existingThread.firstResponseDueAt,
-              nextResponseDueAt: existingThread.nextResponseDueAt,
-              resolutionDueAt: existingThread.resolutionDueAt,
-            },
-            pausedAt: existingThread.slaPausedAt,
-            resumedAt: message.receivedAt,
-            businessHours: policyRow?.hours
-              ? {
-                  timezone: policyRow.hours.timezone,
-                  weeklySchedule: policyRow.hours.weeklySchedule,
-                  holidays: policyRow.hours.holidays,
-                }
-              : null,
-          })
-          updates.firstResponseDueAt = resumed.firstResponseDueAt
-          updates.nextResponseDueAt = resumed.nextResponseDueAt
-          updates.resolutionDueAt = resumed.resolutionDueAt
-          updates.slaPausedAt = null
-          updates.slaPausedMinutes = existingThread.slaPausedMinutes + resumed.pausedMinutes
-        }
-        if (existingThread.firstResponseAt) {
-          const [contactRow] = await tx
-            .select({ companyId: contact.companyId })
-            .from(contact)
-            .where(eq(contact.id, existingThread.contactId))
-            .limit(1)
-          const tags = await tx
-            .select({ tagId: conversationTag.tagId })
-            .from(conversationTag)
-            .where(eq(conversationTag.conversationId, conversationId))
-          const nextSla = await resolveSlaAssignment(
-            {
+        // A conversation in Spam stays there: the reply is filed quietly.
+        quiet ||= existingThread.spamAt !== null
+
+        if (!quiet) {
+          const updates: Partial<typeof conversation.$inferInsert> = updatesForInboundReply(
+            existingThread,
+            message.receivedAt,
+            new Date()
+          )
+          // A reply to a conversation in Trash restores it and is handled as usual.
+          if (existingThread.deletedAt) updates.deletedAt = null
+          // SLA timers only run for helpdesk conversations (not `mail` addresses).
+          const helpdesk = helpdeskAppliesTo({ behaviour: existingThread.behaviour, spamAt: null, deletedAt: null })
+          if (helpdesk && existingThread.slaPausedAt) {
+            const [policyRow] = existingThread.slaPolicyId
+              ? await tx
+                  .select({ hours: businessHours })
+                  .from(slaPolicy)
+                  .leftJoin(businessHours, eq(slaPolicy.businessHoursId, businessHours.id))
+                  .where(eq(slaPolicy.id, existingThread.slaPolicyId))
+                  .limit(1)
+              : []
+            const resumed = resumeSlaDeadlines({
+              deadlines: {
+                firstResponseDueAt: existingThread.firstResponseDueAt,
+                nextResponseDueAt: existingThread.nextResponseDueAt,
+                resolutionDueAt: existingThread.resolutionDueAt,
+              },
+              pausedAt: existingThread.slaPausedAt,
+              resumedAt: message.receivedAt,
+              businessHours: policyRow?.hours
+                ? {
+                    timezone: policyRow.hours.timezone,
+                    weeklySchedule: policyRow.hours.weeklySchedule,
+                    holidays: policyRow.hours.holidays,
+                  }
+                : null,
+            })
+            updates.firstResponseDueAt = resumed.firstResponseDueAt
+            updates.nextResponseDueAt = resumed.nextResponseDueAt
+            updates.resolutionDueAt = resumed.resolutionDueAt
+            updates.slaPausedAt = null
+            updates.slaPausedMinutes = existingThread.slaPausedMinutes + resumed.pausedMinutes
+          }
+          if (helpdesk && existingThread.firstResponseAt) {
+            const [contactRow] = await tx
+              .select({ companyId: contact.companyId })
+              .from(contact)
+              .where(eq(contact.id, existingThread.contactId))
+              .limit(1)
+            const tags = await tx
+              .select({ tagId: conversationTag.tagId })
+              .from(conversationTag)
+              .where(eq(conversationTag.conversationId, conversationId))
+            const nextSla = await resolveSlaAssignment(
+              {
+                projectId: inbox.projectId,
+                inboxId: inbox.id,
+                priority: existingThread.priority,
+                companyId: contactRow?.companyId,
+                tagIds: tags.map((tag) => tag.tagId),
+                start: message.receivedAt,
+                includeNextResponse: true,
+              },
+              tx
+            )
+            updates.nextResponseDueAt = nextSla?.nextResponseDueAt ?? null
+          }
+          const [updatedThread] = await tx
+            .update(conversation)
+            .set(updates)
+            .where(eq(conversation.id, conversationId))
+            .returning({ assigneeUserId: conversation.assigneeUserId })
+          await reMarkConversationUnreadForIncoming(tx, conversationId, updatedThread.assigneeUserId)
+
+          if (existingThread.status === 'resolved' || existingThread.status === 'pending') {
+            await recordConversationActivity(
+              tx,
+              conversationId,
+              [{ field: 'status', from: existingThread.status, to: 'open' }],
+              null
+            )
+            await recordConversationStatusEvent(tx, {
               projectId: inbox.projectId,
               inboxId: inbox.id,
-              priority: existingThread.priority,
-              companyId: contactRow?.companyId,
-              tagIds: tags.map((tag) => tag.tagId),
-              start: message.receivedAt,
-              includeNextResponse: true,
-            },
-            tx
-          )
-          updates.nextResponseDueAt = nextSla?.nextResponseDueAt ?? null
-        }
-        const [updatedThread] = await tx
-          .update(conversation)
-          .set(updates)
-          .where(eq(conversation.id, conversationId))
-          .returning({ assigneeUserId: conversation.assigneeUserId })
-        await reMarkConversationUnreadForIncoming(tx, conversationId, updatedThread.assigneeUserId)
-
-        if (existingThread.status === 'resolved' || existingThread.status === 'pending') {
-          await recordConversationActivity(
-            tx,
-            conversationId,
-            [{ field: 'status', from: existingThread.status, to: 'open' }],
-            null
-          )
-          await recordConversationStatusEvent(tx, {
-            projectId: inbox.projectId,
-            inboxId: inbox.id,
-            conversationId,
-            fromStatus: existingThread.status,
-            toStatus: 'open',
-            actorUserId: null,
-            occurredAt: message.receivedAt,
-          })
+              conversationId,
+              fromStatus: existingThread.status,
+              toStatus: 'open',
+              actorUserId: null,
+              occurredAt: message.receivedAt,
+            })
+          }
         }
       }
 
@@ -531,7 +569,11 @@ export default defineEventHandler(async (event) => {
         channelHeaders: message.rawHeaders,
         // Inbound mail has already been delivered; `pending` is for outbound.
         deliveryStatus: 'delivered',
-        metadata: { rawBody: stripped.rawBody, matchedBy: thread.matchedBy },
+        metadata: {
+          rawBody: stripped.rawBody,
+          matchedBy: thread.matchedBy,
+          ...(message.isSpam ? { spam: true } : {}),
+        },
         createdAt: message.receivedAt,
       })
 
@@ -574,6 +616,9 @@ export default defineEventHandler(async (event) => {
           isNewConversation,
           autoReplyEnabled: inbox.autoReplyEnabled,
           autoReplyTemplate: inbox.autoReplyTemplate,
+          // Never for a `mail` address or a spam message.
+          behaviour: addressBehaviour,
+          isSpam: message.isSpam,
         })
       ) {
         if (!inbox.emailAddress) {
@@ -663,7 +708,7 @@ export default defineEventHandler(async (event) => {
         throw new Error('Inbound claim lost before terminal completion')
       }
 
-      return { conversationId, messageId, isNewConversation, autoReplyMessageId }
+      return { conversationId, messageId, isNewConversation, autoReplyMessageId, quiet }
     })
 
     if ('duplicateOfConversationId' in result) {
@@ -690,10 +735,14 @@ export default defineEventHandler(async (event) => {
       conversationId: result.conversationId,
       messageId: result.messageId,
     })
-    await triggerAutomationEvent({
-      conversationId: result.conversationId,
-      trigger: result.isNewConversation ? 'conversation_created' : 'message_created',
-    })
+    // Spam (and anything filed into Spam) runs no automation. The engine also
+    // skips `mail` conversations and conversations in Spam or Trash itself.
+    if (!result.quiet) {
+      await triggerAutomationEvent({
+        conversationId: result.conversationId,
+        trigger: result.isNewConversation ? 'conversation_created' : 'message_created',
+      })
+    }
 
     if (result.autoReplyMessageId) {
       // A second, real message exists now (the auto-reply) - agents watching

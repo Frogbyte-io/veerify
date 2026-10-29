@@ -51,6 +51,7 @@ vi.mock('~/server/services/support-channels', () => ({
         text: 'Body',
         html: '<p>Body</p>',
         rawHeaders: {},
+        isSpam: false,
         attachments: [],
         receivedAt: new Date(),
       }),
@@ -70,7 +71,7 @@ vi.mock('~/server/utils/project-access', () => ({
   getProjectById: vi.fn(async () => ({ id: 'project-1', settings: { supportEnabled: projectState.supportEnabled } })),
 }))
 vi.mock('~/server/utils/support-access', () => ({
-  resolveInboxByAddress: vi.fn(async () => ({
+  resolveInboxForRecipients: vi.fn(async () => ({
     inbox: {
       id: 'inbox-1',
       projectId: 'project-1',
@@ -81,7 +82,9 @@ vi.mock('~/server/utils/support-access', () => ({
       fromName: null,
       signature: null,
     },
-    address: { projectId: 'project-1' },
+    address: { id: 'address-1', projectId: 'project-1', behaviour: 'helpdesk' },
+    matchedBy: 'exact',
+    recipient: 'support@example.com',
   })),
 }))
 vi.mock('~/server/utils/storage', () => ({ getStorageProvider: () => ({ putObject: vi.fn(async () => undefined) }) }))
@@ -207,6 +210,7 @@ describe('inbound route claim-loss control', () => {
           text: 'Body',
           html: null,
           rawHeaders: {},
+          isSpam: false,
           attachments: [],
           receivedAt: new Date(),
         }),
@@ -217,7 +221,7 @@ describe('inbound route claim-loss control', () => {
 
     async function resolveInboxMock() {
       const access = await import('~/server/utils/support-access')
-      const resolve = access.resolveInboxByAddress as unknown as ReturnType<typeof vi.fn>
+      const resolve = access.resolveInboxForRecipients as unknown as ReturnType<typeof vi.fn>
       resolve.mockClear()
       return resolve
     }
@@ -228,7 +232,7 @@ describe('inbound route claim-loss control', () => {
 
       await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
 
-      expect(resolveInbox.mock.calls).toEqual([['hidden-alias@example.com']])
+      expect(resolveInbox.mock.calls).toEqual([[['hidden-alias@example.com']]])
     })
 
     it('records no-matching-inbox rather than falling back to headers when the envelope matches nothing', async () => {
@@ -241,27 +245,25 @@ describe('inbound route claim-loss control', () => {
         data: { reason: 'no-matching-inbox' },
       })
 
-      expect(resolveInbox.mock.calls).toEqual([['unknown@example.com']])
+      expect(resolveInbox.mock.calls).toEqual([[['unknown@example.com']]])
     })
 
-    it('tries several envelope recipients in order until one matches', async () => {
+    it('resolves every envelope recipient together, in order (exact before catch-all is decided there)', async () => {
       mailgunParsed([{ address: 'first@example.com' }, { address: 'second@example.com' }])
       const resolveInbox = await resolveInboxMock()
-      resolveInbox.mockResolvedValueOnce(null)
 
       await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
 
-      expect(resolveInbox.mock.calls).toEqual([['first@example.com'], ['second@example.com']])
+      expect(resolveInbox.mock.calls).toEqual([[['first@example.com', 'second@example.com']]])
     })
 
     it('falls back to To then Cc when the provider reported no envelope recipient', async () => {
       mailgunParsed([])
       const resolveInbox = await resolveInboxMock()
-      resolveInbox.mockResolvedValueOnce(null)
 
       await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
 
-      expect(resolveInbox.mock.calls).toEqual([['other-project@example.com'], ['support@example.com']])
+      expect(resolveInbox.mock.calls).toEqual([[['other-project@example.com', 'support@example.com']]])
     })
   })
 

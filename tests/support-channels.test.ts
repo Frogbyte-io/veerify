@@ -1,8 +1,12 @@
 import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { PostmarkChannelDriver } from '../server/services/support-channels/webhook/postmark'
-import { MailgunChannelDriver, parseAddressList } from '../server/services/support-channels/webhook/mailgun'
+import { PostmarkChannelDriver, isPostmarkSpam } from '../server/services/support-channels/webhook/postmark'
+import {
+  MailgunChannelDriver,
+  isMailgunSpam,
+  parseAddressList,
+} from '../server/services/support-channels/webhook/mailgun'
 import {
   getChannelDriver,
   getConfiguredChannelProviderName,
@@ -420,6 +424,68 @@ describe('MailgunChannelDriver', () => {
 
   it('throws on a payload with no From address', () => {
     expect(() => driver.parse({ subject: 'x' })).toThrow(/From/)
+  })
+})
+
+describe('provider spam verdicts', () => {
+  const mailgun = new MailgunChannelDriver({ signingKey: MAILGUN_SIGNING_KEY })
+  const postmark = new PostmarkChannelDriver({ user: 'hook', password: 's3cret' })
+  const verdicts = (spam: string, virus = 'PASS') =>
+    JSON.stringify({ spam, virus, spf: 'PASS', dkim: 'PASS', dmarc: 'PASS', dmarc_policy: 'none' })
+
+  it('Mailgun/Frogmail: X-Mailgun-Sflag Yes is spam, No or absent is not', () => {
+    expect(mailgun.parse(mailgunFixture({ 'X-Mailgun-Sflag': 'Yes' })).isSpam).toBe(true)
+    expect(mailgun.parse(mailgunFixture({ 'X-Mailgun-Sflag': 'No' })).isSpam).toBe(false)
+    expect(mailgun.parse(mailgunFixture()).isSpam).toBe(false)
+  })
+
+  it('Mailgun: X-Mailgun-Sflag Yes inside message-headers counts as well', () => {
+    const headers = [
+      ['X-Mailgun-Sflag', 'Yes'],
+      ['Date', 'Tue, 12 Aug 2026 10:04:00 +0000'],
+    ]
+    expect(mailgun.parse(mailgunFixture({ 'message-headers': headers })).isSpam).toBe(true)
+    expect(mailgun.parse(mailgunFixture({ 'message-headers': JSON.stringify(headers) })).isSpam).toBe(true)
+  })
+
+  it('Frogmail: frogmail-verdicts spam or virus FAIL is spam; GRAY and PROCESSING_FAILED are not', () => {
+    expect(mailgun.parse(mailgunFixture({ 'frogmail-verdicts': verdicts('FAIL') })).isSpam).toBe(true)
+    expect(mailgun.parse(mailgunFixture({ 'frogmail-verdicts': verdicts('PASS', 'FAIL') })).isSpam).toBe(true)
+    expect(mailgun.parse(mailgunFixture({ 'frogmail-verdicts': verdicts('GRAY') })).isSpam).toBe(false)
+    expect(mailgun.parse(mailgunFixture({ 'frogmail-verdicts': verdicts('PROCESSING_FAILED') })).isSpam).toBe(false)
+    expect(mailgun.parse(mailgunFixture({ 'frogmail-verdicts': verdicts('PASS') })).isSpam).toBe(false)
+    // As Frogmail sends it alongside: GRAY comes with Sflag No.
+    expect(
+      mailgun.parse(mailgunFixture({ 'X-Mailgun-Sflag': 'No', 'frogmail-verdicts': verdicts('GRAY') })).isSpam
+    ).toBe(false)
+  })
+
+  it('Mailgun: a forged No cannot clear a provider Yes, and garbage verdicts are ignored', () => {
+    expect(isMailgunSpam({ 'X-Mailgun-Sflag': 'Yes', 'message-headers': [['X-Mailgun-Sflag', 'No']] })).toBe(true)
+    expect(isMailgunSpam({ 'frogmail-verdicts': 'not json' })).toBe(false)
+    expect(isMailgunSpam({ 'frogmail-verdicts': '["FAIL"]' })).toBe(false)
+    expect(isMailgunSpam({ 'frogmail-verdicts': { spam: 'fail' } })).toBe(true)
+    expect(isMailgunSpam(null)).toBe(false)
+  })
+
+  it('Postmark: X-Spam-Status Yes is spam, No is not', () => {
+    expect(postmark.parse(POSTMARK_FIXTURE).isSpam).toBe(false)
+    const flagged = {
+      ...POSTMARK_FIXTURE,
+      Headers: [
+        ...POSTMARK_FIXTURE.Headers.filter((h) => h.Name !== 'X-Spam-Status'),
+        { Name: 'X-Spam-Status', Value: 'Yes, score=7.1' },
+      ],
+    }
+    expect(postmark.parse(flagged).isSpam).toBe(true)
+    expect(
+      isPostmarkSpam([
+        { Name: 'X-Spam-Status', Value: 'No' },
+        { Name: 'x-spam-status', Value: 'Yes' },
+      ])
+    ).toBe(true)
+    expect(isPostmarkSpam([{ Name: 'X-Spam-Status', Value: 'Yesterday' }])).toBe(false)
+    expect(isPostmarkSpam(undefined)).toBe(false)
   })
 })
 
