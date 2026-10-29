@@ -465,6 +465,14 @@ export const conversation = pgTable(
     channelThreadKey: text('channel_thread_key'),
     firstResponseAt: timestamp('first_response_at'),
     resolvedAt: timestamp('resolved_at'),
+    // The address the first inbound message arrived on (null for conversations
+    // started by an agent, or once the address is deleted).
+    mailAddressId: text('mail_address_id').references((): AnyPgColumn => projectMailAddress.id, {
+      onDelete: 'set null',
+    }),
+    // Snapshot of the address's behaviour when the conversation was created:
+    // 'mail' conversations get no auto-reply, SLA, CSAT or automation rules.
+    behaviour: text('behaviour').default('helpdesk').notNull(),
     // Folders outside the status workflow: Spam (marked by an agent or the
     // provider's spam verdict) and Trash (purged 30 days after deletedAt).
     spamAt: timestamp('spam_at'),
@@ -494,6 +502,8 @@ export const conversation = pgTable(
     channelThreadKeyIdx: index('conversation_channel_thread_key_idx').on(table.channelThreadKey),
     projectStatusIdx: index('conversation_project_status_idx').on(table.projectId, table.status),
     slaPolicyIdx: index('conversation_sla_policy_idx').on(table.slaPolicyId),
+    mailAddressIdx: index('conversation_mail_address_idx').on(table.mailAddressId),
+    validBehaviour: check('conversation_behaviour_check', sql`${table.behaviour} in ('mail','helpdesk')`),
   })
 )
 

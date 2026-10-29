@@ -477,6 +477,13 @@
       "when": 1793266199955,
       "tag": "0067_project_mail_addresses",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1793266484636,
+      "tag": "0068_conversation_mail_address",
+      "breakpoints": true
     }
   ]
 }
