@@ -19,11 +19,11 @@ export async function resolveSlaAssignment(
     start: Date
     includeNextResponse?: boolean
     /** Behaviour and folder of the conversation; SLAs only apply to helpdesk conversations outside Spam/Trash. */
-    conversation?: ConversationBehaviourState
+    conversation: ConversationBehaviourState
   },
   executor: Pick<typeof db, 'select'> = db
 ) {
-  if (input.conversation && !helpdeskAppliesTo(input.conversation)) return null
+  if (!helpdeskAppliesTo(input.conversation)) return null
 
   const policyRows = await executor
     .select({ policy: slaPolicy, hours: businessHours })

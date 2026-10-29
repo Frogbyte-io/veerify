@@ -462,7 +462,12 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
       dnsProjects.add(projectId)
     } catch (error) {
       const { code, message } = errorText(error)
-      const rule = ['DOMAIN_CLAIMED', 'DOMAIN_REJECTED', 'DOMAIN_LIMIT_REACHED', 'PENDING_LIMIT_REACHED'].includes(code)
+      const rule = [
+        'DOMAIN_CLAIMED',
+        'DOMAIN_REJECTED',
+        'MAIL_DOMAIN_LIMIT_REACHED',
+        'MAIL_PENDING_LIMIT_REACHED',
+      ].includes(code)
       entries.push({
         domain,
         projects: refs,

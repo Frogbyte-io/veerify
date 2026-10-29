@@ -518,6 +518,7 @@ export default defineEventHandler(async (event) => {
                 tagIds: tags.map((tag) => tag.tagId),
                 start: message.receivedAt,
                 includeNextResponse: true,
+                conversation: existingThread,
               },
               tx
             )

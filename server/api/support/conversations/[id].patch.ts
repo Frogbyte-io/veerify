@@ -119,6 +119,7 @@ export default defineEventHandler(async (event) => {
       companyId: contactRow?.companyId,
       tagIds: tags.map((tag) => tag.tagId),
       start: now,
+      conversation: existing,
     })
   }
 

@@ -713,6 +713,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/support-trash-purge": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Permanently delete inbox conversations that were in Trash for 30 days",
+      "operationId": "cronSupportTrashPurge",
+      "responses": {
+        "200": {
+          "description": "Purge pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/dashboard/bootstrap": {
     "get": {
       "tags": [
@@ -8656,6 +8673,49 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/projects/{slug}/mail/addresses": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List the project's email addresses",
+      "description": "Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjectMailAddresses",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ addresses: ProjectMailAddressItem[], usage: MailUsage }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    }
+  },
   "/api/projects/{slug}/members": {
     "get": {
       "tags": [
@@ -10965,6 +11025,7 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "view",
+          "description": "`archived` is status closed. `spam` and `trash` are folders (`spamAt` / `deletedAt`); every other view, the counts and search exclude spam and trashed conversations. `spam` lists spam that is not in Trash.\n",
           "schema": {
             "type": "string",
             "enum": [
@@ -10972,6 +11033,9 @@ export const openapiPaths = {
               "assigned-to-me",
               "resolved",
               "breaching-soon",
+              "archived",
+              "spam",
+              "trash",
               "all"
             ]
           }
@@ -10993,6 +11057,14 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "contactId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "mailAddressId",
+          "description": "Only conversations that arrived on this receiving address",
           "schema": {
             "type": "string"
           }
@@ -11050,7 +11122,8 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Conversation page"
+          "description": "Conversation page; each item carries `mailAddressId` and `mailAddress` (the receiving address",
+          "or null)": null
         },
         "403": {
           "description": "Not a member of this inbox or a project admin"
@@ -11116,8 +11189,8 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Update a conversation's status, priority, assignee, subject, or product",
-      "description": "Every status, priority, assignee, and product change also writes an `activity` message into the thread, in the same transaction as the update. Subject changes deliberately do not - they are not an operational event worth an inline feed entry.\n",
+      "summary": "Update a conversation's status, priority, assignee, subject, or folder",
+      "description": "Every status, priority, assignee, and folder change also writes an `activity` message into the thread, in the same transaction as the update. Subject changes deliberately do not - they are not an operational event worth an inline feed entry.\nArchive is `status: closed` (labelled Archived in the UI). Spam and Trash are folders, not statuses: `spam: true` sets `spamAt`, `spam: false` clears it; `deleted: true` sets `deletedAt` (the conversation is purged permanently after 30 days), `deleted: false` restores it. A conversation keeps its status while in a folder, and re-sending the current state is a no-op. Permissions are the same as for status changes: any member of the conversation's inbox who can work conversations (agent, supervisor, admin) or a project admin.\n",
       "operationId": "updateSupportConversation",
       "parameters": [
         {
@@ -11129,6 +11202,54 @@ export const openapiPaths = {
           }
         }
       ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "pending",
+                    "resolved",
+                    "snoozed",
+                    "closed"
+                  ]
+                },
+                "priority": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high",
+                    "urgent"
+                  ],
+                  "nullable": true
+                },
+                "assigneeUserId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "subject": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "nullable": true
+                },
+                "spam": {
+                  "type": "boolean",
+                  "description": "Move to Spam (true) or back out of it (false)"
+                },
+                "deleted": {
+                  "type": "boolean",
+                  "description": "Move to Trash (true) or restore (false)"
+                }
+              }
+            }
+          }
+        }
+      },
       "responses": {
         "200": {
           "description": "Conversation updated"
@@ -11651,7 +11772,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Inbound email webhook",
-      "description": "Provider-agnostic intake. Returns 200 for everything it has deliberately decided not to act on - duplicate deliveries, unknown recipients, projects with support disabled - because a 4xx makes a mail provider retry the same message indefinitely. Processing failures return 500 so the provider retries a recorded, reclaimable event.\n",
+      "description": "Provider-agnostic intake. Returns 200 for everything it has deliberately decided not to act on - duplicate deliveries, unknown recipients, projects with support disabled - because a 4xx makes a mail provider retry the same message indefinitely. Processing failures return 500 so the provider retries a recorded, reclaimable event. The inbox is found by the recipients' exact addresses first, then by a catch-all (`*@domain`) of a recipient's exact domain. A new conversation records the matched address and its behaviour (`mail` conversations get no auto-reply, SLA, CSAT or automation). A message the provider flags as spam (Mailgun/Frogmail `X-Mailgun-Sflag: Yes` or `frogmail-verdicts` spam/virus FAIL; Postmark `X-Spam-Status: Yes`) opens its conversation in Spam, or is appended to an existing one without reopening it, and triggers no auto-reply or automation. A reply to a conversation in Spam stays in Spam the same way; a reply to one in Trash restores it.\n",
       "operationId": "receiveSupportInboundEmail",
       "security": [],
       "parameters": [
@@ -11840,6 +11961,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "List an inbox's receiving addresses",
+      "description": "Each address carries its behaviour (`mail` or `helpdesk`), product tag, the project email domain it sits on (`domainId`), its provider route state and `isCatchAll` (true for `*@domain`).\n",
       "operationId": "listSupportInboxAddresses",
       "parameters": [
         {
@@ -11853,7 +11975,30 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Address list"
+          "description": "Address list",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "addresses": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/SupportInboxAddress"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         },
         "403": {
           "description": "Not a member of this inbox or a project admin"
@@ -11868,7 +12013,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Add a receiving address to an inbox",
-      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one). Under the project sender policy, an address on a domain (or subdomain of one) claimed by another project is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the project's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the project's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort.\n",
+      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction. A catch-all is written `*@domain` (the local part exactly `*`). It takes mail to every address of that exact domain that no other address matches, and is accepted only when the domain is one of the project's email domains in any status except deleting (422 CATCH_ALL_DOMAIN_REQUIRED). `domainId` is set when the address's domain equals one of the project's email domains. `behaviour` decides whether the inbox's auto-reply, SLA, CSAT and automation rules apply to conversations started on the address (`helpdesk`, the default) or not (`mail`). `productId` tags the address with a product of the inbox's project. Custom addresses count toward the workspace's address limit (409 MAIL_ADDRESS_LIMIT_REACHED). Under the project sender policy, an address on a domain (or subdomain of one) claimed by another project is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the project's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the project's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort (a catch-all gets a domain-wide route that exact addresses take precedence over).\n",
       "operationId": "createSupportInboxAddress",
       "parameters": [
         {
@@ -11880,9 +12025,69 @@ export const openapiPaths = {
           }
         }
       ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "address"
+              ],
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "maxLength": 320,
+                  "description": "An email address, or *@domain for a catch-all"
+                },
+                "isPrimary": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "behaviour": {
+                  "type": "string",
+                  "enum": [
+                    "mail",
+                    "helpdesk"
+                  ],
+                  "default": "helpdesk"
+                },
+                "productId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "A product of the inbox's project"
+                }
+              }
+            }
+          }
+        }
+      },
       "responses": {
         "200": {
-          "description": "Address created"
+          "description": "Address created",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "address": {
+                        "$ref": "#/components/schemas/SupportInboxAddress"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Validation failed: not an email address or a well-formed *@domain"
         },
         "403": {
           "description": "Not a member of this inbox or a project admin"
@@ -11891,10 +12096,10 @@ export const openapiPaths = {
           "description": "Inbox not found"
         },
         "409": {
-          "description": "This address is already in use, or its domain is claimed by another project (ADDRESS_DOMAIN_CLAIMED)"
+          "description": "This address is already in use, its domain is claimed by another project (ADDRESS_DOMAIN_CLAIMED), or the workspace address limit is reached (MAIL_ADDRESS_LIMIT_REACHED)"
         },
         "422": {
-          "description": "The address is on the platform mail domain (ADDRESS_DOMAIN_RESERVED), or the provider routes inbound mail by header (Postmark) and the address domain is not on this project's verified sending domain (ADDRESS_DOMAIN_UNVERIFIED)"
+          "description": "The address is on the platform mail domain (ADDRESS_DOMAIN_RESERVED), the provider routes inbound mail by header (Postmark) and the address domain is not on this project's verified sending domain (ADDRESS_DOMAIN_UNVERIFIED), a catch-all's domain is not one of the project's email domains (CATCH_ALL_DOMAIN_REQUIRED), or productId is not a product of the project (PRODUCT_NOT_IN_PROJECT)"
         }
       }
     }
@@ -11937,6 +12142,104 @@ export const openapiPaths = {
         },
         "409": {
           "description": "Platform addresses cannot be deleted - regenerate instead"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Update a receiving address",
+      "description": "Changes the address's behaviour (`mail` or `helpdesk`; conversations already started keep the behaviour they were created with), product tag (`productId`, null to clear; must be a product of the inbox's project), primary flag (exclusive per inbox), or moves it to another inbox of the same project with `inboxId`. Moving needs admin rights on both inboxes, keeps the provider inbound route (it targets the shared inbound webhook, not the inbox) and clears `isPrimary` unless `isPrimary: true` is sent. Platform forwarding addresses belong to their inbox and cannot be moved. The address itself cannot be changed; delete it and add a new one.\n",
+      "operationId": "updateSupportInboxAddress",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "addressId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "behaviour": {
+                  "type": "string",
+                  "enum": [
+                    "mail",
+                    "helpdesk"
+                  ]
+                },
+                "productId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "isPrimary": {
+                  "type": "boolean"
+                },
+                "inboxId": {
+                  "type": "string",
+                  "description": "Another inbox of the same project to move the address to"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Address updated",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "address": {
+                        "$ref": "#/components/schemas/SupportInboxAddress"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not an admin of this inbox",
+          "or of the target inbox": null
+        },
+        "404": {
+          "description": "Inbox",
+          "target inbox or address not found": null
+        },
+        "409": {
+          "description": "Platform forwarding addresses cannot be moved (PLATFORM_ADDRESS_IMMOVABLE)"
+        },
+        "422": {
+          "description": "productId is not a product of the project (PRODUCT_NOT_IN_PROJECT), or the target inbox belongs to another project (INBOX_NOT_IN_PROJECT)"
         }
       }
     }
@@ -12392,7 +12695,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "List the project's customer sending domains",
-      "description": "Returns the project's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list.\n",
+      "description": "Returns the project's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list. `limits.maxDomains` and `limits.maxPending` are the workspace mail limits (shared by every project of the workspace), and `usage` is the workspace's mail tier, limits and current usage (domains, pending domains, custom addresses; `forwardsThisMonth` is null until forwarding ships).\n",
       "operationId": "listSupportSendingDomains",
       "parameters": [
         {
@@ -12469,9 +12772,7 @@ export const openapiPaths = {
           "description": "Feature disabled"
         },
         "409": {
-          "description": "Domain claimed by another workspace",
-          "owned elsewhere": null,
-          "or a limit was reached": null
+          "description": "Domain claimed by another workspace, owned elsewhere, or a workspace mail limit was reached (MAIL_DOMAIN_LIMIT_REACHED, MAIL_PENDING_LIMIT_REACHED)"
         },
         "422": {
           "description": "Domain rejected by validation or the provider"

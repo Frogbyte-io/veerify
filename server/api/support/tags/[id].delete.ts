@@ -55,6 +55,9 @@ export default defineEventHandler(async (event) => {
       priority: conversation.priority,
       firstResponseAt: conversation.firstResponseAt,
       contactId: conversation.contactId,
+      behaviour: conversation.behaviour,
+      spamAt: conversation.spamAt,
+      deletedAt: conversation.deletedAt,
     })
     .from(conversationTag)
     .innerJoin(conversation, eq(conversation.id, conversationTag.conversationId))
@@ -83,6 +86,7 @@ export default defineEventHandler(async (event) => {
           tagIds: tags.map((tagRow) => tagRow.tagId),
           start: new Date(),
           includeNextResponse: Boolean(row.firstResponseAt),
+          conversation: row,
         },
         tx
       )
