@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { db } from '../../server/database/drizzle'
 import { organization } from '../../server/database/schema/auth'
 import { project } from '../../server/database/schema/feedback'
-import { supportSendingDomain } from '../../server/database/schema/support'
+import { projectMailDomain } from '../../server/database/schema/support'
 import { claimDueSendingDomains, runSendingDomainPoll } from '../../server/utils/sending-domain-poller'
 
 /**
@@ -21,10 +21,10 @@ describe('sending-domain poller (real Postgres)', () => {
   const past = () => new Date(Date.now() - 60_000)
   const ids: string[] = []
 
-  async function insertDomain(name: string, overrides: Partial<typeof supportSendingDomain.$inferInsert> = {}) {
+  async function insertDomain(name: string, overrides: Partial<typeof projectMailDomain.$inferInsert> = {}) {
     const id = `sd_${randomUUID()}`
     ids.push(id)
-    await db.insert(supportSendingDomain).values({
+    await db.insert(projectMailDomain).values({
       id,
       projectId,
       domain: `${name}-${suffix}.example.com`,
@@ -68,7 +68,7 @@ describe('sending-domain poller (real Postgres)', () => {
 
   beforeEach(async () => {
     // Other suites' rows must not be claimed by (or interfere with) these passes.
-    await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.id, ids.splice(0)))
+    await db.delete(projectMailDomain).where(inArray(projectMailDomain.id, ids.splice(0)))
   })
 
   afterAll(async () => {
@@ -88,7 +88,7 @@ describe('sending-domain poller (real Postgres)', () => {
 
     // A leased row is invisible to a later claim until the lease lapses.
     expect(await claimDueSendingDomains({ limit: 25 })).toEqual([])
-    const [row] = await db.select().from(supportSendingDomain).where(eq(supportSendingDomain.id, inserted[0]!))
+    const [row] = await db.select().from(projectMailDomain).where(eq(projectMailDomain.id, inserted[0]!))
     expect(row!.leaseExpiresAt).not.toBeNull()
   })
 
@@ -122,7 +122,7 @@ describe('sending-domain poller (real Postgres)', () => {
     expect(a.processed).toBeGreaterThan(0)
     expect(b.processed).toBeGreaterThan(0)
 
-    const rows = await db.select().from(supportSendingDomain).where(inArray(supportSendingDomain.id, inserted))
+    const rows = await db.select().from(projectMailDomain).where(inArray(projectMailDomain.id, inserted))
     for (const row of rows) {
       expect(row.leaseExpiresAt).toBeNull()
       expect(row.lastCheckedAt).not.toBeNull()
@@ -144,7 +144,7 @@ describe('sending-domain poller (real Postgres)', () => {
 
     expect(summary.expired).toBeGreaterThanOrEqual(1)
     expect(remove).toHaveBeenCalledTimes(1)
-    const rows = await db.select().from(supportSendingDomain).where(eq(supportSendingDomain.id, id))
+    const rows = await db.select().from(projectMailDomain).where(eq(projectMailDomain.id, id))
     expect(rows).toEqual([])
   })
 })

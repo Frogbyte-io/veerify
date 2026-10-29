@@ -338,7 +338,7 @@ export function relativeRecordHost(fqdn: string, zone: string): string {
 
 export type OwnershipCheckResult = 'valid' | 'invalid' | 'unknown'
 
-/** The slice of a `support_sending_domain` row `applyProviderResult` reads. */
+/** The slice of a `project_mail_domain` row `applyProviderResult` reads. */
 export interface SendingDomainTransitionRow {
   status: string
   createdAt?: Date | null

@@ -428,7 +428,7 @@ test.describe.serial('support contact timeline', () => {
       expect(probableIds).not.toContain(feedbackIds[2])
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await navigateToAuthenticatedPage(page, `/support/contacts/${contactId}`)
+      await navigateToAuthenticatedPage(page, `/inbox/contacts/${contactId}`)
       await expect(page.getByText('Automatically linked')).toBeVisible()
       await page.getByRole('button', { name: 'Remove automatic link' }).click()
       await expect(page.getByText('Automatically linked')).toHaveCount(0)
@@ -639,7 +639,7 @@ test.describe.serial('support contact timeline', () => {
       })
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await navigateToAuthenticatedPage(page, `/support/contacts/${contactId}`)
+      await navigateToAuthenticatedPage(page, `/inbox/contacts/${contactId}`)
       await expect(page.getByTestId('linked-timeline-row')).toHaveCount(25)
       await expect(page.getByTestId('probable-timeline-row')).toHaveCount(25)
 

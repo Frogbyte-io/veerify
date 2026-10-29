@@ -18,7 +18,7 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
 async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const headers = withAuthHeaders(sessionCookie, '/support')
+  const headers = withAuthHeaders(sessionCookie, '/inbox')
   const [projectResponse, sessionResponse] = await Promise.all([
     request.get('/api/projects/active', { headers }),
     request.get('/api/auth/session', { headers }),
@@ -36,7 +36,7 @@ async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessi
 async function loginAndActivateProject(page: import('@playwright/test').Page, projectId: string) {
   const sessionCookie = await signInAndGetSessionCookie(page.request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const activeProjectResponse = await page.request.post('/api/projects/active', {
-    headers: withAuthHeaders(sessionCookie, '/support'),
+    headers: withAuthHeaders(sessionCookie, '/inbox'),
     data: { projectId },
   })
   if (!activeProjectResponse.ok()) {
@@ -75,7 +75,7 @@ test.describe.serial('support canned responses', () => {
       })
 
       await loginAndActivateProject(page, projectId)
-      await page.goto(`/support/settings?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/inbox/settings?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
 
       const section = page.getByTestId('support-canned-responses')
       await expect(section).toBeVisible()
@@ -180,7 +180,7 @@ test.describe.serial('support canned responses', () => {
       })
 
       await loginAndActivateProject(page, projectId)
-      await page.goto(`/support?inboxId=${inboxId}&view=all&conversationId=${conversationId}`, {
+      await page.goto(`/inbox?inboxId=${inboxId}&view=all&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })
 

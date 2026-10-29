@@ -4,7 +4,7 @@
 // identifiers a contact is known by (`contactIdentity`), the companies they
 // belong to (`supportCompany`), and explicit links from a contact to other
 // Veerify entities (`contactLink`). Stage 02 adds the inbox and conversation
-// tables: `supportInbox`, `supportInboxAddress`, `supportInboxMember`,
+// tables: `supportInbox`, `projectMailAddress`, `supportInboxMember`,
 // `conversation`, `supportCounter`, `conversationMessage`,
 // `conversationAttachment`, `conversationParticipant`, `supportTag`,
 // `conversationTag`, and `supportEmailEvent`. Stage 04 adds
@@ -15,7 +15,7 @@
 // never references a contact; see "Why contacts and feedback stay separate"
 // in `docs/plans/2026-08-11-support-platform/design.md`.
 //
-// `conversation.projectId` and `supportInboxAddress.projectId` are real
+// `conversation.projectId` and `projectMailAddress.projectId` are real
 // foreign keys into `feedback.ts`'s `project` table (support → feedback,
 // the permitted direction — see delta D-27). `conversation.linkedFeedbackId`
 // likewise references `feedback.ts`'s `feedback` table. `feedback.ts` itself
@@ -23,7 +23,7 @@
 //
 // See `docs/plans/2026-08-11-support-platform/design.md` → Data model →
 // Stage 01 and Stage 02, and delta D-27 in `deltas.md` for the
-// `supportInboxAddress` / `conversation.projectId` addition.
+// `projectMailAddress` / `conversation.projectId` addition.
 
 import {
   pgTable,
@@ -43,7 +43,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { user } from './auth'
-import { project, feedback } from './feedback'
+import { project, feedback, product } from './feedback'
 import type { SendingDomainDnsRecord } from '../../../lib/support-sending-domains'
 
 // Support companies - the Zendesk "organization" concept, named to avoid
@@ -204,12 +204,12 @@ export const supportProjectSettings = pgTable('support_project_settings', {
 // ---------------------------------------------------------------------------
 // Stage 02 — inbox and conversations
 // See `docs/plans/2026-08-11-support-platform/design.md` → Data model →
-// Stage 02, and delta D-27 for `supportInboxAddress` / `conversation.projectId`.
+// Stage 02, and delta D-27 for `projectMailAddress` / `conversation.projectId`.
 // ---------------------------------------------------------------------------
 
 // Support inboxes - one shared inbox per team ("support@acme.com" as the
 // primary sending identity). What the inbox actually *receives* on is
-// governed by `supportInboxAddress` (delta D-27), which lets one inbox map
+// governed by `projectMailAddress` (delta D-27), which lets one inbox map
 // several receiving addresses to different products.
 export const supportInbox = pgTable(
   'support_inbox',
@@ -225,9 +225,8 @@ export const supportInbox = pgTable(
     type: text('type').default('email').notNull(),
     // Provider, inbound address, credential references - never raw secrets
     channelConfig: jsonb('channel_config').$type<Record<string, any>>(),
-    // Primary *sending* identity - distinct from the receiving addresses in supportInboxAddress
+    // Primary *sending* identity - distinct from the receiving addresses in projectMailAddress
     emailAddress: text('email_address'),
-    forwardAddress: text('forward_address'),
     fromName: text('from_name'),
     signature: text('signature'),
     autoReplyEnabled: boolean('auto_reply_enabled').default(false).notNull(),
@@ -252,12 +251,14 @@ export const supportInbox = pgTable(
   })
 )
 
-// Receiving addresses for an inbox, and the product each maps to (delta D-27).
-// Email carries no product signal on its own; a customer mailing
-// `billing@acme.com` attributes to Billing only because that address is
-// mapped here. `projectId` null means unattributed.
-export const supportInboxAddress = pgTable(
-  'support_inbox_address',
+// Email addresses of a project and where their mail goes. Today every address
+// delivers to an inbox; `productId` optionally tags it with a product, and
+// `behaviour` decides whether helpdesk features (auto-reply, SLA, CSAT) apply.
+// A catch-all is stored as `*@<domain>`. `domainId` links custom addresses on
+// one of the project's mail domains. See
+// docs/plans/2026-10-28-email-addresses/design.md.
+export const projectMailAddress = pgTable(
+  'project_mail_address',
   {
     id: text('id').primaryKey(),
     inboxId: text('inbox_id')
@@ -274,19 +275,27 @@ export const supportInboxAddress = pgTable(
     // Provider inbound route for direct receiving on a verified sending domain.
     providerRouteId: text('provider_route_id'),
     providerRouteStatus: text('provider_route_status'),
+    // The project mail domain this address sits on (custom addresses only).
+    domainId: text('domain_id').references((): AnyPgColumn => projectMailDomain.id, { onDelete: 'set null' }),
+    productId: text('product_id').references(() => product.id, { onDelete: 'set null' }),
+    // 'helpdesk': the inbox's auto-reply, SLA, CSAT and automation apply.
+    // 'mail': plain mail, none of those.
+    behaviour: text('behaviour').default('helpdesk').notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
   },
   (table) => ({
-    uniqueAddress: uniqueIndex('support_inbox_address_address_idx').on(table.address),
-    inboxIdx: index('support_inbox_address_inbox_idx').on(table.inboxId),
-    projectIdx: index('support_inbox_address_project_idx').on(table.projectId),
-    validKind: check('support_inbox_address_kind_check', sql`${table.kind} in ('custom','platform')`),
+    uniqueAddress: uniqueIndex('project_mail_address_address_idx').on(table.address),
+    inboxIdx: index('project_mail_address_inbox_idx').on(table.inboxId),
+    projectIdx: index('project_mail_address_project_idx').on(table.projectId),
+    domainIdx: index('project_mail_address_domain_idx').on(table.domainId),
+    validKind: check('project_mail_address_kind_check', sql`${table.kind} in ('custom','platform')`),
     validRouteStatus: check(
-      'support_inbox_address_route_status_check',
+      'project_mail_address_route_status_check',
       sql`${table.providerRouteStatus} is null or ${table.providerRouteStatus} in ('active','failed')`
     ),
+    validBehaviour: check('project_mail_address_behaviour_check', sql`${table.behaviour} in ('mail','helpdesk')`),
   })
 )
 
@@ -456,6 +465,10 @@ export const conversation = pgTable(
     channelThreadKey: text('channel_thread_key'),
     firstResponseAt: timestamp('first_response_at'),
     resolvedAt: timestamp('resolved_at'),
+    // Folders outside the status workflow: Spam (marked by an agent or the
+    // provider's spam verdict) and Trash (purged 30 days after deletedAt).
+    spamAt: timestamp('spam_at'),
+    deletedAt: timestamp('deleted_at'),
     snoozedUntil: timestamp('snoozed_until'),
     lastActivityAt: timestamp('last_activity_at'),
     lastCustomerReplyAt: timestamp('last_customer_reply_at'),
@@ -1159,10 +1172,12 @@ export const supportMetricDaily = pgTable(
   })
 )
 
-// Customer sending domains: one row per claimed domain, owned by exactly one
-// team. See docs/plans/2026-10-22-custom-sending-domains/design.md §5.
-export const supportSendingDomain = pgTable(
-  'support_sending_domain',
+// Project mail domains: one row per claimed domain, owned by exactly one
+// project. Used for sending and, where the provider receives, for receiving.
+// See docs/plans/2026-10-22-custom-sending-domains/design.md §5 and
+// docs/plans/2026-10-28-email-addresses/design.md.
+export const projectMailDomain = pgTable(
+  'project_mail_domain',
   {
     id: text('id').primaryKey(),
     projectId: text('project_id')
@@ -1201,20 +1216,20 @@ export const supportSendingDomain = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueDomain: uniqueIndex('support_sending_domain_domain_idx').on(table.domain),
-    projectIdx: index('support_sending_domain_project_idx').on(table.projectId),
-    registrableIdx: index('support_sending_domain_registrable_idx').on(table.registrableDomain),
-    dueIdx: index('support_sending_domain_due_idx').on(table.status, table.nextCheckAt),
+    uniqueDomain: uniqueIndex('project_mail_domain_domain_idx').on(table.domain),
+    projectIdx: index('project_mail_domain_project_idx').on(table.projectId),
+    registrableIdx: index('project_mail_domain_registrable_idx').on(table.registrableDomain),
+    dueIdx: index('project_mail_domain_due_idx').on(table.status, table.nextCheckAt),
     validStatus: check(
-      'support_sending_domain_status_check',
+      'project_mail_domain_status_check',
       sql`${table.status} in ('provisioning','pending','verified','suspended','failed','deleting')`
     ),
     validOwnership: check(
-      'support_sending_domain_ownership_check',
+      'project_mail_domain_ownership_check',
       sql`${table.providerOwnership} is null or ${table.providerOwnership} in ('created','adopted')`
     ),
     validProviderState: check(
-      'support_sending_domain_provider_state_check',
+      'project_mail_domain_provider_state_check',
       sql`${table.providerState} is null or ${table.providerState} in ('active','unverified')`
     ),
   })

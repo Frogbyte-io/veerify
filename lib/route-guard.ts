@@ -18,7 +18,7 @@ export const PUBLIC_HOST_APP_ROUTES = [
   '/onboarding',
   '/submissions',
   '/get-started',
-  '/support',
+  '/inbox',
   '/marketing',
 ]
 
@@ -33,7 +33,7 @@ export const PROTECTED_ROUTES = [
   '/project',
   '/onboarding',
   '/submissions',
-  '/support',
+  '/inbox',
   '/marketing',
 ]
 

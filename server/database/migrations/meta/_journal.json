@@ -470,6 +470,13 @@
       "when": 1793138759765,
       "tag": "0066_yummy_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1793266199955,
+      "tag": "0067_project_mail_addresses",
+      "breakpoints": true
     }
   ]
 }

@@ -44,7 +44,7 @@ import { requireInboxRole } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { supportInboxAddress } from '~/server/database/schema/support'
+import { projectMailAddress } from '~/server/database/schema/support'
 import { assertReceivingAddressAllowed } from '~/server/utils/sending-domains'
 import { createDirectRouteForAddress } from '~/server/utils/inbound-routes'
 
@@ -65,15 +65,15 @@ export default defineEventHandler(async (event) => {
   // ADDRESS_DOMAIN_UNVERIFIED.
   await assertReceivingAddressAllowed(inbox.projectId, body.address)
 
-  let created: typeof supportInboxAddress.$inferSelect
+  let created: typeof projectMailAddress.$inferSelect
   try {
     created = await db.transaction(async (tx) => {
       if (body.isPrimary) {
-        await tx.update(supportInboxAddress).set({ isPrimary: false }).where(eq(supportInboxAddress.inboxId, inboxId))
+        await tx.update(projectMailAddress).set({ isPrimary: false }).where(eq(projectMailAddress.inboxId, inboxId))
       }
 
       const [row] = await tx
-        .insert(supportInboxAddress)
+        .insert(projectMailAddress)
         .values({
           id: randomUUID(),
           inboxId,

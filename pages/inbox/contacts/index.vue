@@ -69,7 +69,7 @@
         <NuxtLink
           v-for="item in contacts"
           :key="item.id"
-          :to="`/support/contacts/${item.id}`"
+          :to="`/inbox/contacts/${item.id}`"
           prefetch-on="interaction"
           class="flex items-center justify-between rounded-lg border bg-card p-4 cursor-pointer hover:bg-accent/50 transition-colors"
         >

@@ -142,9 +142,9 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
     requiresOrg: true,
     module: 'supportEnabled',
     items: [
-      { title: 'Inbox', url: '/support', icon: 'lucide:inbox' },
-      { title: 'Contacts', url: '/support/contacts', icon: 'lucide:contact' },
-      { title: 'Settings', url: '/support/settings', icon: 'lucide:settings' },
+      { title: 'Inbox', url: '/inbox', icon: 'lucide:inbox' },
+      { title: 'Contacts', url: '/inbox/contacts', icon: 'lucide:contact' },
+      { title: 'Settings', url: '/inbox/settings', icon: 'lucide:settings' },
     ],
   },
   {

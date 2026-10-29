@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../server/database/drizzle'
 import { organization, user } from '../../server/database/schema/auth'
 import { project } from '../../server/database/schema/feedback'
-import { supportSendingDomain } from '../../server/database/schema/support'
+import { projectMailDomain } from '../../server/database/schema/support'
 import {
   createSendingDomainClaim,
   getProjectSendingDomain,
@@ -107,7 +107,7 @@ describe('createSendingDomainClaim', () => {
     const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
     expect(rejected.reason.statusCode).toBe(409)
     expect(rejected.reason.data.code).toBe('DOMAIN_CLAIMED')
-    const rows = await db.select().from(supportSendingDomain).where(eq(supportSendingDomain.domain, domain))
+    const rows = await db.select().from(projectMailDomain).where(eq(projectMailDomain.domain, domain))
     expect(rows).toHaveLength(1)
   })
 
@@ -118,8 +118,8 @@ describe('createSendingDomainClaim', () => {
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
       const rows = await db
         .select()
-        .from(supportSendingDomain)
-        .where(eq(supportSendingDomain.registrableDomain, domain))
+        .from(projectMailDomain)
+        .where(eq(projectMailDomain.registrableDomain, domain))
       expect(rows).toHaveLength(1)
     }
   })
@@ -158,7 +158,7 @@ describe('createSendingDomainClaim', () => {
     } finally {
       delete process.env.APP_DOMAIN
       delete process.env.SUPPORT_SENDING_DOMAINS_RESERVED
-      await db.delete(supportSendingDomain).where(eq(supportSendingDomain.projectId, ids.projectC))
+      await db.delete(projectMailDomain).where(eq(projectMailDomain.projectId, ids.projectC))
     }
   })
 
@@ -168,11 +168,11 @@ describe('createSendingDomainClaim', () => {
     await expectRejection(claim(ids.projectC, fresh()), 409, 'PENDING_LIMIT_REACHED')
 
     await db
-      .update(supportSendingDomain)
+      .update(projectMailDomain)
       .set({ status: 'verified' })
       .where(
         inArray(
-          supportSendingDomain.id,
+          projectMailDomain.id,
           created.map((row) => row.id)
         )
       )
@@ -183,7 +183,7 @@ describe('createSendingDomainClaim', () => {
     const rows = await listProjectSendingDomains(ids.projectC)
     for (let i = rows.length; i < 10; i++) {
       const domain = fresh()
-      await db.insert(supportSendingDomain).values({
+      await db.insert(projectMailDomain).values({
         id: randomUUID(),
         projectId: ids.projectC,
         domain,
@@ -196,7 +196,7 @@ describe('createSendingDomainClaim', () => {
     await expectRejection(claim(ids.projectC, fresh()), 409, 'DOMAIN_LIMIT_REACHED')
 
     const [one] = await listProjectSendingDomains(ids.projectC)
-    await db.update(supportSendingDomain).set({ status: 'deleting' }).where(eq(supportSendingDomain.id, one.id))
+    await db.update(projectMailDomain).set({ status: 'deleting' }).where(eq(projectMailDomain.id, one.id))
     await expect(claim(ids.projectC, fresh())).resolves.toMatchObject({ projectId: ids.projectC })
   })
 })

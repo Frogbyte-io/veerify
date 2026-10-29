@@ -29,7 +29,7 @@ import { db } from '../server/database/drizzle'
 import { createDatabaseConnectionConfig } from '../server/database/connection-config'
 import { member } from '../server/database/schema/auth'
 import { project, projectMember } from '../server/database/schema/feedback'
-import { supportInbox, supportInboxAddress, supportSendingDomain } from '../server/database/schema/support'
+import { supportInbox, projectMailAddress, projectMailDomain } from '../server/database/schema/support'
 import {
   PENDING_TTL_DAYS,
   getRegistrableDomain,
@@ -147,10 +147,10 @@ async function collectUsage(projectIds?: string[]): Promise<UsageRow[]> {
     .from(supportInbox)
     .where(and(isNotNull(supportInbox.emailAddress), scope))
   const custom = await db
-    .select({ projectId: supportInbox.projectId, address: supportInboxAddress.address })
-    .from(supportInboxAddress)
-    .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
-    .where(and(eq(supportInboxAddress.kind, 'custom'), scope))
+    .select({ projectId: supportInbox.projectId, address: projectMailAddress.address })
+    .from(projectMailAddress)
+    .innerJoin(supportInbox, eq(supportInbox.id, projectMailAddress.inboxId))
+    .where(and(eq(projectMailAddress.kind, 'custom'), scope))
   return [...primary, ...custom].flatMap((row) =>
     row.address ? [{ projectId: row.projectId, address: row.address }] : []
   )
@@ -271,7 +271,7 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
   })
 
   // Existing claims (any status) for hierarchy and idempotency checks.
-  const existing = await db.select().from(supportSendingDomain)
+  const existing = await db.select().from(projectMailDomain)
 
   // --- Plan -------------------------------------------------------------------------------
   // Within a project a subdomain whose parent is also used by that project collapses into the parent.
@@ -440,7 +440,7 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
       })
       const txt = ownershipRecord(domain, claim.ownershipToken)
       await db
-        .update(supportSendingDomain)
+        .update(projectMailDomain)
         .set({
           status: 'pending',
           providerOwnership: 'adopted',
@@ -451,7 +451,7 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
           expiresAt: new Date(now.getTime() + PENDING_TTL_DAYS * 24 * 60 * 60 * 1000),
           updatedAt: now,
         })
-        .where(eq(supportSendingDomain.id, claim.id))
+        .where(eq(projectMailDomain.id, claim.id))
       entries.push({
         domain,
         projects: refs,

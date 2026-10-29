@@ -10,7 +10,7 @@ import {
   csatSurvey,
   supportInbox,
   supportOutboundDelivery,
-  supportSendingDomain,
+  projectMailDomain,
 } from '../../server/database/schema/support'
 import {
   deleteOrganization,
@@ -189,14 +189,14 @@ describe('project sender policy (needs WP1)', () => {
   })
 
   it('suspension blocks queued mail and recovery unblocks a retry', async () => {
-    await db.update(supportSendingDomain).set({ status: 'suspended' }).where(eq(supportSendingDomain.id, domainA))
+    await db.update(projectMailDomain).set({ status: 'suspended' }).where(eq(projectMailDomain.id, domainA))
     try {
       expect((await process(projectA, 'support@acme.test')).result).toMatchObject({
         outcome: 'failed',
         error: 'SENDER_DOMAIN_NOT_AUTHORIZED',
       })
     } finally {
-      await db.update(supportSendingDomain).set({ status: 'verified' }).where(eq(supportSendingDomain.id, domainA))
+      await db.update(projectMailDomain).set({ status: 'verified' }).where(eq(projectMailDomain.id, domainA))
     }
 
     expect((await process(projectA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
@@ -204,16 +204,16 @@ describe('project sender policy (needs WP1)', () => {
 
   it('blocks a claim registered with a different provider account', async () => {
     await db
-      .update(supportSendingDomain)
+      .update(projectMailDomain)
       .set({ providerAccountKey: 'other-project' })
-      .where(eq(supportSendingDomain.id, domainA))
+      .where(eq(projectMailDomain.id, domainA))
     try {
       expect((await process(projectA, 'support@acme.test')).result).toMatchObject({ outcome: 'failed' })
     } finally {
       await db
-        .update(supportSendingDomain)
+        .update(projectMailDomain)
         .set({ providerAccountKey: 'acct' })
-        .where(eq(supportSendingDomain.id, domainA))
+        .where(eq(projectMailDomain.id, domainA))
     }
   })
 

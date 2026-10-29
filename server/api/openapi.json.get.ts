@@ -209,7 +209,6 @@ export default defineEventHandler(() => {
               nullable: true,
               description: 'Primary sending identity; receiving addresses live in SupportInboxAddress',
             },
-            forwardAddress: { type: 'string', nullable: true },
             fromName: { type: 'string', nullable: true },
             signature: { type: 'string', nullable: true },
             autoReplyEnabled: { type: 'boolean' },

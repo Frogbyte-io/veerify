@@ -45,7 +45,7 @@ vi.stubEnv('SUPPORT_MAILGUN_SIGNING_KEY', SIGNING_KEY)
 const { db } = await import('../../server/database/drizzle')
 const { organization } = await import('../../server/database/schema/auth')
 const { project } = await import('../../server/database/schema/feedback')
-const { conversation, conversationMessage, supportEmailEvent, supportInbox, supportInboxAddress } =
+const { conversation, conversationMessage, supportEmailEvent, supportInbox, projectMailAddress } =
   await import('../../server/database/schema/support')
 const handler = (await import('../../server/api/support/inbound/[provider].post')).default as unknown as (
   event: FakeEvent
@@ -127,7 +127,7 @@ describe('inbound deduplication per inbox (real Postgres)', () => {
       { id: inboxA, projectId: projectA, name: 'A', slug: `dedupe-a-${runId}`, createdAt: now, updatedAt: now },
       { id: inboxB, projectId: projectB, name: 'B', slug: `dedupe-b-${runId}`, createdAt: now, updatedAt: now },
     ])
-    await db.insert(supportInboxAddress).values([
+    await db.insert(projectMailAddress).values([
       { id: `addr_a_${runId}`, inboxId: inboxA, projectId: projectA, address: addressA, isPrimary: true },
       { id: `addr_a_alias_${runId}`, inboxId: inboxA, projectId: projectA, address: aliasA },
       { id: `addr_b_${runId}`, inboxId: inboxB, projectId: projectB, address: addressB, isPrimary: true },

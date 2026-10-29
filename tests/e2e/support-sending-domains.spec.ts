@@ -16,7 +16,7 @@ import {
   conversation,
   supportInbox,
   supportInboxMember,
-  supportSendingDomain,
+  projectMailDomain,
 } from '../../server/database/schema/support'
 
 /**
@@ -120,7 +120,7 @@ test.describe('support sending domains', () => {
     await Promise.all(contexts.map((context) => context.close()))
     const projectIds = [projectB.id, fixture?.projectId].filter(Boolean) as string[]
     if (projectIds.length)
-      await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.projectId, projectIds))
+      await db.delete(projectMailDomain).where(inArray(projectMailDomain.projectId, projectIds))
     await db.delete(supportInboxMember).where(eq(supportInboxMember.id, projectB.inboxMemberId))
     await db.delete(supportInbox).where(eq(supportInbox.id, projectB.inboxId))
     await db.delete(projectMember).where(eq(projectMember.id, projectB.memberId))
@@ -150,7 +150,7 @@ test.describe('support sending domains', () => {
     const page = await context.newPage()
     await loginViaProgrammaticPage(page, credentials)
     const activate = await page.request.post('/api/projects/active', {
-      headers: withOriginHeaders('/support'),
+      headers: withOriginHeaders('/inbox'),
       data: { projectId },
     })
     if (!activate.ok()) throw new Error(`Could not activate project ${projectId}: ${await activate.text()}`)
@@ -159,7 +159,7 @@ test.describe('support sending domains', () => {
     return page
   }
 
-  const settingsPath = () => `/support/settings?inboxId=${fixture.primaryInboxId}`
+  const settingsPath = () => `/inbox/settings?inboxId=${fixture.primaryInboxId}`
   const asRole = (role: SupportPermissionRole) => fixture.users[role]
 
   async function addDomainViaUi(page: Page, domain: string) {
@@ -260,7 +260,7 @@ test.describe('support sending domains', () => {
       await expect(page.getByTestId('support-sending-domain-verify')).toHaveCount(0)
       await expect(page.getByTestId('support-sending-domain-delete')).toHaveCount(0)
 
-      const headers = withOriginHeaders('/support/settings')
+      const headers = withOriginHeaders('/inbox/settings')
       const create = await page.request.post(SENDING_DOMAINS_PATH(fixture.projectId), {
         headers,
         data: { domain: `member${suffix}.verify-ok.test` },
@@ -275,8 +275,8 @@ test.describe('support sending domains', () => {
     })
 
     test('another project cannot read, claim under, or send from a project’s domain', async ({ browser }) => {
-      const page = await openPageAs(browser, projectB.credentials!, projectB.id, '/support/settings')
-      const headers = withOriginHeaders('/support/settings')
+      const page = await openPageAs(browser, projectB.credentials!, projectB.id, '/inbox/settings')
+      const headers = withOriginHeaders('/inbox/settings')
 
       const detail = await page.request.get(`${SENDING_DOMAINS_PATH(projectB.id)}/${domainAClaimId}`, { headers })
       expect(detail.status()).toBe(404)
@@ -398,7 +398,7 @@ test.describe('support sending domains', () => {
       const page = await context.newPage()
       await loginViaProgrammaticPage(page, asRole('projectAdmin'))
       const activate = await page.request.post('/api/projects/active', {
-        headers: withOriginHeaders('/support'),
+        headers: withOriginHeaders('/inbox'),
         data: { projectId: fixture.projectId },
       })
       if (!activate.ok()) throw new Error(`Could not activate the fixed project: ${await activate.text()}`)
@@ -841,7 +841,7 @@ test.describe('support sending domains', () => {
       let conversationId = ''
       try {
         const post = (url: string, data: unknown) =>
-          page.request.post(url, { headers: withOriginHeaders('/support'), data })
+          page.request.post(url, { headers: withOriginHeaders('/inbox'), data })
         const contactResponse = await post('/api/support/contacts', {
           projectId: fixture.projectId,
           name: 'Blocked Sender Customer',
@@ -897,14 +897,14 @@ test.describe('support sending domains', () => {
           await dialog.dismiss()
         })
 
-        await page.goto(`/support?inboxId=${fixture.primaryInboxId}&conversationId=${conversationId}`, {
+        await page.goto(`/inbox?inboxId=${fixture.primaryInboxId}&conversationId=${conversationId}`, {
           waitUntil: 'domcontentloaded',
         })
         const notice = page.getByTestId('support-message-sender-blocked')
         await expect(notice).toContainText("this inbox's From address isn't verified for your project", {
           timeout: 30_000,
         })
-        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute('href', '/support/settings')
+        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute('href', '/inbox/settings')
         await page.getByTestId('support-message-retry').click()
         await expect.poll(() => retries).toBe(1)
         expect(dialogs).toBe(0)

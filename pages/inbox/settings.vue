@@ -3,7 +3,7 @@
     <PageHeader title="Support settings" description="Configure your project's shared inbox">
       <template #actions>
         <Button variant="outline" size="sm" as-child>
-          <NuxtLink to="/support">
+          <NuxtLink to="/inbox">
             <Icon name="lucide:inbox" class="w-4 h-4 mr-2" />
             Back to inbox
           </NuxtLink>

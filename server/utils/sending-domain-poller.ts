@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, like, lte, ne, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportInbox, supportInboxAddress, supportSendingDomain } from '~/server/database/schema/support'
+import { supportInbox, projectMailAddress, projectMailDomain } from '~/server/database/schema/support'
 import {
   PENDING_TTL_DAYS,
   SUSPENDED_TTL_DAYS,
@@ -33,8 +33,8 @@ const logger = createLogger('sending-domain-poller')
  * project API routes and the poll pass share them so the status machine lives in one place.
  */
 
-export type SendingDomainRow = typeof supportSendingDomain.$inferSelect
-export type SendingDomainPatch = Partial<typeof supportSendingDomain.$inferInsert>
+export type SendingDomainRow = typeof projectMailDomain.$inferSelect
+export type SendingDomainPatch = Partial<typeof projectMailDomain.$inferInsert>
 
 /** How long a claimed row is invisible to other poll passes. */
 export const SENDING_DOMAIN_LEASE_SECONDS = 2 * 60
@@ -546,7 +546,7 @@ export async function claimDueSendingDomains(
 
   const result = await db.execute<{ id: string }>(sql`
     WITH due AS MATERIALIZED (
-      SELECT id FROM support_sending_domain
+      SELECT id FROM project_mail_domain
       WHERE next_check_at IS NOT NULL
         AND next_check_at <= ${isoTimestamp(now)}
         AND (lease_expires_at IS NULL OR lease_expires_at < ${isoTimestamp(now)})
@@ -554,7 +554,7 @@ export async function claimDueSendingDomains(
       FOR UPDATE SKIP LOCKED
       LIMIT ${limit}
     )
-    UPDATE support_sending_domain AS d
+    UPDATE project_mail_domain AS d
     SET lease_expires_at = ${isoTimestamp(leaseExpiresAt)},
         updated_at = ${isoTimestamp(now)}
     FROM due
@@ -564,7 +564,7 @@ export async function claimDueSendingDomains(
 
   const ids = result.rows.map((row) => row.id)
   if (ids.length === 0) return []
-  const rows = await db.select().from(supportSendingDomain).where(inArray(supportSendingDomain.id, ids))
+  const rows = await db.select().from(projectMailDomain).where(inArray(projectMailDomain.id, ids))
   return rows.sort((a, b) => (a.nextCheckAt?.getTime() ?? 0) - (b.nextCheckAt?.getTime() ?? 0))
 }
 
@@ -588,26 +588,26 @@ export async function saveSendingDomainPatch(
   patch: SendingDomainPatch,
   hooks: SaveSendingDomainHooks = {}
 ): Promise<boolean> {
-  const guard = and(eq(supportSendingDomain.id, row.id), eq(supportSendingDomain.status, row.status))
+  const guard = and(eq(projectMailDomain.id, row.id), eq(projectMailDomain.status, row.status))
   const becomesVerified = patch.status === 'verified' && row.status !== 'verified'
   const policy = hooks.policy ?? resolveSenderPolicy
 
   if (!becomesVerified || policy() !== 'project') {
     const updated = await db
-      .update(supportSendingDomain)
+      .update(projectMailDomain)
       .set(patch)
       .where(guard)
-      .returning({ id: supportSendingDomain.id })
+      .returning({ id: projectMailDomain.id })
     return updated.length > 0
   }
 
   const detach = hooks.detach ?? detachForeignAddresses
   const detached = await db.transaction(async (tx) => {
     const updated = await tx
-      .update(supportSendingDomain)
+      .update(projectMailDomain)
       .set(patch)
       .where(guard)
-      .returning({ id: supportSendingDomain.id })
+      .returning({ id: projectMailDomain.id })
     if (updated.length === 0) return null
     return detach(row, tx)
   })
@@ -635,22 +635,22 @@ export async function deleteSendingDomainRow(
   row: Pick<SendingDomainRow, 'id'> & Partial<Pick<SendingDomainRow, 'status'>>,
   opts: { expiredBy?: Date } = {}
 ): Promise<boolean> {
-  const conditions = [eq(supportSendingDomain.id, row.id)]
-  if (row.status) conditions.push(eq(supportSendingDomain.status, row.status))
-  if (opts.expiredBy) conditions.push(lte(supportSendingDomain.expiresAt, opts.expiredBy))
+  const conditions = [eq(projectMailDomain.id, row.id)]
+  if (row.status) conditions.push(eq(projectMailDomain.status, row.status))
+  if (opts.expiredBy) conditions.push(lte(projectMailDomain.expiresAt, opts.expiredBy))
   const deleted = await db
-    .delete(supportSendingDomain)
+    .delete(projectMailDomain)
     .where(and(...conditions))
-    .returning({ id: supportSendingDomain.id })
+    .returning({ id: projectMailDomain.id })
   return deleted.length > 0
 }
 
 export async function releaseSendingDomainLeases(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   await db
-    .update(supportSendingDomain)
+    .update(projectMailDomain)
     .set({ leaseExpiresAt: null })
-    .where(and(inArray(supportSendingDomain.id, ids), isNotNull(supportSendingDomain.leaseExpiresAt)))
+    .where(and(inArray(projectMailDomain.id, ids), isNotNull(projectMailDomain.leaseExpiresAt)))
 }
 
 /** Best-effort: delete provider routes created for the project's addresses on this exact domain. */
@@ -660,14 +660,14 @@ export async function deleteProviderRoutes(
 ): Promise<void> {
   if (!provider?.deleteInboundRoute || isProviderMismatch(row, provider)) return
   const addresses = await db
-    .select({ id: supportInboxAddress.id, routeId: supportInboxAddress.providerRouteId })
-    .from(supportInboxAddress)
-    .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
+    .select({ id: projectMailAddress.id, routeId: projectMailAddress.providerRouteId })
+    .from(projectMailAddress)
+    .innerJoin(supportInbox, eq(supportInbox.id, projectMailAddress.inboxId))
     .where(
       and(
         eq(supportInbox.projectId, row.projectId),
-        isNotNull(supportInboxAddress.providerRouteId),
-        like(supportInboxAddress.address, `%@${row.domain}`)
+        isNotNull(projectMailAddress.providerRouteId),
+        like(projectMailAddress.address, `%@${row.domain}`)
       )
     )
   for (const address of addresses) {
@@ -680,9 +680,9 @@ export async function deleteProviderRoutes(
       }
     }
     await db
-      .update(supportInboxAddress)
+      .update(projectMailAddress)
       .set({ providerRouteId: null, providerRouteStatus: null })
-      .where(eq(supportInboxAddress.id, address.id))
+      .where(eq(projectMailAddress.id, address.id))
   }
 }
 
@@ -699,22 +699,22 @@ export async function detachForeignAddresses(
   row: Pick<SendingDomainRow, 'id' | 'projectId' | 'domain'>,
   executor: DetachExecutor = db
 ): Promise<number> {
-  const onDomain = (column: typeof supportInboxAddress.address | typeof supportInbox.emailAddress) =>
+  const onDomain = (column: typeof projectMailAddress.address | typeof supportInbox.emailAddress) =>
     or(like(sql`lower(${column})`, `%@${row.domain}`), like(sql`lower(${column})`, `%@%.${row.domain}`))
 
   const detached = await executor
-    .delete(supportInboxAddress)
+    .delete(projectMailAddress)
     .where(
       and(
-        eq(supportInboxAddress.kind, 'custom'),
+        eq(projectMailAddress.kind, 'custom'),
         inArray(
-          supportInboxAddress.inboxId,
+          projectMailAddress.inboxId,
           db.select({ id: supportInbox.id }).from(supportInbox).where(ne(supportInbox.projectId, row.projectId))
         ),
-        onDomain(supportInboxAddress.address)
+        onDomain(projectMailAddress.address)
       )
     )
-    .returning({ id: supportInboxAddress.id })
+    .returning({ id: projectMailAddress.id })
 
   const cleared = await executor
     .update(supportInbox)
@@ -761,19 +761,19 @@ export async function reconcileDirectRoutes(
 
   const addresses = await db
     .select({
-      id: supportInboxAddress.id,
-      inboxId: supportInboxAddress.inboxId,
-      address: supportInboxAddress.address,
-      routeId: supportInboxAddress.providerRouteId,
+      id: projectMailAddress.id,
+      inboxId: projectMailAddress.inboxId,
+      address: projectMailAddress.address,
+      routeId: projectMailAddress.providerRouteId,
     })
-    .from(supportInboxAddress)
-    .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
+    .from(projectMailAddress)
+    .innerJoin(supportInbox, eq(supportInbox.id, projectMailAddress.inboxId))
     .where(
       and(
         eq(supportInbox.projectId, row.projectId),
-        eq(supportInboxAddress.kind, 'custom'),
-        like(sql`lower(${supportInboxAddress.address})`, `%@${row.domain}`),
-        or(isNull(supportInboxAddress.providerRouteId), eq(supportInboxAddress.providerRouteStatus, 'failed'))
+        eq(projectMailAddress.kind, 'custom'),
+        like(sql`lower(${projectMailAddress.address})`, `%@${row.domain}`),
+        or(isNull(projectMailAddress.providerRouteId), eq(projectMailAddress.providerRouteStatus, 'failed'))
       )
     )
 
@@ -798,9 +798,9 @@ export async function reconcileDirectRoutes(
       }
     }
     await db
-      .update(supportInboxAddress)
+      .update(projectMailAddress)
       .set({ providerRouteId: routeId, providerRouteStatus: routeId ? 'active' : 'failed' })
-      .where(eq(supportInboxAddress.id, address.id))
+      .where(eq(projectMailAddress.id, address.id))
     if (routeId) result.created++
     else result.failed++
   }
@@ -826,7 +826,7 @@ export async function suspendClaimForSenderRejection(
   const now = deps.now ?? new Date()
   const detail = sanitizeSendingDomainError(reason)
   const [suspended] = await db
-    .update(supportSendingDomain)
+    .update(projectMailDomain)
     .set({
       status: 'suspended',
       lastErrorCode: 'sender_rejected',
@@ -837,12 +837,12 @@ export async function suspendClaimForSenderRejection(
     })
     .where(
       and(
-        eq(supportSendingDomain.id, verdict.domain.id),
-        eq(supportSendingDomain.projectId, projectId),
-        eq(supportSendingDomain.status, 'verified')
+        eq(projectMailDomain.id, verdict.domain.id),
+        eq(projectMailDomain.projectId, projectId),
+        eq(projectMailDomain.status, 'verified')
       )
     )
-    .returning({ id: supportSendingDomain.id, provider: supportSendingDomain.provider })
+    .returning({ id: projectMailDomain.id, provider: projectMailDomain.provider })
   if (!suspended) return false
 
   logger.warn('Suspended a sending domain after the provider refused its sender', { domainId: suspended.id })

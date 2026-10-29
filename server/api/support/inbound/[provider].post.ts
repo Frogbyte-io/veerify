@@ -72,7 +72,7 @@ import {
   conversationMessage,
   conversationTag,
   slaPolicy,
-  supportInboxAddress,
+  projectMailAddress,
 } from '~/server/database/schema/support'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
@@ -304,9 +304,9 @@ export default defineEventHandler(async (event) => {
     // The inbox's own addresses, so a support address in Cc never becomes a
     // contact or a participant on its own thread.
     const ownAddressRows = await db
-      .select({ address: supportInboxAddress.address })
-      .from(supportInboxAddress)
-      .where(eq(supportInboxAddress.inboxId, inbox.id))
+      .select({ address: projectMailAddress.address })
+      .from(projectMailAddress)
+      .where(eq(projectMailAddress.inboxId, inbox.id))
     const ownAddresses = new Set(ownAddressRows.map((row) => row.address.toLowerCase()))
 
     // ---- SUP-03-8: attachments -------------------------------------------

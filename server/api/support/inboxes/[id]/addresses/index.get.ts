@@ -20,7 +20,7 @@ import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
-import { supportInboxAddress } from '~/server/database/schema/support'
+import { projectMailAddress } from '~/server/database/schema/support'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -30,9 +30,9 @@ export default defineEventHandler(async (event) => {
 
   const addresses = await db
     .select()
-    .from(supportInboxAddress)
-    .where(eq(supportInboxAddress.inboxId, inboxId))
-    .orderBy(asc(supportInboxAddress.createdAt))
+    .from(projectMailAddress)
+    .where(eq(projectMailAddress.inboxId, inboxId))
+    .orderBy(asc(projectMailAddress.createdAt))
 
   return createSuccessResponse({ addresses })
 })

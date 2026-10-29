@@ -5,7 +5,7 @@ describe('shouldLeaveRouteOnOrgSwitch', () => {
   it('keeps top-level, dashboard and settings pages', () => {
     for (const path of [
       '/dashboard',
-      '/support',
+      '/inbox',
       '/feedback?x=1',
       '/dashboard/roadmap',
       '/settings#profile',
@@ -17,7 +17,7 @@ describe('shouldLeaveRouteOnOrgSwitch', () => {
   })
 
   it('leaves record/detail pages', () => {
-    expect(shouldLeaveRouteOnOrgSwitch('/support/conv-1')).toBe(true)
+    expect(shouldLeaveRouteOnOrgSwitch('/inbox/conv-1')).toBe(true)
     expect(shouldLeaveRouteOnOrgSwitch('/feedback/abc')).toBe(true)
   })
 })

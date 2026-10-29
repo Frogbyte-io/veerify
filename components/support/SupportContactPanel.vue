@@ -42,7 +42,7 @@
             </div>
           </div>
           <NuxtLink
-            :to="`/support/contacts/${contact.id}`"
+            :to="`/inbox/contacts/${contact.id}`"
             class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
             View full contact profile

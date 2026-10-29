@@ -16,7 +16,7 @@ test.describe.serial('support conversation read state', () => {
     request,
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const headers = withAuthHeaders(sessionCookie, '/support')
+    const headers = withAuthHeaders(sessionCookie, '/inbox')
     const projectResponse = await request.get('/api/projects/active', { headers })
     expect(projectResponse.ok()).toBeTruthy()
     const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
@@ -70,7 +70,7 @@ test.describe.serial('support conversation read state', () => {
       })
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await page.goto(`/support?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/inbox?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
 
       const row = page.getByTestId(`support-conversation-${conversationId}`)
       await expect(row).toHaveAttribute('data-unread', 'true')
@@ -110,7 +110,7 @@ test.describe.serial('support conversation read state', () => {
     request,
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const headers = withAuthHeaders(sessionCookie, '/support')
+    const headers = withAuthHeaders(sessionCookie, '/inbox')
     const projectResponse = await request.get('/api/projects/active', { headers })
     expect(projectResponse.ok()).toBeTruthy()
     const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
@@ -173,7 +173,7 @@ test.describe.serial('support conversation read state', () => {
       })
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await page.goto(`/support?inboxId=${inboxId}&view=all`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/inbox?inboxId=${inboxId}&view=all`, { waitUntil: 'domcontentloaded' })
 
       const row = page.getByTestId(`support-conversation-${conversationId}`)
       await expect(row).toHaveAttribute('data-unread', 'false')

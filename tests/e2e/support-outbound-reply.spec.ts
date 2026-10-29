@@ -594,7 +594,7 @@ test.describe.serial('outbound attachment contract', () => {
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
       const browserSession = await page.request.get('/api/auth/session')
       expect(browserSession.ok()).toBeTruthy()
-      await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/inbox?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
       const composer = page.locator('[data-testid="support-composer-reply"]')
       await expect(composer).toBeVisible({ timeout: 30_000 })
       const input = page.locator('[data-testid="support-composer-file-input"]')

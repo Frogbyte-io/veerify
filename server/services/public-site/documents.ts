@@ -27,7 +27,7 @@ const APP_PRIVATE_PATHS = [
   '/reports',
   '/feedback',
   '/help',
-  '/support',
+  '/inbox',
   '/marketing',
   '/onboarding',
   '/submissions',

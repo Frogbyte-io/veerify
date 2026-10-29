@@ -1,7 +1,7 @@
 import { and, eq, isNull, like, lt, or } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { supportInbox, supportSendingDomain } from '~/server/database/schema/support'
+import { supportInbox, projectMailDomain } from '~/server/database/schema/support'
 import type { SendingDomainProvider } from '~/server/services/sending-domains/types'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isSendingDomainsEnabled } from '~/server/utils/sending-domains'
@@ -62,24 +62,24 @@ export async function acquireSendingDomainLease(
   now: Date = new Date()
 ): Promise<boolean> {
   const taken = await db
-    .update(supportSendingDomain)
+    .update(projectMailDomain)
     .set({ leaseExpiresAt: new Date(now.getTime() + SENDING_DOMAIN_REQUEST_LEASE_MS) })
     .where(
       and(
-        eq(supportSendingDomain.id, row.id),
-        eq(supportSendingDomain.projectId, row.projectId),
-        or(isNull(supportSendingDomain.leaseExpiresAt), lt(supportSendingDomain.leaseExpiresAt, now))
+        eq(projectMailDomain.id, row.id),
+        eq(projectMailDomain.projectId, row.projectId),
+        or(isNull(projectMailDomain.leaseExpiresAt), lt(projectMailDomain.leaseExpiresAt, now))
       )
     )
-    .returning({ id: supportSendingDomain.id })
+    .returning({ id: projectMailDomain.id })
   return taken.length > 0
 }
 
 export async function releaseSendingDomainLease(row: Pick<SendingDomainRow, 'id'>): Promise<void> {
   await db
-    .update(supportSendingDomain)
+    .update(projectMailDomain)
     .set({ leaseExpiresAt: null })
-    .where(eq(supportSendingDomain.id, row.id))
+    .where(eq(projectMailDomain.id, row.id))
     .catch(() => undefined)
 }
 

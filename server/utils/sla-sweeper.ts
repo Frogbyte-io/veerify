@@ -75,7 +75,7 @@ async function dispatchEscalation(row: Candidate, metric: SlaMetric): Promise<nu
         type: 'sla_breach',
         title: `SLA breached for conversation #${row.conversation.displayId}`,
         body: `The ${metricLabel(metric)} target was missed.`,
-        link: `/support?conversationId=${row.conversation.id}`,
+        link: `/inbox?conversationId=${row.conversation.id}`,
       })
     )
   )

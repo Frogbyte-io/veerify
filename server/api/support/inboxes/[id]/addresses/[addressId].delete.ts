@@ -30,7 +30,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxRole } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
-import { supportInboxAddress } from '~/server/database/schema/support'
+import { projectMailAddress } from '~/server/database/schema/support'
 import { deleteDirectRouteForAddress } from '~/server/utils/inbound-routes'
 
 export default defineEventHandler(async (event) => {
@@ -41,9 +41,9 @@ export default defineEventHandler(async (event) => {
   await requireInboxRole(inboxId, session.user.id, 'admin')
 
   const [existing] = await db
-    .select({ kind: supportInboxAddress.kind })
-    .from(supportInboxAddress)
-    .where(and(eq(supportInboxAddress.id, addressId), eq(supportInboxAddress.inboxId, inboxId)))
+    .select({ kind: projectMailAddress.kind })
+    .from(projectMailAddress)
+    .where(and(eq(projectMailAddress.id, addressId), eq(projectMailAddress.inboxId, inboxId)))
     .limit(1)
 
   if (existing?.kind === 'platform') {
@@ -60,9 +60,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const [deleted] = await db
-    .delete(supportInboxAddress)
-    .where(and(eq(supportInboxAddress.id, addressId), eq(supportInboxAddress.inboxId, inboxId)))
-    .returning({ id: supportInboxAddress.id, providerRouteId: supportInboxAddress.providerRouteId })
+    .delete(projectMailAddress)
+    .where(and(eq(projectMailAddress.id, addressId), eq(projectMailAddress.inboxId, inboxId)))
+    .returning({ id: projectMailAddress.id, providerRouteId: projectMailAddress.providerRouteId })
 
   if (deleted) await deleteDirectRouteForAddress({ id: deleted.id, providerRouteId: deleted.providerRouteId })
 

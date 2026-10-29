@@ -167,7 +167,7 @@ export default {
     conversationLink() {
       const { conversationId, conversationInboxId } = this.mention
       if (!conversationId || !conversationInboxId) return null
-      return { path: '/support', query: { inboxId: conversationInboxId, conversationId } }
+      return { path: '/inbox', query: { inboxId: conversationInboxId, conversationId } }
     },
     safeUrl() {
       try {

@@ -10,7 +10,7 @@ import {
   conversationMessage,
   supportInbox,
   supportOutboundDelivery,
-  supportSendingDomain,
+  projectMailDomain,
 } from '../../../server/database/schema/support'
 
 /**
@@ -101,7 +101,7 @@ export async function seedSendingDomain(input: {
   receivesViaProvider?: boolean
 }) {
   const id = `sd_${randomUUID()}`
-  await db.insert(supportSendingDomain).values({
+  await db.insert(projectMailDomain).values({
     id,
     projectId: input.projectId,
     domain: input.domain,

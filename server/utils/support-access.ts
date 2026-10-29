@@ -8,7 +8,7 @@ import {
   supportCompany,
   supportInbox,
   supportInboxMember,
-  supportInboxAddress,
+  projectMailAddress,
   conversation,
 } from '~/server/database/schema/support'
 import { member } from '~/server/database/schema/auth'
@@ -279,7 +279,7 @@ export async function requireConversationAccess(
 
 /**
  * Resolve the inbox (and matched receiving address) an inbound email should
- * land in, by exact match against `supportInboxAddress.address` (delta D-27).
+ * land in, by exact match against `projectMailAddress.address` (delta D-27).
  *
  * Returns `null` rather than throwing on no match — Stage 03 records the
  * event as an error and returns 200 rather than 404ing, since the sender is a
@@ -294,8 +294,8 @@ export async function resolveInboxByAddress(emailAddress: string) {
 
   const [address] = await db
     .select()
-    .from(supportInboxAddress)
-    .where(eq(supportInboxAddress.address, normalized))
+    .from(projectMailAddress)
+    .where(eq(projectMailAddress.address, normalized))
     .limit(1)
 
   if (!address) {

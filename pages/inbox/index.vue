@@ -98,7 +98,7 @@
             support administrator to add you to an inbox.
           </p>
           <Button as-child>
-            <NuxtLink to="/support/settings" data-testid="support-inbox-empty-settings">
+            <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
               <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
               Open support settings
             </NuxtLink>
@@ -125,7 +125,7 @@
             <p class="truncate text-sm font-medium">{{ activeInbox?.name || 'Support' }}</p>
           </div>
           <Button variant="ghost" size="sm" as-child>
-            <NuxtLink to="/support/settings" aria-label="Support settings" data-testid="support-settings-link">
+            <NuxtLink to="/inbox/settings" aria-label="Support settings" data-testid="support-settings-link">
               <Icon name="lucide:settings" class="w-4 h-4" />
             </NuxtLink>
           </Button>
@@ -678,7 +678,7 @@ export default {
         if (initialInboxId) {
           await this.selectInbox(initialInboxId, { generation, projectId, useRouteView: true })
           // Deep link from a conversation_assigned notification
-          // (`/support?conversationId=…`). Opened after the inbox loads,
+          // (`/inbox?conversationId=…`). Opened after the inbox loads,
           // because selectInbox clears any current selection.
           if (this.isCurrentContext(generation, projectId)) await this.openRequestedConversation()
         }

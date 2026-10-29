@@ -101,7 +101,7 @@
             <span v-if="isSenderBlocked" class="text-xs text-destructive" data-testid="support-message-sender-blocked">
               Not sent: this inbox's From address isn't verified for your project.
               <NuxtLink
-                to="/support/settings"
+                to="/inbox/settings"
                 class="underline hover:no-underline"
                 data-testid="support-message-sender-link"
                 >Verify the domain in Support settings.</NuxtLink

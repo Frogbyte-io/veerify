@@ -465,7 +465,7 @@ test('roadmap, changelog and support are hidden until switched on in project set
     await expect(sidebar.locator('a[href="/project/settings"]')).toBeVisible()
 
     // A new project only has Feedback on, so none of the other tools render anything.
-    for (const href of ['/dashboard/roadmap', '/dashboard/changelog', '/support', '/support/contacts']) {
+    for (const href of ['/dashboard/roadmap', '/dashboard/changelog', '/inbox', '/inbox/contacts']) {
       await expect(sidebar.locator(`a[href="${href}"]`)).toHaveCount(0)
     }
     await expect(sidebar.getByTestId('sidebar-marketing-group')).toHaveCount(0)
@@ -480,14 +480,14 @@ test('roadmap, changelog and support are hidden until switched on in project set
     for (const [label, href] of [
       ['Roadmap', '/dashboard/roadmap'],
       ['Changelog', '/dashboard/changelog'],
-      ['Support', '/support'],
+      ['Support', '/inbox'],
     ] as const) {
       const toggle = page.getByRole('switch', { name: label, exact: true })
       await expect(toggle).toBeEnabled()
       await toggle.click()
       await expect(sidebar.locator(`a[href="${href}"]`)).toBeVisible({ timeout: 20_000 })
     }
-    await expect(sidebar.locator('a[href="/support/contacts"]')).toBeVisible()
+    await expect(sidebar.locator('a[href="/inbox/contacts"]')).toBeVisible()
 
     // Switching one off again (with confirmation) hides it from the sidebar but keeps the others.
     await page.getByRole('switch', { name: 'Roadmap', exact: true }).click()
@@ -575,7 +575,7 @@ test('add tool shortcut is only offered to project admins', async ({ page }) => 
     })
     expect(allOn.ok()).toBeTruthy()
     await page.goto('/dashboard')
-    await expect(sidebarLocator(page).locator('a[href="/support"]')).toBeVisible({ timeout: 20_000 })
+    await expect(sidebarLocator(page).locator('a[href="/inbox"]')).toBeVisible({ timeout: 20_000 })
     await expect(sidebarLocator(page).getByRole('link', { name: 'Add tool' })).toHaveCount(0)
   } finally {
     await deleteProjectViaApi(page.request, project.slug).catch(() => undefined)

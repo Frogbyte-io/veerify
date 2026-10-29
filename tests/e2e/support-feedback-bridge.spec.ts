@@ -32,7 +32,7 @@ test('converts a support conversation and keeps ticket content private on the pu
   request,
 }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const headers = withAuthHeaders(sessionCookie, '/support')
+  const headers = withAuthHeaders(sessionCookie, '/inbox')
   const active = await activeProject(request, sessionCookie)
   const [publicProject] = await db
     .select({ id: project.id, slug: project.slug, name: project.name, organizationId: project.organizationId })
@@ -129,10 +129,10 @@ test('converts a support conversation and keeps ticket content private on the pu
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.request.post('/api/projects/active', {
-      headers: withOriginHeaders('/support'),
+      headers: withOriginHeaders('/inbox'),
       data: { projectId: active.id },
     })
-    await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`/inbox?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
 
     await expect(page.getByTestId('support-thread-convert-feedback')).toBeVisible()
     await page.getByTestId('support-thread-convert-feedback').click()
