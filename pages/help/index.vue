@@ -377,8 +377,8 @@
                 <h4 class="font-medium text-card-foreground mb-1">Mentions</h4>
                 <p class="text-sm text-muted-foreground">
                   Finds posts on Hacker News, Reddit and Bluesky that mention your brand, competitors or problem
-                  keywords. Triage each mention as new, seen or dismissed, or escalate it to a support conversation
-                  (needs Support enabled). A daily email digest summarises new mentions. You can turn the digest off in
+                  keywords. Triage each mention as new, seen or dismissed, or escalate it to an inbox conversation
+                  (needs Inbox enabled). A daily email digest summarises new mentions. You can turn the digest off in
                   your notification settings.
                   <NuxtLink to="/marketing/mentions" class="text-primary hover:underline"> Open mentions </NuxtLink>
                 </p>
@@ -425,8 +425,8 @@
               <div>
                 <h4 class="font-medium text-card-foreground mb-1">Customer language</h4>
                 <p class="text-sm text-muted-foreground">
-                  Finds the words customers use in feedback and support conversations, and turns them into keyword and
-                  prompt suggestions. Feedback and support text is only sent to an AI provider after a workspace admin
+                  Finds the words customers use in feedback and inbox conversations, and turns them into keyword and
+                  prompt suggestions. Feedback and inbox text is only sent to an AI provider after a workspace admin
                   gives consent, separately for each source. You can withdraw consent at any time.
                   <NuxtLink to="/marketing/language" class="text-primary hover:underline">
                     Open customer language
@@ -495,8 +495,7 @@
             </li>
             <li>
               Prompts, brand names and product facts are sent to the AI provider you chose when you run AI visibility or
-              announcement drafts. Feedback and support text is sent only if you have given consent in Customer
-              language.
+              announcement drafts. Feedback and inbox text is sent only if you have given consent in Customer language.
             </li>
             <li>
               LLM costs are billed by your own provider accounts, because you bring your own keys. Veerify does not

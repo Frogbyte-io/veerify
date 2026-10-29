@@ -440,12 +440,15 @@ throw createError({ statusCode: 500, statusMessage: 'Internal server error' })
 The hierarchy is **Organization (UI: "workspace") → Project → Product**. There are no teams.
 
 - A **project** is a brand (e.g. _Dotmatrixlabs_). It owns the domain, appearance, statuses, categories, GitHub,
-  Marketing, Support (all support tables carry `projectId`) and its people.
+  Marketing, the Inbox (formerly Support; all `support_*` tables carry `projectId`) and its people.
 - A **product** (e.g. _dot x_, _Decker_) lives in a project. Each product has its own feedback board with its own
   public/private flag (`feedback.productId` is required); roadmap and changelog are project-wide and filter/tag by
   product. A project always has ≥ 1 product; with exactly one, the UI hides the product layer.
 - Tools are switched per project only, in `project.settings` (`feedbackEnabled`, `roadmapEnabled`,
   `changelogEnabled`, `supportEnabled`, `marketingEnabled`; see `lib/modules.ts`).
+- The Support tool is called **Inbox** in the UI (dashboard routes `/inbox`, `/inbox/contacts`, `/inbox/settings`). Internal
+  names stay `support`: the `supportEnabled` key, `/api/support/*`, `support_*` tables, `server/utils/support-*`. Each
+  address has a behaviour, Mail or Helpdesk (SLAs, CSAT, auto-replies). Use "Inbox"/"Helpdesk" in user-facing text.
 - Marketing provider keys, budgets/usage, email suppression and LLM data consent are organization-level.
 - The dashboard works in the session's **active project** (`session.activeProjectId`): use
   `requireAuthWithResolvedProject(event)` or `requireAuthWithOrganization(event)` from `server/utils/project-context.ts`.
@@ -505,7 +508,7 @@ Veerify wins. Agent guide: `docs/mcp.md`.
 
 - Organization: `owner`, `admin` (administer every project, workspace settings, API keys), `member`.
 - Project (`project_member.role`): `admin` (tools, project settings, members) or `member` (use every tool).
-- Support inboxes keep their own roles (`agent`, `supervisor`, `admin`); project admins act as inbox admins.
+- Inbox addresses keep their own roles (`agent`, `supervisor`, `admin`); project admins act as inbox admins.
 
 ---
 

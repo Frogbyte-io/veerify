@@ -50,10 +50,10 @@ export const MODULES: readonly VeerifyModule[] = [
   },
   {
     key: 'supportEnabled',
-    label: 'Support',
+    label: 'Inbox',
     icon: 'lucide:inbox',
-    description: 'Shared inbox for customer conversations and contacts',
-    dataLabel: 'support conversations',
+    description: "One shared inbox for your project's email: conversations, contacts and helpdesk tools",
+    dataLabel: 'inbox conversations',
     default: false,
   },
   {

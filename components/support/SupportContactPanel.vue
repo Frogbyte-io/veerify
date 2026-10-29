@@ -159,7 +159,7 @@
 
             <!-- Deliberately distinct styling from the "Linked" section above -
                  a possible match is a heuristic suggestion, never a confirmed
-                 identity (see pages/support/contacts/[id].vue for the same
+                 identity (see pages/inbox/contacts/[id].vue for the same
                  convention). -->
             <div
               v-if="probableFeedback.length > 0 || probableLoading || probableError"

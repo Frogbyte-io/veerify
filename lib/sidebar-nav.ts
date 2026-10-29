@@ -138,7 +138,7 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
   },
   {
     id: 'support',
-    label: 'Support',
+    label: 'Inbox',
     requiresOrg: true,
     module: 'supportEnabled',
     items: [

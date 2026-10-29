@@ -104,7 +104,7 @@
                 to="/inbox/settings"
                 class="underline hover:no-underline"
                 data-testid="support-message-sender-link"
-                >Verify the domain in Support settings.</NuxtLink
+                >Verify the domain in Inbox settings.</NuxtLink
               >
             </span>
             <span v-else class="text-xs text-destructive">{{

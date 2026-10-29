@@ -74,12 +74,12 @@
 
         <SidebarSeparator />
 
-        <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Support</p>
+        <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Inbox</p>
 
         <div class="flex items-center justify-between">
           <div>
             <h3 class="font-medium">Conversation Assigned</h3>
-            <p class="text-sm text-muted-foreground">When a support conversation is assigned to you</p>
+            <p class="text-sm text-muted-foreground">When an inbox conversation is assigned to you</p>
           </div>
           <Switch
             :model-value="preferences.conversationAssigned"
@@ -90,7 +90,7 @@
         <div class="flex items-center justify-between">
           <div>
             <h3 class="font-medium">Mentions</h3>
-            <p class="text-sm text-muted-foreground">When a teammate mentions you in a support conversation</p>
+            <p class="text-sm text-muted-foreground">When a teammate mentions you in an inbox conversation</p>
           </div>
           <Switch
             :model-value="preferences.conversationMentions"
