@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { and, asc, eq, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
+import { helpdeskAppliesTo, helpdeskConversationFilter } from './conversation-behaviour'
 import { getCsatSurveyTemplate } from '~/lib/email-templates'
 import { db } from '~/server/database/drizzle'
 import {
@@ -248,6 +249,8 @@ async function contactWasRecentlySurveyed(
 }
 
 async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<boolean> {
+  // No survey for conversations started on a mail address, or in Spam or Trash.
+  if (!helpdeskAppliesTo(candidate.conversation)) return false
   if (!candidate.contact.email || !candidate.inbox.emailAddress) return false
   const recipient = candidate.contact.email
   const senderAddress = candidate.inbox.emailAddress
@@ -373,6 +376,7 @@ export async function runCsatDispatchSweep(input: { now?: Date; limit?: number }
         and(
           eq(conversation.projectId, survey.projectId),
           eq(conversation.status, status),
+          helpdeskConversationFilter(),
           survey.inboxId ? eq(conversation.inboxId, survey.inboxId) : undefined,
           or(lte(conversation.updatedAt, now), lte(conversation.resolvedAt, now))
         )

@@ -10,6 +10,7 @@ import {
   supportInboxMember,
 } from '~/server/database/schema/support'
 import { notifyUser } from './notifications'
+import { helpdeskAppliesTo, helpdeskConversationFilter } from './conversation-behaviour'
 import type { SlaMetric } from './sla'
 
 const PRIORITY_RANK: Record<string, number> = { low: 1, normal: 2, high: 3, urgent: 4 }
@@ -92,6 +93,8 @@ export async function runSlaBreachSweep(input: { now?: Date } = {}) {
     .where(
       and(
         isNull(conversation.slaPausedAt),
+        // Mail conversations and conversations in Spam or Trash never breach.
+        helpdeskConversationFilter(),
         or(
           and(isNotNull(conversation.firstResponseDueAt), lte(conversation.firstResponseDueAt, now)),
           and(isNotNull(conversation.nextResponseDueAt), lte(conversation.nextResponseDueAt, now)),
@@ -105,6 +108,7 @@ export async function runSlaBreachSweep(input: { now?: Date } = {}) {
   let breached = 0
   let notifications = 0
   for (const row of candidates) {
+    if (!helpdeskAppliesTo(row.conversation)) continue
     for (const metric of dueMetrics(row, now)) {
       const created = await db.transaction(async (tx) => {
         const [breach] = await tx
