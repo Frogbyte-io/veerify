@@ -56,7 +56,7 @@ const mailLimits = vi.hoisted(() => ({
   getOrganizationIdForProject: vi.fn(async () => 'org-1'),
   getMailUsage: vi.fn(async () => ({
     tier: 'owner',
-    limits: { domains: 69, pendingDomains: 3, addresses: 420, forwardsPerMonth: 1337 },
+    limits: { domains: 69, pendingDomains: 3, addresses: 420, forwardsPerMonth: 80085 },
     used: { domains: 2, pendingDomains: 1, addresses: 5, forwardsThisMonth: null },
   })),
 }))

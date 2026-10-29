@@ -20,7 +20,7 @@ export interface MailLimits {
 
 export const MAIL_TIERS: Record<MailTier, MailLimits> = {
   standard: { domains: 3, pendingDomains: 3, addresses: 20, forwardsPerMonth: 5000 },
-  owner: { domains: 69, pendingDomains: 3, addresses: 420, forwardsPerMonth: 1337 },
+  owner: { domains: 69, pendingDomains: 3, addresses: 420, forwardsPerMonth: 80085 },
 }
 
 export const MAIL_TIER_KEYS = Object.keys(MAIL_TIERS) as MailTier[]

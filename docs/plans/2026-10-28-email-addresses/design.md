@@ -85,7 +85,7 @@ Limits count per **workspace** (organization), the future paying customer in the
 | Tier       | Domains | Addresses | Forwards per month |
 | ---------- | ------: | --------: | -----------------: |
 | `standard` |       3 |        20 |              5,000 |
-| `owner`    |      69 |       420 |              1,337 |
+| `owner`    |      69 |       420 |             80,085 |
 
 - `owner` is Frogbyte's own tier. There is no UI for it. It is set by an operator script:
   `yarn mail:set-tier <workspace-slug> owner|standard`, which writes `mail_entitlement` and an audit event.
@@ -160,7 +160,5 @@ Source: Frogmail `docs/plans/2026-10-28-ses-inbound-forwarding.md` §10. How Vee
 
 ## Open questions
 
-1. The `owner` tier allows fewer forwards per month (1,337) than `standard` (5,000). Intended, or should
-   `owner` be the larger number?
-2. Trash retention: is 30 days right? Frogmail's own copy follows its retention setting, so that setting should be
+1. Trash retention: is 30 days right? Frogmail's own copy follows its retention setting, so that setting should be
    no longer than Veerify's.
