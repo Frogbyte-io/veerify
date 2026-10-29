@@ -14,7 +14,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { projectMailAddress, projectMailDomain } from '~/server/database/schema/support'
-import { isCatchAllAddress } from '~/lib/mail-address'
+import { isCatchAllAddress, splitMailAddress } from '~/lib/mail-address'
 
 export async function resolveConversationSender(
   input: {
@@ -30,14 +30,27 @@ export async function resolveConversationSender(
         address: projectMailAddress.address,
         kind: projectMailAddress.kind,
         inboxId: projectMailAddress.inboxId,
-        domainStatus: projectMailDomain.status,
+        projectId: projectMailAddress.projectId,
       })
       .from(projectMailAddress)
-      .innerJoin(projectMailDomain, eq(projectMailAddress.domainId, projectMailDomain.id))
-      .where(and(eq(projectMailAddress.id, input.mailAddressId), eq(projectMailDomain.status, 'verified')))
+      .where(eq(projectMailAddress.id, input.mailAddressId))
       .limit(1)
-    if (row && row.kind === 'custom' && row.inboxId === input.inboxId && !isCatchAllAddress(row.address)) {
-      return row.address
+    const domain = row ? splitMailAddress(row.address)?.domain : undefined
+    if (row && domain && row.kind === 'custom' && row.inboxId === input.inboxId && !isCatchAllAddress(row.address)) {
+      // Matched by the address's own domain rather than `domainId`, so addresses
+      // created before that column existed qualify too.
+      const [verified] = await executor
+        .select({ id: projectMailDomain.id })
+        .from(projectMailDomain)
+        .where(
+          and(
+            eq(projectMailDomain.projectId, row.projectId),
+            eq(projectMailDomain.domain, domain),
+            eq(projectMailDomain.status, 'verified')
+          )
+        )
+        .limit(1)
+      if (verified) return row.address
     }
   }
   return input.inboxEmailAddress

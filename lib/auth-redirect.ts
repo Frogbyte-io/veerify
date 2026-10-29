@@ -110,12 +110,14 @@ export async function resolveSafeRedirectTarget(rawRedirect: unknown, fallback =
   }
 
   try {
-    const response = await $fetch<{ data?: { allowed?: boolean; target?: string | null } }>(
-      '/api/public/auth/redirect-allowed',
-      {
-        query: { target: parsed.toString() },
-      }
-    )
+    // Untyped call: the typed Nitro route map makes inference for this path exceed the instantiation depth limit.
+    const fetchRedirectAllowed = $fetch as unknown as (
+      url: string,
+      options: { query: { target: string } }
+    ) => Promise<{ data?: { allowed?: boolean; target?: string | null } }>
+    const response = await fetchRedirectAllowed('/api/public/auth/redirect-allowed', {
+      query: { target: parsed.toString() },
+    })
     if (response?.data?.allowed === true && typeof response.data.target === 'string') {
       return response.data.target
     }

@@ -31,6 +31,7 @@
         :main-app-url="mainAppUrl"
         :auth-redirect-target="authRedirectTarget"
         :reload-project="reloadProject"
+        :feedback-ref="feedbackRef"
       />
     </template>
   </PublicProjectShell>
@@ -39,8 +40,8 @@
 <script>
 /**
  * A project's public site: the persistent PublicProjectShell plus the body of
- * the current tab. Mounted by the route pages (`pages/[...slug].vue`,
- * `pages/index.vue`) so tab navigation never remounts the shell.
+ * the current tab. Mounted by `pages/[...slug].vue` (which also serves `/`)
+ * so tab navigation never remounts the shell.
  */
 export default {
   name: 'PublicProjectSite',
@@ -51,6 +52,8 @@ export default {
     activeTab: { type: String, default: 'feedback' },
     productSlug: { type: String, default: null },
     entrySlug: { type: String, default: null },
+    // `p/<post>` segment: a feedback item opened over the feedback tab
+    feedbackRef: { type: String, default: null },
   },
   data() {
     return { pageTitle: '' }

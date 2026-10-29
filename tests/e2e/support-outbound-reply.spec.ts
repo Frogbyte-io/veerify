@@ -7,7 +7,6 @@ import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import {
   contact,
   conversation,
-  projectMailAddress,
   supportAttachmentUpload,
   supportEmailEvent,
   supportInbox,
@@ -148,23 +147,23 @@ test.describe.serial('outbound reply round trip', () => {
       conversationId = afterInbound[0].id
 
       // Replies go out from the receiving address when it sits on a verified
-      // project domain. Detached from its domain (as an address forwarded in
-      // from elsewhere), the inbox's own sending address is required instead.
-      const [receivingAddress] = await db
-        .select({ id: projectMailAddress.id, domainId: projectMailAddress.domainId })
-        .from(projectMailAddress)
-        .where(eq(projectMailAddress.address, inboxAddress))
-      expect(receivingAddress.domainId).toBeTruthy()
-      await db.update(projectMailAddress).set({ domainId: null }).where(eq(projectMailAddress.id, receivingAddress.id))
+      // project domain. A conversation not tied to one (as one an agent
+      // started) needs the inbox's own sending address, and there is none yet.
+      const [received] = await db
+        .select({ mailAddressId: conversation.mailAddressId })
+        .from(conversation)
+        .where(eq(conversation.id, conversationId))
+      expect(received.mailAddressId).toBeTruthy()
+      await db.update(conversation).set({ mailAddressId: null }).where(eq(conversation.id, conversationId))
       const rejectedReply = await request.post(`/api/support/conversations/${conversationId}/messages`, {
         headers,
         data: { kind: 'outgoing', body: 'Looking into this now.' },
       })
       expect(rejectedReply.status()).toBe(409)
       await db
-        .update(projectMailAddress)
-        .set({ domainId: receivingAddress.domainId })
-        .where(eq(projectMailAddress.id, receivingAddress.id))
+        .update(conversation)
+        .set({ mailAddressId: received.mailAddressId })
+        .where(eq(conversation.id, conversationId))
 
       // --- 1. Give the inbox a sending address, then reply -------------------
       const inboxUpdate = await request.put(`/api/support/inboxes/${inboxId}`, {

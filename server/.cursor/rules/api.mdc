@@ -111,6 +111,7 @@ throw createError({
 - `requireInteractiveSession` returns 403 for keys; `isCredentialPrincipal` detects them
 - Key context lives on the `user_api_key` row; `X-Veerify-Organization` / `X-Veerify-Project` override per request (403 if inaccessible)
 - `/mcp` (`server/routes/mcp.ts`, `server/mcp/`) accepts only keys; `call_api` blocks `/api/auth/`, `/api/cron/`, `/api/public/auth/`, `/api/user/api-keys`, `/api/test`. See `docs/mcp.md`
+- Device login: `/api/device/code` and `/api/device/token` are public (RFC 8628 bodies); `/api/device/requests/*` is browser-session only; `call_api` blocks `/api/device/`
 - Imports: `/api/projects/{slug}/imports/*` are project-admin only; logic in `server/services/imports/`, commits have no side effects and never set user ids
 
 ### Authentication Middleware

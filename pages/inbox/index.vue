@@ -40,71 +40,72 @@
         </div>
       </div>
 
-      <!-- Project error -->
-      <Card v-else-if="projectError" class="max-w-md mx-auto mt-12">
-        <CardContent class="text-center py-8">
-          <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-          <p class="font-medium mb-2">Failed to load the project</p>
-          <p class="text-sm text-muted-foreground mb-4">{{ projectError }}</p>
-          <Button variant="outline" @click="initProjectContext">
-            <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-            Try again
-          </Button>
-        </CardContent>
-      </Card>
+      <!-- Notices (load error, Inbox off, no inbox) use the standard page frame -->
+      <PageContainer v-else-if="showNotice" data-testid="support-inbox-notice">
+        <PageHeader title="Inbox" description="Conversations with your customers" />
 
-      <!-- Inbox switched off for this project -->
-      <Card v-else-if="supportDisabled" class="max-w-md mx-auto mt-12" data-testid="support-disabled">
-        <CardContent class="text-center py-10 space-y-3">
-          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Icon name="lucide:life-buoy" class="w-6 h-6 text-muted-foreground" />
-          </div>
-          <p class="font-medium">Inbox is switched off for this project</p>
-          <template v-if="activeProject?.role === 'admin'">
-            <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
-            <Button as-child variant="outline">
-              <NuxtLink to="/project/settings?tab=tools">
-                <Icon name="lucide:layout-grid" class="w-4 h-4 mr-2" />
-                Project settings: Tools
+        <!-- Project error -->
+        <Card v-if="projectError">
+          <CardContent class="text-center py-8">
+            <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
+            <p class="font-medium mb-2">Failed to load the project</p>
+            <p class="text-sm text-muted-foreground mb-4">{{ projectError }}</p>
+            <Button variant="outline" @click="initProjectContext">
+              <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+
+        <!-- Inbox switched off for this project -->
+        <Card v-else-if="supportDisabled" data-testid="support-disabled">
+          <CardContent class="text-center py-10 space-y-3">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Icon name="lucide:life-buoy" class="w-6 h-6 text-muted-foreground" />
+            </div>
+            <p class="font-medium">Inbox is switched off for this project</p>
+            <template v-if="activeProject?.role === 'admin'">
+              <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
+              <Button as-child variant="outline">
+                <NuxtLink to="/project/settings?tab=tools">
+                  <Icon name="lucide:layout-grid" class="w-4 h-4 mr-2" />
+                  Project settings: Tools
+                </NuxtLink>
+              </Button>
+            </template>
+            <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
+              <Icon name="lucide:lock" class="w-3.5 h-3.5" />
+              Project admins can switch Inbox on.
+            </p>
+          </CardContent>
+        </Card>
+
+        <!-- No inbox yet: point to settings, where managers create one -->
+        <Card v-else data-testid="support-inbox-empty">
+          <CardContent class="text-center py-8">
+            <div
+              v-if="inboxAccessError"
+              data-testid="support-inbox-access-error"
+              class="text-sm text-destructive mb-4"
+              role="alert"
+            >
+              {{ inboxAccessError }}
+            </div>
+            <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+            <p class="font-medium mb-2" data-testid="support-no-assignment">No inboxes are assigned to you.</p>
+            <p class="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+              Admins can create an inbox and set up domains, addresses and agents in inbox settings. Otherwise, ask an
+              inbox administrator to add you to an inbox.
+            </p>
+            <Button as-child>
+              <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
+                <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
+                Open inbox settings
               </NuxtLink>
             </Button>
-          </template>
-          <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
-            <Icon name="lucide:lock" class="w-3.5 h-3.5" />
-            Project admins can switch Inbox on.
-          </p>
-        </CardContent>
-      </Card>
-
-      <!-- No inbox yet: point to settings, where managers create one -->
-      <Card
-        v-else-if="!isLoadingInboxes && !inboxesError && inboxes.length === 0"
-        data-testid="support-inbox-empty"
-        class="max-w-md mx-auto mt-12"
-      >
-        <CardContent class="text-center py-8">
-          <div
-            v-if="inboxAccessError"
-            data-testid="support-inbox-access-error"
-            class="text-sm text-destructive mb-4"
-            role="alert"
-          >
-            {{ inboxAccessError }}
-          </div>
-          <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-          <p class="font-medium mb-2" data-testid="support-no-assignment">No inboxes are assigned to you.</p>
-          <p class="text-sm text-muted-foreground mb-4">
-            Admins can create an inbox and set up domains, addresses and agents in inbox settings. Otherwise, ask an
-            inbox administrator to add you to an inbox.
-          </p>
-          <Button as-child>
-            <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
-              <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
-              Open inbox settings
-            </NuxtLink>
-          </Button>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </PageContainer>
 
       <!-- Responsive pane layout. Sized by the container (not the viewport)
          so it adapts when the app sidebar opens or collapses:
@@ -457,6 +458,12 @@ export default {
   },
 
   computed: {
+    noInbox() {
+      return !this.isLoadingInboxes && !this.inboxesError && this.inboxes.length === 0
+    },
+    showNotice() {
+      return Boolean(this.projectError) || this.supportDisabled || this.noInbox
+    },
     // Mirrors the @4xl/panes container query (56rem): below it the inbox
     // sidebar moves into a drawer opened from a compact toolbar. Rendered
     // with v-if so the desktop DOM carries no hidden duplicates. The extra

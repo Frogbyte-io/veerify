@@ -27,12 +27,8 @@ export async function completePublicAuthHandoffFromUrl() {
 }
 
 export async function fetchPublicAuthSession() {
-  // Narrowly typed alias, as in dashboard-bootstrap-client.ts: Nitro's typed `$fetch`
-  // resolves the response against every API route and exceeds TypeScript's
-  // instantiation depth (TS2589) once enough routes exist.
-  const fetchSession = $fetch as unknown as (
-    url: string
-  ) => Promise<{ data?: { session?: any; user?: any } | null } | null>
+  // Untyped call: the typed Nitro route map made inference for this path exceed the instantiation depth limit.
+  const fetchSession = $fetch as unknown as (url: string) => Promise<{ data?: { session?: any; user?: any } | null }>
   const response = await fetchSession('/api/public/auth/session')
   return response?.data || { session: null, user: null }
 }

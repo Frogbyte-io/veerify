@@ -1,5 +1,7 @@
 /** Pure helpers for the public project shell (PublicProjectShell.vue). */
 
+import { FEEDBACK_POST_SEGMENT, feedbackPostRef } from './public-site-path'
+
 export interface ProjectPaths {
   feedback: string
   roadmap: string
@@ -8,6 +10,9 @@ export interface ProjectPaths {
   /** `/<project>/<product>` (custom domain: `/<product>`) */
   // eslint-disable-next-line no-unused-vars
   product: (productSlug: string) => string
+  /** A feedback item's own page: `/<project>/p/<title-slug>-<id>` (custom domain: `/p/...`) */
+  // eslint-disable-next-line no-unused-vars
+  post: (item: { id: string; title?: string | null }) => string
 }
 
 /**
@@ -23,6 +28,7 @@ export function projectPaths(projectSlug: string, onCustomDomain: boolean): Proj
     changelog: `${base}/changelog`,
     testimonials: `${base}/testimonials`,
     product: (productSlug: string) => `${base}/${productSlug}`,
+    post: (item) => `${base}/${FEEDBACK_POST_SEGMENT}/${feedbackPostRef(item)}`,
   }
 }
 

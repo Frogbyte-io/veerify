@@ -1,0 +1,36 @@
+/**
+ * @openapi
+ * /api/device/requests/{userCode}/deny:
+ *   post:
+ *     tags: [Device login]
+ *     summary: Deny a device login
+ *     description: "Browser session only (API keys get 403). Rate limited to 10 requests per 60 s per user. Unknown, expired and already decided codes all return the same 404."
+ *     operationId: denyDeviceRequest
+ *     security: [{ cookieAuth: [] }]
+ *     parameters:
+ *       - { name: userCode, in: path, required: true, schema: { type: string }, example: "BCDF-GHJK" }
+ *     responses:
+ *       200: { description: "Denied; data.status is denied" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Browser session only, or a cross-site request (Sec-Fetch-Site / Origin check)" }
+ *       404: { description: "Code not found or expired" }
+ *       429: { description: "Rate limit exceeded" }
+ */
+import { denyDeviceAuthorization } from '~/server/services/device-login'
+import { requireSameOrigin } from '~/server/utils/device-http'
+import { requireInteractiveSession } from '~/server/utils/auth-middleware'
+import { requireRateLimit } from '~/server/utils/rate-limit'
+
+export default defineEventHandler(async (event) => {
+  requireSameOrigin(event)
+  const session = await requireInteractiveSession(event)
+  await requireRateLimit(event, {
+    maxRequests: 10,
+    windowSeconds: 60,
+    identifier: 'device-approve',
+    subject: session.user.id,
+  })
+
+  await denyDeviceAuthorization(getRouterParam(event, 'userCode') ?? '', session.user.id)
+  return { data: { status: 'denied' } }
+})

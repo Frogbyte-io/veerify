@@ -4,10 +4,15 @@ import {
   isAppHostedRedirectHost,
   normalizeHostname,
   parseRedirectUrl,
+  resolveSafeRedirectTarget,
   supportsCrossSubdomainAuth,
 } from '../lib/auth-redirect'
 
 describe('auth redirect helpers', () => {
+  it('keeps the query string of an in-app device approval path', async () => {
+    await expect(resolveSafeRedirectTarget('/device?code=BCDF-GHJK')).resolves.toBe('/device?code=BCDF-GHJK')
+  })
+
   it('normalizes hostnames for matching', () => {
     expect(normalizeHostname('Preview.Example.COM.')).toBe('preview.example.com')
   })

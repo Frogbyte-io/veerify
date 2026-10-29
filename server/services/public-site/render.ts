@@ -1,5 +1,5 @@
-import { publicPagePath, type PublicPage } from '~/lib/public-site-path'
-import type { PublicChangelogItem, PublicFeedbackItem, PublicProjectSnapshot } from './snapshot'
+import { FEEDBACK_POST_SEGMENT, feedbackPostRef, publicPagePath, type PublicPage } from '~/lib/public-site-path'
+import type { PublicChangelogItem, PublicFeedbackItem, PublicFeedbackPost, PublicProjectSnapshot } from './snapshot'
 
 /**
  * Pure renderers for the machine-readable surfaces of the public sites and the
@@ -83,6 +83,11 @@ function productBoardUrl(s: PublicProjectSnapshot, urls: ProjectUrls, productId:
   return product ? `${urls.base}/${product.slug}` : urls.base
 }
 
+/** Canonical URL of a feedback item's own page. */
+export function postUrl(urls: ProjectUrls, item: { id: string; title: string }) {
+  return `${urls.base}/${FEEDBACK_POST_SEGMENT}/${feedbackPostRef(item)}`
+}
+
 function productName(s: PublicProjectSnapshot, productId: string) {
   return s.products.find((p) => p.id === productId)?.name ?? null
 }
@@ -96,12 +101,12 @@ function feedbackLine(s: PublicProjectSnapshot, urls: ProjectUrls, item: PublicF
     s.products.length > 1 ? productName(s, item.productId) : null,
     item.commentCount > 0 ? plural(item.commentCount, 'comment') : null,
   ].filter(Boolean)
-  let line = `- [${linkText(item.title)}](${productBoardUrl(s, urls, item.productId)}): ${facts.join(' · ')}`
+  let line = `- [${linkText(item.title)}](${postUrl(urls, item)}): ${facts.join(' · ')}`
   if (withBody && item.body?.trim()) line += `\n  ${truncate(oneLine(item.body), LIST_BODY_CHARS)}`
   return line
 }
 
-function feedbackBlock(s: PublicProjectSnapshot, item: PublicFeedbackItem) {
+function feedbackBlock(s: PublicProjectSnapshot, urls: ProjectUrls, item: PublicFeedbackItem) {
   const facts = [
     plural(item.voteCount, 'vote'),
     `Status: ${statusName(s, item.status)}`,
@@ -109,6 +114,7 @@ function feedbackBlock(s: PublicProjectSnapshot, item: PublicFeedbackItem) {
     item.category ? `Category: ${item.category}` : null,
     s.products.length > 1 ? `Product: ${productName(s, item.productId)}` : null,
     `Submitted: ${isoDate(item.createdAt)}`,
+    `URL: ${postUrl(urls, item)}`,
   ].filter(Boolean)
   const lines = [`### ${oneLine(item.title)}`, '', facts.join(' · ')]
   if (item.body?.trim()) lines.push('', quote(item.body))
@@ -247,7 +253,7 @@ export function renderProjectLlmsFullTxt(s: PublicProjectSnapshot, urls: Project
   if (s.modules.roadmapEnabled) out.push(renderRoadmap(s, urls, '##'), '')
   else if (s.modules.feedbackEnabled && s.feedback.length) {
     out.push('## Feedback', '')
-    for (const item of s.feedback) out.push(feedbackBlock(s, item), '')
+    for (const item of s.feedback) out.push(feedbackBlock(s, urls, item), '')
   }
 
   if (s.modules.changelogEnabled && s.changelog.length) {
@@ -277,8 +283,15 @@ function renderRoadmap(s: PublicProjectSnapshot, urls: ProjectUrls, level: '#' |
  * `<noscript>`). Null when the page does not exist (unknown product or entry,
  * or a tool that is off).
  */
-export function renderPageMarkdown(s: PublicProjectSnapshot, urls: ProjectUrls, page: PublicPage): string | null {
+export function renderPageMarkdown(
+  s: PublicProjectSnapshot,
+  urls: ProjectUrls,
+  page: PublicPage,
+  post: PublicFeedbackPost | null = null
+): string | null {
   switch (page.kind) {
+    case 'post':
+      return post ? renderPostMarkdown(s, urls, post) : null
     case 'board': {
       if (!s.modules.feedbackEnabled) return renderProjectLlmsTxt(s, urls)
       const product = page.productSlug ? s.products.find((p) => p.slug === page.productSlug) : null
@@ -321,6 +334,40 @@ export function renderPageMarkdown(s: PublicProjectSnapshot, urls: ProjectUrls, 
   }
 }
 
+/** A feedback item's own page: the request, its facts and the public discussion. */
+export function renderPostMarkdown(s: PublicProjectSnapshot, urls: ProjectUrls, post: PublicFeedbackPost) {
+  const product = s.products.length > 1 ? productName(s, post.productId) : null
+  const facts = [
+    plural(post.voteCount, 'vote'),
+    `Status: ${statusName(s, post.status)}`,
+    post.tag ? `Type: ${TAG_LABELS[post.tag]}` : null,
+    post.category ? `Category: ${post.category}` : null,
+    product ? `Product: ${product}` : null,
+    `Submitted: ${isoDate(post.createdAt)}${post.authorName ? ` by ${oneLine(post.authorName)}` : ''}`,
+  ].filter(Boolean)
+  const out = [
+    `# ${oneLine(post.title)}`,
+    '',
+    `Feedback for ${oneLine(s.project.name)} · ${facts.join(' · ')}`,
+    '',
+    `URL: ${postUrl(urls, post)}`,
+    `Board: ${productBoardUrl(s, urls, post.productId)}`,
+    '',
+  ]
+  if (post.body?.trim()) out.push(quote(post.body), '')
+  out.push(`## Comments (${post.comments.length})`, '')
+  if (!post.comments.length) out.push('No comments yet.', '')
+  for (const comment of post.comments) {
+    out.push(
+      `**${oneLine(comment.authorName)}**${comment.isReply ? ' (reply)' : ''} · ${isoDate(comment.createdAt)}`,
+      '',
+      quote(comment.body),
+      ''
+    )
+  }
+  return out.join('\n')
+}
+
 /** Absolute URLs of every public page of a project, for the sitemap. */
 export function projectSitemapEntries(s: PublicProjectSnapshot, urls: ProjectUrls): SitemapEntry[] {
   const latestFeedback = s.feedback.reduce<Date | null>(
@@ -333,6 +380,9 @@ export function projectSitemapEntries(s: PublicProjectSnapshot, urls: ProjectUrl
     if (s.products.length > 1) {
       for (const p of s.products) entries.push({ loc: `${urls.base}/${p.slug}`, changefreq: 'daily', priority: 0.8 })
     }
+  }
+  if (s.modules.feedbackEnabled || s.modules.roadmapEnabled) {
+    for (const item of s.feedback) entries.push({ loc: postUrl(urls, item), lastmod: item.createdAt, priority: 0.6 })
   }
   if (s.modules.roadmapEnabled) {
     entries.push({ loc: `${urls.base}/roadmap`, lastmod: latestFeedback, changefreq: 'weekly', priority: 0.8 })
@@ -503,9 +553,15 @@ export function originOf(url: string) {
 }
 
 /** Title, description, canonical, Open Graph, llms.txt/markdown alternates and JSON-LD of a public page. */
-export function buildPublicHeadTags(s: PublicProjectSnapshot, urls: ProjectUrls, page: PublicPage): HeadTags | null {
+export function buildPublicHeadTags(
+  s: PublicProjectSnapshot,
+  urls: ProjectUrls,
+  page: PublicPage,
+  post: PublicFeedbackPost | null = null
+): HeadTags | null {
   const name = oneLine(s.project.name)
-  const pageUrl = `${urls.base}${publicPagePath(page)}`
+  // A post's canonical URL carries its current title slug, whatever slug was requested
+  const pageUrl = page.kind === 'post' && post ? postUrl(urls, post) : `${urls.base}${publicPagePath(page)}`
   const publisher = { '@type': 'Organization', name: oneLine(s.organization.name) }
   const website = { '@type': 'WebSite', name, url: urls.base, publisher }
   let title: string
@@ -513,6 +569,43 @@ export function buildPublicHeadTags(s: PublicProjectSnapshot, urls: ProjectUrls,
   let jsonLd: Record<string, unknown>
 
   switch (page.kind) {
+    case 'post': {
+      if (!post) return null
+      title = `${oneLine(post.title)} · ${name} feedback`
+      description = truncate(
+        oneLine(post.body) || `${statusName(s, post.status)} request with ${plural(post.voteCount, 'vote')}.`,
+        300
+      )
+      jsonLd = {
+        '@type': 'DiscussionForumPosting',
+        headline: oneLine(post.title),
+        text: post.body ?? undefined,
+        url: pageUrl,
+        mainEntityOfPage: pageUrl,
+        datePublished: new Date(post.createdAt).toISOString(),
+        author: { '@type': 'Person', name: oneLine(post.authorName) || 'Anonymous' },
+        isPartOf: website,
+        interactionStatistic: [
+          {
+            '@type': 'InteractionCounter',
+            interactionType: 'https://schema.org/LikeAction',
+            userInteractionCount: post.voteCount,
+          },
+          {
+            '@type': 'InteractionCounter',
+            interactionType: 'https://schema.org/CommentAction',
+            userInteractionCount: post.comments.length,
+          },
+        ],
+        comment: post.comments.map((c) => ({
+          '@type': 'Comment',
+          text: c.body,
+          datePublished: new Date(c.createdAt).toISOString(),
+          author: { '@type': 'Person', name: oneLine(c.authorName) },
+        })),
+      }
+      break
+    }
     case 'board': {
       const product = page.productSlug ? s.products.find((p) => p.slug === page.productSlug) : null
       if (page.productSlug && !product) return null
@@ -578,7 +671,7 @@ export function buildPublicHeadTags(s: PublicProjectSnapshot, urls: ProjectUrls,
   const tags = [
     `<meta name="description" content="${attr(description)}">`,
     `<link rel="canonical" href="${attr(pageUrl)}">`,
-    `<meta property="og:type" content="${page.kind === 'changelog' && page.entrySlug ? 'article' : 'website'}">`,
+    `<meta property="og:type" content="${(page.kind === 'changelog' && page.entrySlug) || page.kind === 'post' ? 'article' : 'website'}">`,
     `<meta property="og:site_name" content="${attr(name)}">`,
     `<meta property="og:title" content="${attr(title)}">`,
     `<meta property="og:description" content="${attr(description)}">`,
@@ -586,7 +679,7 @@ export function buildPublicHeadTags(s: PublicProjectSnapshot, urls: ProjectUrls,
     `<meta name="twitter:card" content="summary">`,
     `<meta name="twitter:title" content="${attr(title)}">`,
     `<meta name="twitter:description" content="${attr(description)}">`,
-    `<link rel="alternate" type="text/markdown" title="Markdown version" href="${attr(markdownUrl(urls, page))}">`,
+    `<link rel="alternate" type="text/markdown" title="Markdown version" href="${attr(markdownUrl(urls, page, post))}">`,
     `<script type="application/ld+json">${scriptJson({ '@context': 'https://schema.org', ...jsonLd })}</script>`,
   ]
   if (urls.rss) {
@@ -601,7 +694,9 @@ export function buildPublicHeadTags(s: PublicProjectSnapshot, urls: ProjectUrls,
  * Markdown twin of a page: the page URL plus `.md` (the board root is `/index.md`).
  * Served by the subdomain middleware, like `Accept: text/markdown` on the page itself.
  */
-export function markdownUrl(urls: ProjectUrls, page: PublicPage) {
-  const path = publicPagePath(page)
+export function markdownUrl(urls: ProjectUrls, page: PublicPage, post: PublicFeedbackPost | null = null) {
+  // A post links to its canonical slug, like the canonical URL
+  const canonicalPage: PublicPage = page.kind === 'post' && post ? { kind: 'post', ref: feedbackPostRef(post) } : page
+  const path = publicPagePath(canonicalPage)
   return `${urls.base}${path || '/index'}.md`
 }

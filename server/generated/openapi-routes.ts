@@ -785,6 +785,287 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/device/code": {
+    "post": {
+      "tags": [
+        "Device login"
+      ],
+      "summary": "Start a device login (RFC 8628)",
+      "description": "Public. An agent requests a device code and a short user code, then sends the user to verification_uri_complete to approve it. Rate limited to 10 requests per 60 s per IP. The response is a bare RFC 8628 object, not the usual envelope.",
+      "operationId": "requestDeviceCode",
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "client_name": {
+                  "type": "string",
+                  "maxLength": 60,
+                  "description": "Shown to the user on the approval page and used as the key name. Control and format characters are removed"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Device authorization response",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_code": {
+                    "type": "string"
+                  },
+                  "user_code": {
+                    "type": "string",
+                    "example": "BCDF-GHJK"
+                  },
+                  "verification_uri": {
+                    "type": "string"
+                  },
+                  "verification_uri_complete": {
+                    "type": "string"
+                  },
+                  "expires_in": {
+                    "type": "integer",
+                    "example": 600
+                  },
+                  "interval": {
+                    "type": "integer",
+                    "example": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "invalid_request (RFC 8628 error body)"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/device/requests/{userCode}": {
+    "get": {
+      "tags": [
+        "Device login"
+      ],
+      "summary": "Look up a pending device login by its user code",
+      "description": "Browser session only (API keys get 403). Rate limited to 10 requests per 60 s per user. Unknown, expired and already decided codes all return the same 404.",
+      "operationId": "getDeviceRequest",
+      "security": [
+        {
+          "cookieAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "userCode",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "example": "BCDF-GHJK"
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The pending request: userCode, clientName, createdAt, expiresAt"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Browser session only"
+        },
+        "404": {
+          "description": "Code not found or expired"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/device/requests/{userCode}/approve": {
+    "post": {
+      "tags": [
+        "Device login"
+      ],
+      "summary": "Approve a device login",
+      "description": "Browser session only (API keys get 403). Rate limited to 10 requests per 60 s per user. Unknown, expired and already decided codes all return the same 404.",
+      "operationId": "approveDeviceRequest",
+      "security": [
+        {
+          "cookieAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "userCode",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "example": "BCDF-GHJK"
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Approved; data.status is approved"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Browser session only, or a cross-site request (Sec-Fetch-Site / Origin check)"
+        },
+        "404": {
+          "description": "Code not found or expired"
+        },
+        "409": {
+          "description": "Already 25 active API keys"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/device/requests/{userCode}/deny": {
+    "post": {
+      "tags": [
+        "Device login"
+      ],
+      "summary": "Deny a device login",
+      "description": "Browser session only (API keys get 403). Rate limited to 10 requests per 60 s per user. Unknown, expired and already decided codes all return the same 404.",
+      "operationId": "denyDeviceRequest",
+      "security": [
+        {
+          "cookieAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "userCode",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "example": "BCDF-GHJK"
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Denied; data.status is denied"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Browser session only, or a cross-site request (Sec-Fetch-Site / Origin check)"
+        },
+        "404": {
+          "description": "Code not found or expired"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/device/token": {
+    "post": {
+      "tags": [
+        "Device login"
+      ],
+      "summary": "Poll for the device login token (RFC 8628)",
+      "description": "Public. Poll no faster than the interval. Accepts JSON or application/x-www-form-urlencoded. Errors are RFC 8628 bodies with HTTP 400: authorization_pending, slow_down, access_denied, expired_token, invalid_grant, invalid_request. The issued key is a personal API key valid for 90 days. Rate limited to 600 requests per 60 s per IP; over the limit the response is the RFC error slow_down (HTTP 400).",
+      "operationId": "pollDeviceToken",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "device_code"
+              ],
+              "properties": {
+                "device_code": {
+                  "type": "string"
+                },
+                "grant_type": {
+                  "type": "string",
+                  "enum": [
+                    "urn:ietf:params:oauth:grant-type:device_code"
+                  ]
+                }
+              }
+            }
+          },
+          "application/x-www-form-urlencoded": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "device_code"
+              ],
+              "properties": {
+                "device_code": {
+                  "type": "string"
+                },
+                "grant_type": {
+                  "type": "string",
+                  "enum": [
+                    "urn:ietf:params:oauth:grant-type:device_code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Approved; the key is returned once",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "access_token": {
+                    "type": "string"
+                  },
+                  "token_type": {
+                    "type": "string",
+                    "example": "Bearer"
+                  },
+                  "expires_in": {
+                    "type": "integer",
+                    "example": 7776000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "RFC 8628 error body: { error, error_description }"
+        }
+      }
+    }
+  },
   "/api/feedback": {
     "get": {
       "tags": [

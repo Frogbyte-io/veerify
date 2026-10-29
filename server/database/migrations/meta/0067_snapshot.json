@@ -1,5 +1,5 @@
 {
-  "id": "466dea5a-7ae1-4dbf-be93-424258b1436b",
+  "id": "79a0eb6f-dd94-4fbb-9ba2-21709dfd872b",
   "prevId": "fb4a2839-b4ba-4fa8-8631-ed8e51d11428",
   "version": "7",
   "dialect": "postgresql",
@@ -5025,18 +5025,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "spam_at": {
-          "name": "spam_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "snoozed_until": {
           "name": "snoozed_until",
           "type": "timestamp",
@@ -6551,504 +6539,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.project_mail_address": {
-      "name": "project_mail_address",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "inbox_id": {
-          "name": "inbox_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "address": {
-          "name": "address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "is_primary": {
-          "name": "is_primary",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'custom'"
-        },
-        "provider_route_id": {
-          "name": "provider_route_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_route_status": {
-          "name": "provider_route_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "domain_id": {
-          "name": "domain_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "product_id": {
-          "name": "product_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "behaviour": {
-          "name": "behaviour",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'helpdesk'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "project_mail_address_address_idx": {
-          "name": "project_mail_address_address_idx",
-          "columns": [
-            {
-              "expression": "address",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_mail_address_inbox_idx": {
-          "name": "project_mail_address_inbox_idx",
-          "columns": [
-            {
-              "expression": "inbox_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_mail_address_project_idx": {
-          "name": "project_mail_address_project_idx",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_mail_address_domain_idx": {
-          "name": "project_mail_address_domain_idx",
-          "columns": [
-            {
-              "expression": "domain_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_mail_address_inbox_id_support_inbox_id_fk": {
-          "name": "project_mail_address_inbox_id_support_inbox_id_fk",
-          "tableFrom": "project_mail_address",
-          "tableTo": "support_inbox",
-          "columnsFrom": [
-            "inbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_mail_address_project_id_project_id_fk": {
-          "name": "project_mail_address_project_id_project_id_fk",
-          "tableFrom": "project_mail_address",
-          "tableTo": "project",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_mail_address_domain_id_project_mail_domain_id_fk": {
-          "name": "project_mail_address_domain_id_project_mail_domain_id_fk",
-          "tableFrom": "project_mail_address",
-          "tableTo": "project_mail_domain",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "project_mail_address_product_id_product_id_fk": {
-          "name": "project_mail_address_product_id_product_id_fk",
-          "tableFrom": "project_mail_address",
-          "tableTo": "product",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_mail_address_kind_check": {
-          "name": "project_mail_address_kind_check",
-          "value": "\"project_mail_address\".\"kind\" in ('custom','platform')"
-        },
-        "project_mail_address_route_status_check": {
-          "name": "project_mail_address_route_status_check",
-          "value": "\"project_mail_address\".\"provider_route_status\" is null or \"project_mail_address\".\"provider_route_status\" in ('active','failed')"
-        },
-        "project_mail_address_behaviour_check": {
-          "name": "project_mail_address_behaviour_check",
-          "value": "\"project_mail_address\".\"behaviour\" in ('mail','helpdesk')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.project_mail_domain": {
-      "name": "project_mail_domain",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "domain": {
-          "name": "domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registrable_domain": {
-          "name": "registrable_domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'provisioning'"
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_account_key": {
-          "name": "provider_account_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "provider_ownership": {
-          "name": "provider_ownership",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_state": {
-          "name": "provider_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "receives_via_provider": {
-          "name": "receives_via_provider",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "ownership_token": {
-          "name": "ownership_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ownership_verified_at": {
-          "name": "ownership_verified_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ownership_failures": {
-          "name": "ownership_failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "provider_failures": {
-          "name": "provider_failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "dns_records": {
-          "name": "dns_records",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_checked_at": {
-          "name": "last_checked_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_check_at": {
-          "name": "next_check_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt_count": {
-          "name": "attempt_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "project_mail_domain_domain_idx": {
-          "name": "project_mail_domain_domain_idx",
-          "columns": [
-            {
-              "expression": "domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_mail_domain_project_idx": {
-          "name": "project_mail_domain_project_idx",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_mail_domain_registrable_idx": {
-          "name": "project_mail_domain_registrable_idx",
-          "columns": [
-            {
-              "expression": "registrable_domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_mail_domain_due_idx": {
-          "name": "project_mail_domain_due_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_check_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_mail_domain_project_id_project_id_fk": {
-          "name": "project_mail_domain_project_id_project_id_fk",
-          "tableFrom": "project_mail_domain",
-          "tableTo": "project",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_mail_domain_created_by_user_id_user_id_fk": {
-          "name": "project_mail_domain_created_by_user_id_user_id_fk",
-          "tableFrom": "project_mail_domain",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_mail_domain_status_check": {
-          "name": "project_mail_domain_status_check",
-          "value": "\"project_mail_domain\".\"status\" in ('provisioning','pending','verified','suspended','failed','deleting')"
-        },
-        "project_mail_domain_ownership_check": {
-          "name": "project_mail_domain_ownership_check",
-          "value": "\"project_mail_domain\".\"provider_ownership\" is null or \"project_mail_domain\".\"provider_ownership\" in ('created','adopted')"
-        },
-        "project_mail_domain_provider_state_check": {
-          "name": "project_mail_domain_provider_state_check",
-          "value": "\"project_mail_domain\".\"provider_state\" is null or \"project_mail_domain\".\"provider_state\" in ('active','unverified')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.sla_breach": {
       "name": "sla_breach",
       "schema": "",
@@ -8186,6 +7676,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "forward_address": {
+          "name": "forward_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "from_name": {
           "name": "from_name",
           "type": "text",
@@ -8343,6 +7839,157 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.support_inbox_address": {
+      "name": "support_inbox_address",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "inbox_id": {
+          "name": "inbox_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'custom'"
+        },
+        "provider_route_id": {
+          "name": "provider_route_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_route_status": {
+          "name": "provider_route_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "support_inbox_address_address_idx": {
+          "name": "support_inbox_address_address_idx",
+          "columns": [
+            {
+              "expression": "address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_inbox_address_inbox_idx": {
+          "name": "support_inbox_address_inbox_idx",
+          "columns": [
+            {
+              "expression": "inbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_inbox_address_project_idx": {
+          "name": "support_inbox_address_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "support_inbox_address_inbox_id_support_inbox_id_fk": {
+          "name": "support_inbox_address_inbox_id_support_inbox_id_fk",
+          "tableFrom": "support_inbox_address",
+          "tableTo": "support_inbox",
+          "columnsFrom": [
+            "inbox_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_inbox_address_project_id_project_id_fk": {
+          "name": "support_inbox_address_project_id_project_id_fk",
+          "tableFrom": "support_inbox_address",
+          "tableTo": "project",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "support_inbox_address_kind_check": {
+          "name": "support_inbox_address_kind_check",
+          "value": "\"support_inbox_address\".\"kind\" in ('custom','platform')"
+        },
+        "support_inbox_address_route_status_check": {
+          "name": "support_inbox_address_route_status_check",
+          "value": "\"support_inbox_address\".\"provider_route_status\" is null or \"support_inbox_address\".\"provider_route_status\" in ('active','failed')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.support_inbox_member": {
@@ -8936,6 +8583,289 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.support_sending_domain": {
+      "name": "support_sending_domain",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "domain": {
+          "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registrable_domain": {
+          "name": "registrable_domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'provisioning'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_account_key": {
+          "name": "provider_account_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "provider_ownership": {
+          "name": "provider_ownership",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_state": {
+          "name": "provider_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receives_via_provider": {
+          "name": "receives_via_provider",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "ownership_token": {
+          "name": "ownership_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ownership_verified_at": {
+          "name": "ownership_verified_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ownership_failures": {
+          "name": "ownership_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "provider_failures": {
+          "name": "provider_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "dns_records": {
+          "name": "dns_records",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_check_at": {
+          "name": "next_check_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_error_code": {
+          "name": "last_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "support_sending_domain_domain_idx": {
+          "name": "support_sending_domain_domain_idx",
+          "columns": [
+            {
+              "expression": "domain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_sending_domain_project_idx": {
+          "name": "support_sending_domain_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_sending_domain_registrable_idx": {
+          "name": "support_sending_domain_registrable_idx",
+          "columns": [
+            {
+              "expression": "registrable_domain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_sending_domain_due_idx": {
+          "name": "support_sending_domain_due_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_check_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "support_sending_domain_project_id_project_id_fk": {
+          "name": "support_sending_domain_project_id_project_id_fk",
+          "tableFrom": "support_sending_domain",
+          "tableTo": "project",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_sending_domain_created_by_user_id_user_id_fk": {
+          "name": "support_sending_domain_created_by_user_id_user_id_fk",
+          "tableFrom": "support_sending_domain",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "support_sending_domain_status_check": {
+          "name": "support_sending_domain_status_check",
+          "value": "\"support_sending_domain\".\"status\" in ('provisioning','pending','verified','suspended','failed','deleting')"
+        },
+        "support_sending_domain_ownership_check": {
+          "name": "support_sending_domain_ownership_check",
+          "value": "\"support_sending_domain\".\"provider_ownership\" is null or \"support_sending_domain\".\"provider_ownership\" in ('created','adopted')"
+        },
+        "support_sending_domain_provider_state_check": {
+          "name": "support_sending_domain_provider_state_check",
+          "value": "\"support_sending_domain\".\"provider_state\" is null or \"support_sending_domain\".\"provider_state\" in ('active','unverified')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.support_tag": {
@@ -12899,6 +12829,172 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.device_authorization": {
+      "name": "device_authorization",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "device_code_hash": {
+          "name": "device_code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_code": {
+          "name": "user_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_name": {
+          "name": "client_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "interval": {
+          "name": "interval",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
+        "last_polled_at": {
+          "name": "last_polled_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redeemed_at": {
+          "name": "redeemed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issued_key_id": {
+          "name": "issued_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "device_authorization_expires_idx": {
+          "name": "device_authorization_expires_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "device_authorization_user_idx": {
+          "name": "device_authorization_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "device_authorization_user_id_user_id_fk": {
+          "name": "device_authorization_user_id_user_id_fk",
+          "tableFrom": "device_authorization",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "device_authorization_issued_key_id_user_api_key_id_fk": {
+          "name": "device_authorization_issued_key_id_user_api_key_id_fk",
+          "tableFrom": "device_authorization",
+          "tableTo": "user_api_key",
+          "columnsFrom": [
+            "issued_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "device_authorization_device_code_hash_unique": {
+          "name": "device_authorization_device_code_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "device_code_hash"
+          ]
+        },
+        "device_authorization_user_code_unique": {
+          "name": "device_authorization_user_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.user_api_key": {
       "name": "user_api_key",
       "schema": "",
@@ -12968,6 +13064,13 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
+        },
+        "created_via": {
+          "name": "created_via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
         }
       },
       "indexes": {
@@ -13477,91 +13580,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.mail_entitlement": {
-      "name": "mail_entitlement",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tier": {
-          "name": "tier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'standard'"
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "mail_entitlement_organization_idx": {
-          "name": "mail_entitlement_organization_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "mail_entitlement_organization_id_organization_id_fk": {
-          "name": "mail_entitlement_organization_id_organization_id_fk",
-          "tableFrom": "mail_entitlement",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "mail_entitlement_tier_check": {
-          "name": "mail_entitlement_tier_check",
-          "value": "\"mail_entitlement\".\"tier\" in ('standard','owner')"
-        }
-      },
       "isRLSEnabled": false
     }
   },

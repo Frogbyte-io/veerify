@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, feedbackStatus } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, feedbackComment, feedbackStatus } from '~/server/database/schema/feedback'
+import { user } from '~/server/database/schema/auth'
 import { listPublicProducts, resolvePublicProject } from '~/server/utils/project-access'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { listPublishedEntries } from '~/server/services/changelog/public'
@@ -9,6 +10,7 @@ import { resolveProjectModules, type ModuleSettings } from '~/lib/modules'
 /** Bounds on what one snapshot carries; the full board stays one click away. */
 export const SNAPSHOT_FEEDBACK_LIMIT = 200
 export const SNAPSHOT_CHANGELOG_LIMIT = 50
+export const SNAPSHOT_COMMENT_LIMIT = 200
 const CACHE_TTL_MS = 60_000
 const CACHE_MAX_ENTRIES = 500
 
@@ -60,6 +62,24 @@ export type PublicProjectSnapshot = {
   feedback: PublicFeedbackItem[]
   /** Newest first */
   changelog: PublicChangelogItem[]
+}
+
+function toPublicItem(row: {
+  feedback: typeof feedback.$inferSelect
+  categoryName: string | null
+}): PublicFeedbackItem {
+  return {
+    id: row.feedback.id,
+    productId: row.feedback.productId,
+    title: row.feedback.title,
+    body: row.feedback.body,
+    status: row.feedback.status,
+    tag: row.feedback.metadata?.feedbackType || null,
+    category: row.categoryName ?? null,
+    voteCount: row.feedback.voteCount,
+    commentCount: row.feedback.commentCount,
+    createdAt: row.feedback.createdAt,
+  }
 }
 
 const cache = new Map<string, { at: number; snapshot: PublicProjectSnapshot }>()
@@ -132,24 +152,57 @@ export async function loadPublicProjectSnapshot(orgSlug: string, projectSlug: st
     products: products.map((p) => ({ id: p.id, name: p.name, slug: p.slug, description: p.description })),
     modules,
     statuses,
-    feedback: feedbackRows
-      .filter((row) => row.feedback.metadata?.source !== 'support_conversation')
-      .map((row) => ({
-        id: row.feedback.id,
-        productId: row.feedback.productId,
-        title: row.feedback.title,
-        body: row.feedback.body,
-        status: row.feedback.status,
-        tag: row.feedback.metadata?.feedbackType || null,
-        category: row.categoryName ?? null,
-        voteCount: row.feedback.voteCount,
-        commentCount: row.feedback.commentCount,
-        createdAt: row.feedback.createdAt,
-      })),
+    feedback: feedbackRows.filter((row) => row.feedback.metadata?.source !== 'support_conversation').map(toPublicItem),
     changelog,
   }
 
   if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value!)
   cache.set(key, { at: Date.now(), snapshot })
   return snapshot
+}
+
+export type PublicFeedbackPost = PublicFeedbackItem & {
+  authorName: string | null
+  comments: Array<{ id: string; authorName: string; body: string; createdAt: Date; isReply: boolean }>
+}
+
+/**
+ * One feedback item of a public snapshot's project, with its public comments, or
+ * null when anonymous visitors cannot see it (other project, hidden, private
+ * product, support-derived, or feedback and roadmap both off).
+ */
+export async function loadPublicFeedbackPost(
+  s: PublicProjectSnapshot,
+  feedbackId: string
+): Promise<PublicFeedbackPost | null> {
+  if (!s.modules.feedbackEnabled && !s.modules.roadmapEnabled) return null
+  const [row] = await db
+    .select({ feedback, categoryName: feedbackCategory.name })
+    .from(feedback)
+    .leftJoin(feedbackCategory, eq(feedback.categoryId, feedbackCategory.id))
+    .where(and(eq(feedback.id, feedbackId), eq(feedback.projectId, s.project.id), eq(feedback.isHidden, false)))
+    .limit(1)
+  if (!row) return null
+  if (row.feedback.metadata?.source === 'support_conversation') return null
+  if (!s.products.some((p) => p.id === row.feedback.productId)) return null
+
+  const comments = await db
+    .select({ comment: feedbackComment, userName: user.name })
+    .from(feedbackComment)
+    .leftJoin(user, eq(feedbackComment.authorUserId, user.id))
+    .where(and(eq(feedbackComment.feedbackId, feedbackId), eq(feedbackComment.isInternal, false)))
+    .orderBy(asc(feedbackComment.createdAt))
+    .limit(SNAPSHOT_COMMENT_LIMIT)
+
+  return {
+    ...toPublicItem(row),
+    authorName: row.feedback.authorName ?? null,
+    comments: comments.map(({ comment, userName }) => ({
+      id: comment.id,
+      authorName: userName || comment.authorName || 'Anonymous',
+      body: comment.body,
+      createdAt: comment.createdAt,
+      isReply: Boolean(comment.parentCommentId),
+    })),
+  }
 }

@@ -84,7 +84,7 @@ export default defineNuxtConfig({
       ],
       // Marketing Hub (docs/plans/2026-10-09-marketing-hub)
       '*/10 * * * *': ['marketing:competitors-check', 'domains:status-refresh'],
-      '*/15 * * * *': ['example:ping'],
+      '*/15 * * * *': ['example:ping', 'device-login:cleanup'],
       '0 * * * *': ['marketing:visibility-schedule'],
       '45 * * * *': ['support:trash-purge'],
       '5 * * * *': ['marketing:audit-schedule'],
@@ -191,6 +191,10 @@ export default defineNuxtConfig({
   routeRules: {
     '/api-docs/**': { ssr: false },
     '/api-docs': { ssr: false },
+    // The approval page must never be framed (clickjacking the Allow button).
+    '/device': {
+      headers: { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" },
+    },
   },
   scalar: {
     url: '/api/openapi.json',

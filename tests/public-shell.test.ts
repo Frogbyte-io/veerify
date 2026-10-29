@@ -12,6 +12,9 @@ describe('projectPaths', () => {
       testimonials: '/testimonials',
     })
     expect(paths.product('decker')).toBe('/decker')
+    expect(paths.post({ id: '3f2b8c1e-6a4d-4e2f-9b1a-0c7d5e8f9a21', title: 'Dark mode' })).toBe(
+      '/p/dark-mode-3f2b8c1e-6a4d-4e2f-9b1a-0c7d5e8f9a21'
+    )
   })
 
   it('prefixes the project slug on workspace subdomains', () => {
@@ -23,6 +26,7 @@ describe('projectPaths', () => {
       testimonials: '/acme/testimonials',
     })
     expect(paths.product('decker')).toBe('/acme/decker')
+    expect(paths.post({ id: 'seed_1', title: 'X' })).toBe('/acme/p/seed_1')
   })
 })
 

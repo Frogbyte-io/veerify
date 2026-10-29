@@ -13,6 +13,7 @@ export const BLOCKED_API_PREFIXES = [
   '/api/public/auth',
   '/api/user/api-keys',
   '/api/test',
+  '/api/device',
 ] as const
 
 // eslint-disable-next-line no-control-regex

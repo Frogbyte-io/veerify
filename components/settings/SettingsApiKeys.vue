@@ -36,6 +36,9 @@
           <div class="min-w-0 space-y-1">
             <div class="flex items-center gap-2">
               <p class="font-medium truncate">{{ apiKey.name }}</p>
+              <Badge v-if="apiKey.createdVia === 'device'" variant="outline" data-testid="user-api-key-device-badge">
+                via device login
+              </Badge>
               <Badge v-if="apiKey.revokedAt" variant="destructive">Revoked</Badge>
               <Badge v-else-if="isExpired(apiKey)" variant="secondary">Expired</Badge>
             </div>

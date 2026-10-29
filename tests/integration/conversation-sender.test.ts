@@ -76,6 +76,11 @@ describe('resolveConversationSender (real Postgres)', () => {
     expect(await resolve(id)).toBe(`hello@${verifiedDomain}`)
   })
 
+  it('also qualifies an address created before domainId existed', async () => {
+    const legacy = await address({ address: `legacy@${verifiedDomain}`, domainId: null })
+    expect(await resolve(legacy)).toBe(`legacy@${verifiedDomain}`)
+  })
+
   it('falls back to the inbox address otherwise', async () => {
     const pending = await address({ address: `hello@${pendingDomain}`, domainId: ids.pending })
     const catchAll = await address({ address: `*@${verifiedDomain}`, domainId: ids.verified })

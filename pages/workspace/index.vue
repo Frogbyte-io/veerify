@@ -27,16 +27,11 @@
       :loading="isLoading"
       :aliases="tabAliases"
     >
-      <template #default="{ active }">
-        <!-- Keyed by workspace so a switch remounts the tabs; visited tabs stay alive otherwise -->
-        <KeepAlive :max="10">
-          <component
-            :is="tabComponent(active)"
-            :key="`${organization.id}:${active}`"
-            v-bind="tabProps(active)"
-            @updated="onOrganizationUpdated"
-          />
-        </KeepAlive>
+      <template #default="{ active, warm }">
+        <!-- Keyed by workspace so a switch remounts the tabs; warm (visited or hovered) tabs stay mounted -->
+        <div v-for="tab in warm" v-show="tab === active" :key="`${organization.id}:${tab}`">
+          <component :is="tabComponent(tab)" v-bind="tabProps(tab)" @updated="onOrganizationUpdated" />
+        </div>
       </template>
     </SettingsTabs>
   </PageContainer>
