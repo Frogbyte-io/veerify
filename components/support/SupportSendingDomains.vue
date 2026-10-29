@@ -8,8 +8,8 @@
             Domains
           </CardTitle>
           <CardDescription>
-            Register your own domain so replies are sent from your address. Publish the DNS records below, then Veerify
-            checks them automatically.
+            Connect your own domain to send email from it and to create addresses on it. Publish the DNS records below,
+            then Veerify checks them automatically.
             <span v-if="usageLine" class="whitespace-nowrap" data-testid="support-sending-domains-usage">
               {{ usageLine }}
             </span>
@@ -63,7 +63,7 @@
           class="text-sm text-muted-foreground"
           data-testid="support-sending-domains-empty"
         >
-          No sending domains yet.
+          No domains yet.
         </p>
 
         <ul v-else class="space-y-3">

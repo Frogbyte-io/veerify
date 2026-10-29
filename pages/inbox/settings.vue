@@ -1653,13 +1653,13 @@ export default {
             typeof requestedInboxId === 'string' && this.inboxes.some((inbox) => inbox.id === requestedInboxId)
           this.selectedInboxId = requestedIsAccessible ? requestedInboxId : this.inboxes[0].id
           if (requestedInboxId && !requestedIsAccessible) {
-            this.inboxAccessError = 'You do not have access to this support inbox'
+            this.inboxAccessError = 'You do not have access to this inbox'
             await this.replaceInboxQuery(this.selectedInboxId)
           }
           this.syncGeneralForm()
           await this.loadInboxContext({ recovering: Boolean(requestedInboxId && !requestedIsAccessible) })
         } else if (this.$route.query.inboxId) {
-          this.inboxAccessError = 'You do not have access to this support inbox'
+          this.inboxAccessError = 'You do not have access to this inbox'
           await this.replaceInboxQuery(null)
         }
         if (token === this.requestToken) await this.loadCannedResponses({ token, projectId: this.activeProjectId })
@@ -1718,7 +1718,7 @@ export default {
       if (this.isRecoveringInbox) return
       if (!this.isCurrentRequest(sourceToken, projectId, sourceInboxId)) return
       this.isRecoveringInbox = true
-      this.inboxAccessError = 'You do not have access to this support inbox'
+      this.inboxAccessError = 'You do not have access to this inbox'
       this.clearInboxScopedState()
       const token = ++this.requestToken
       this.recoveryOwnerToken = token

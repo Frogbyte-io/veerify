@@ -16,7 +16,7 @@ const deploymentMode =
 // Dashboard pages get their layout from route meta, so the layout (sidebar, header) stays mounted
 // across navigation instead of being re-created inside every page. Options API pages cannot call
 // definePageMeta, hence this hook. Matched against the page file path relative to pages/.
-const DASHBOARD_PAGE = /^(dashboard|feedback|reports|help|submissions|settings|workspace|project|marketing|support)\//
+const DASHBOARD_PAGE = /^(dashboard|feedback|reports|help|submissions|settings|workspace|project|marketing|inbox)\//
 const NOT_DASHBOARD_PAGE = /^feedback\/\[id\]\/edit\.vue$/
 
 type ExtendablePage = { file?: string; meta?: Record<string, unknown>; children?: ExtendablePage[] }

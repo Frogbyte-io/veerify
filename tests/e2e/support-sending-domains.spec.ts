@@ -218,7 +218,8 @@ test.describe('support sending domains', () => {
       domainAClaimId = list.domains.find((d: { domain: string }) => d.domain === domainA).id
       expect(domainAClaimId).toBeTruthy()
 
-      await page.reload({ waitUntil: 'domcontentloaded' })
+      // The From address picker lives in inbox settings.
+      await page.goto(settingsPath(), { waitUntil: 'domcontentloaded' })
       const picker = page.getByTestId('support-from-picker')
       await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
       await picker.getByTestId('support-from-picker-local').fill('support')
@@ -818,12 +819,11 @@ test.describe('support sending domains', () => {
         )
       })
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await expect(page.getByRole('button', { name: 'Remove receiving address help@stub.example.com' })).toBeVisible({
-        timeout: 20_000,
-      })
-      await expect(
-        page.getByRole('button', { name: 'Remove receiving address acme-support-k3m9qz@veerifymail.test' })
-      ).toHaveCount(0)
+      // Inbox settings lists addresses read-only; they are managed in Project settings -> Email.
+      const addressList = page.getByTestId('support-settings-addresses')
+      await expect(addressList).toContainText('help@stub.example.com', { timeout: 20_000 })
+      await expect(addressList).toContainText('acme-support-k3m9qz@veerifymail.test')
+      await expect(page.getByRole('button', { name: /^Remove receiving address/ })).toHaveCount(0)
 
       await page.getByTestId('support-settings-platform-regenerate').click()
       await expect(page.getByRole('dialog', { name: 'Regenerate forwarding address' })).toContainText(

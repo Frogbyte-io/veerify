@@ -291,9 +291,7 @@ test.describe.serial('support permission-aware navigation', () => {
     await page.getByPlaceholder('New tag').fill('Blocked tag')
     await page.getByRole('button', { name: 'Create tag' }).click()
     await expect.poll(() => tagCreateCalls).toBe(1)
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
   })
 
   test('delayed contact-panel 403 cannot recover a newly selected conversation', async ({ browser }) => {
@@ -491,9 +489,7 @@ test.describe.serial('support permission-aware navigation', () => {
   test('settings deep link recovers from an inaccessible inbox without revealing its name', async ({ browser }) => {
     const page = await openAs(browser, 'agent', `/inbox/settings?inboxId=${fixture.forbiddenInboxId}`)
 
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
     await expect(page).toHaveURL(new RegExp(`inboxId=${fixture.primaryInboxId}`))
   })
@@ -514,14 +510,12 @@ test.describe.serial('support permission-aware navigation', () => {
       await route.fulfill({
         status: 403,
         contentType: 'application/json',
-        body: JSON.stringify({ success: false, error: { message: 'You do not have access to this support inbox' } }),
+        body: JSON.stringify({ success: false, error: { message: 'You do not have access to this inbox' } }),
       })
     })
 
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
     await expect(page.getByText(fixture.primaryInboxName)).toHaveCount(0)
   })
@@ -644,9 +638,7 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     })
     await page.getByTestId('support-project-policy-toggle').click()
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId('support-project-policy')).toHaveCount(0)
   })
 
@@ -701,9 +693,7 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     })
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
   })
 
@@ -836,9 +826,7 @@ test.describe.serial('support permission-aware navigation', () => {
       `/inbox?inboxId=${fixture.forbiddenInboxId}&conversationId=${fixture.forbiddenConversationId}`
     )
 
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
   })
