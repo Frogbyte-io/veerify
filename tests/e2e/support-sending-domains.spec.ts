@@ -119,8 +119,7 @@ test.describe('support sending domains', () => {
   test.afterAll(async () => {
     await Promise.all(contexts.map((context) => context.close()))
     const projectIds = [projectB.id, fixture?.projectId].filter(Boolean) as string[]
-    if (projectIds.length)
-      await db.delete(projectMailDomain).where(inArray(projectMailDomain.projectId, projectIds))
+    if (projectIds.length) await db.delete(projectMailDomain).where(inArray(projectMailDomain.projectId, projectIds))
     await db.delete(supportInboxMember).where(eq(supportInboxMember.id, projectB.inboxMemberId))
     await db.delete(supportInbox).where(eq(supportInbox.id, projectB.inboxId))
     await db.delete(projectMember).where(eq(projectMember.id, projectB.memberId))
@@ -374,7 +373,13 @@ test.describe('support sending domains', () => {
       provider: 'mailgun',
       capabilities: { register: true, verifyNow: true, remove: true, inboundRoutes: true, authorizesSubdomains: true },
       canManage: true,
-      limits: { maxDomains: 10, maxPending: 3, pendingTtlDays: 7 },
+      // Workspace mail limits (standard tier), shared by every project of the workspace.
+      limits: { maxDomains: 3, maxPending: 3, pendingTtlDays: 7 },
+      usage: {
+        tier: 'standard',
+        limits: { domains: 3, pendingDomains: 3, addresses: 20, forwardsPerMonth: 5000 },
+        used: { domains: 1, pendingDomains: 0, addresses: 1, forwardsThisMonth: null },
+      },
       providerConfigured: true,
       missingEnvVars: [],
       domains: [domainRow()],

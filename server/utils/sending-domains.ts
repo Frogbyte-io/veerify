@@ -14,8 +14,6 @@ import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { supportInbox, projectMailAddress, projectMailDomain } from '~/server/database/schema/support'
 import {
-  MAX_DOMAINS_PER_PROJECT,
-  MAX_PENDING_PER_PROJECT,
   OWNERSHIP_RECORD_LABEL,
   OWNERSHIP_RECORD_PREFIX,
   PENDING_TTL_DAYS,
@@ -37,6 +35,7 @@ import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isUniqueViolation } from './support-errors'
 import { createErrorResponse } from './response'
 import { createLogger } from './logger'
+import { assertCanAddMailDomain, getOrganizationIdForProject, lockMailUsage } from './mail-limits'
 
 const log = createLogger('sending-domains')
 
@@ -216,11 +215,11 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
 
   try {
     const created = await db.transaction(async (tx) => {
-      // Per-project lock first (then per-domain), so the per-project limits below
-      // cannot be raced by concurrent claims for different domains.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain_project:${input.projectId}`}, 0))`
-      )
+      // Workspace mail-usage lock first (then per-domain), so the workspace
+      // limits below cannot be raced by concurrent claims in any of the
+      // workspace's projects, for different domains.
+      const organizationId = await getOrganizationIdForProject(input.projectId, tx)
+      await lockMailUsage(organizationId, tx)
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain:${registrableDomain}`}, 0))`
       )
@@ -250,29 +249,9 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
         )
       }
 
-      const own = await tx
-        .select({ status: projectMailDomain.status })
-        .from(projectMailDomain)
-        .where(and(eq(projectMailDomain.projectId, input.projectId), ne(projectMailDomain.status, 'deleting')))
-      if (own.length >= MAX_DOMAINS_PER_PROJECT) {
-        throw sendingDomainError(
-          409,
-          'Conflict',
-          'DOMAIN_LIMIT_REACHED',
-          `A project can register at most ${MAX_DOMAINS_PER_PROJECT} sending domains.`
-        )
-      }
-      if (
-        own.filter((claim) => UNVERIFIED_STATUSES.includes(claim.status as SupportSendingDomainStatus)).length >=
-        MAX_PENDING_PER_PROJECT
-      ) {
-        throw sendingDomainError(
-          409,
-          'Conflict',
-          'PENDING_LIMIT_REACHED',
-          `A project can have at most ${MAX_PENDING_PER_PROJECT} domains waiting for verification. Verify or delete one first.`
-        )
-      }
+      // 409 MAIL_DOMAIN_LIMIT_REACHED / MAIL_PENDING_LIMIT_REACHED, counted per
+      // workspace (lib/mail-plans.ts), pending domains included.
+      await assertCanAddMailDomain(organizationId, tx)
 
       const ownershipToken = randomBytes(24).toString('base64url')
       const ownershipRecord: SendingDomainDnsRecord = {
@@ -608,10 +587,7 @@ export async function assertReceivingAddressAllowed(projectId: string, address: 
     .select({ id: projectMailDomain.id })
     .from(projectMailDomain)
     .where(
-      and(
-        inArray(projectMailDomain.domain, domainAndAncestors(domain)),
-        ne(projectMailDomain.projectId, projectId)
-      )
+      and(inArray(projectMailDomain.domain, domainAndAncestors(domain)), ne(projectMailDomain.projectId, projectId))
     )
     .limit(1)
 

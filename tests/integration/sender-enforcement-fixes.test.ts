@@ -99,8 +99,7 @@ let projectB: SeededProject
 const domainA = fresh()
 // Decided before this file inserts anything, so the legacy-without-claims block
 // only runs against a database that really has no claims (a CI database does).
-const claimsExistAtStart =
-  (await db.select({ id: projectMailDomain.id }).from(projectMailDomain).limit(1)).length > 0
+const claimsExistAtStart = (await db.select({ id: projectMailDomain.id }).from(projectMailDomain).limit(1)).length > 0
 
 function actAs(seed: SeededProject, emailAddress: string, params: Record<string, string> = {}) {
   state.projectId = seed.projectId
@@ -409,12 +408,10 @@ describe('L1: concurrent claims by one project', () => {
       const results = await Promise.all(attempts)
 
       const created = results.filter((r) => r === 'ok').length
-      expect(created).toBe(3) // MAX_PENDING_PER_PROJECT
-      expect(results.filter((r) => r === 'PENDING_LIMIT_REACHED')).toHaveLength(5)
-      const rows = await db
-        .select()
-        .from(projectMailDomain)
-        .where(eq(projectMailDomain.projectId, racer.projectId))
+      // Standard tier: 3 domains (and 3 pending) per workspace; the domain limit is checked first.
+      expect(created).toBe(3)
+      expect(results.filter((r) => r === 'MAIL_DOMAIN_LIMIT_REACHED')).toHaveLength(5)
+      const rows = await db.select().from(projectMailDomain).where(eq(projectMailDomain.projectId, racer.projectId))
       expect(rows).toHaveLength(3)
     } finally {
       await deleteOrganization(orgIdLocal)

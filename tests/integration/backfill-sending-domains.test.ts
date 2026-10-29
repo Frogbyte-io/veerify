@@ -18,6 +18,7 @@ vi.hoisted(() => {
 /* eslint-disable import/first -- the env must be set before the database module loads */
 import { db } from '../../server/database/drizzle'
 import { organization, user } from '../../server/database/schema/auth'
+import { mailEntitlement } from '../../server/database/schema/mail'
 import { project, projectMember } from '../../server/database/schema/feedback'
 import { supportInbox, projectMailAddress, projectMailDomain } from '../../server/database/schema/support'
 import { FakeSendingDomainProvider } from '../../server/services/sending-domains/providers/fake'
@@ -69,6 +70,8 @@ async function claimsFor(projectId: string) {
 beforeAll(async () => {
   expect(process.env.PGDATABASE).toBe('veerify_backfill')
   await db.insert(organization).values({ id: orgId, name: 'BF org', slug: `bf-${run}`, createdAt: now, updatedAt: now })
+  // Mail limits count per workspace; every scenario here shares one, so lift the domain limit.
+  await db.insert(mailEntitlement).values({ id: `bf_ent_${run}`, organizationId: orgId, tier: 'owner' })
   await db.insert(user).values([
     { id: userA, name: 'A', email: `bf-a-${run}@example.com`, createdAt: now, updatedAt: now },
     { id: userB, name: 'B', email: `bf-b-${run}@example.com`, createdAt: now, updatedAt: now },
@@ -252,6 +255,11 @@ describe('backfill-sending-domains', () => {
   })
 
   it('is idempotent: a second apply changes nothing', async () => {
+    // Claims from earlier scenarios are pending, and the workspace allows 3 pending at a time.
+    await db
+      .update(projectMailDomain)
+      .set({ status: 'verified' })
+      .where(inArray(projectMailDomain.projectId, Object.values(projects)))
     const adopt = fresh()
     const missing = fresh()
     await activeOnProvider(adopt)

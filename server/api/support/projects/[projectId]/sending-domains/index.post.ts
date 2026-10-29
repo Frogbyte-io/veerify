@@ -29,7 +29,7 @@
  *       400: { description: Invalid request }
  *       403: { description: Project administrator required }
  *       404: { description: Feature disabled }
- *       409: { description: Domain claimed by another workspace, owned elsewhere, or a limit was reached }
+ *       409: { description: "Domain claimed by another workspace, owned elsewhere, or a workspace mail limit was reached (MAIL_DOMAIN_LIMIT_REACHED, MAIL_PENDING_LIMIT_REACHED)" }
  *       422: { description: Domain rejected by validation or the provider }
  *       429: { description: Rate limit exceeded }
  *       503: { description: Provider not configured or misconfigured }
