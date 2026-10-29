@@ -224,9 +224,29 @@ export default defineEventHandler(() => {
           properties: {
             id: { type: 'string' },
             inboxId: { type: 'string' },
-            address: { type: 'string' },
-            projectId: { type: 'string', nullable: true, description: 'Null means unattributed' },
+            address: { type: 'string', description: 'Lowercase; `*@domain` is a catch-all for the domain' },
+            projectId: { type: 'string' },
             isPrimary: { type: 'boolean' },
+            kind: {
+              type: 'string',
+              enum: ['custom', 'platform'],
+              description: 'platform: generated forwarding address on the platform mail domain',
+            },
+            isCatchAll: { type: 'boolean' },
+            behaviour: {
+              type: 'string',
+              enum: ['mail', 'helpdesk'],
+              description:
+                'helpdesk: auto-reply, SLA, CSAT and automation apply to new conversations; mail: none of them',
+            },
+            productId: { type: 'string', nullable: true },
+            domainId: {
+              type: 'string',
+              nullable: true,
+              description: 'The project email domain the address is exactly on',
+            },
+            providerRouteId: { type: 'string', nullable: true },
+            providerRouteStatus: { type: 'string', nullable: true, enum: ['active', 'failed', null] },
             createdAt: { type: 'string', format: 'date-time' },
           },
         },
