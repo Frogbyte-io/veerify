@@ -941,10 +941,13 @@ test.describe('support sending domains', () => {
           waitUntil: 'domcontentloaded',
         })
         const notice = page.getByTestId('support-message-sender-blocked')
-        await expect(notice).toContainText("this inbox's From address isn't verified for your project", {
+        await expect(notice).toContainText("the From address isn't verified for your project", {
           timeout: 30_000,
         })
-        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute('href', '/inbox/settings')
+        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute(
+          'href',
+          '/project/settings?tab=email'
+        )
         await page.getByTestId('support-message-retry').click()
         await expect.poll(() => retries).toBe(1)
         expect(dialogs).toBe(0)

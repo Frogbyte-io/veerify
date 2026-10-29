@@ -10,7 +10,7 @@ import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { product } from '~/server/database/schema/feedback'
 import type { projectMailAddress } from '~/server/database/schema/support'
-import { projectMailDomain } from '~/server/database/schema/support'
+import { projectMailDomain, supportInbox } from '~/server/database/schema/support'
 import { CATCH_ALL_LOCAL_PART, isCatchAllAddress, splitMailAddress } from '~/lib/mail-address'
 import { createErrorResponse } from './response'
 
@@ -124,4 +124,18 @@ export type InboxAddressRow = typeof projectMailAddress.$inferSelect
 /** An address row as the address API returns it. */
 export function toInboxAddressResponse(row: InboxAddressRow) {
   return { ...row, isCatchAll: isCatchAllAddress(row.address) }
+}
+
+/**
+ * Lock the inbox rows whose addresses a request changes, in a fixed order, so
+ * concurrent creates, moves and primary changes on the same inbox run one at a
+ * time and the "one primary address per inbox" rule holds.
+ */
+export async function lockInboxesForAddressChange(
+  executor: Pick<typeof db, 'select'>,
+  inboxIds: string[]
+): Promise<void> {
+  for (const id of [...new Set(inboxIds)].sort()) {
+    await executor.select({ id: supportInbox.id }).from(supportInbox).where(eq(supportInbox.id, id)).for('update')
+  }
 }

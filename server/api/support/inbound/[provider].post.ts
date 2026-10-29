@@ -86,6 +86,7 @@ import {
   projectMailAddress,
 } from '~/server/database/schema/support'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
+import { resolveConversationSender } from '~/server/utils/conversation-sender'
 import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { getProjectById } from '~/server/utils/project-access'
@@ -626,11 +627,17 @@ export default defineEventHandler(async (event) => {
           isSpam: message.isSpam,
         })
       ) {
-        if (!inbox.emailAddress) {
+        // Same sender as an agent reply: the receiving address when it is one of
+        // the project's verified addresses, otherwise the inbox address.
+        const autoReplySender = await resolveConversationSender(
+          { inboxId: inbox.id, inboxEmailAddress: inbox.emailAddress, mailAddressId: matchedAddress.id },
+          tx
+        )
+        if (!autoReplySender) {
           // No agent is present to show a 409 to - this is a webhook. Log and
           // still ticket the customer's message normally.
           logger.warn('Auto-reply is enabled but the inbox has no sending address', { inboxId: inbox.id })
-        } else if (!(await isSenderAllowedOrRecordBlock(inbox.projectId, inbox.emailAddress, 'auto_reply'))) {
+        } else if (!(await isSenderAllowedOrRecordBlock(inbox.projectId, autoReplySender, 'auto_reply'))) {
           // Project sender policy: this project may not send as the inbox address
           // (domain unverified, suspended or deleted). Skip the auto-reply;
           // the ticket is still created. Never true under the legacy policy.
@@ -654,11 +661,11 @@ export default defineEventHandler(async (event) => {
           if (!allowed) {
             logger.warn('Auto-reply rate limit exceeded for contact', { contactId })
           } else {
-            const domain = emailDomain(inbox.emailAddress) ?? emailDomain(process.env.MAIL_FROM ?? '') ?? 'localhost'
+            const domain = emailDomain(autoReplySender) ?? emailDomain(process.env.MAIL_FROM ?? '') ?? 'localhost'
             autoReplyMessageId = randomUUID()
 
             const autoReply = buildAutoReply({
-              inbox: { emailAddress: inbox.emailAddress, fromName: inbox.fromName, signature: inbox.signature },
+              inbox: { emailAddress: autoReplySender, fromName: inbox.fromName, signature: inbox.signature },
               // The literal sender of this email, not necessarily the
               // contact record's current email - correct even after a merge.
               contact: { email: message.from.address, name: message.from.name ?? null },

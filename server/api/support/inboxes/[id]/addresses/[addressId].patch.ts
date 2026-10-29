@@ -62,7 +62,12 @@ import { requireInboxRole } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { projectMailAddress } from '~/server/database/schema/support'
-import { addressError, assertProductInProject, toInboxAddressResponse } from '~/server/utils/inbox-address-rules'
+import {
+  addressError,
+  assertProductInProject,
+  lockInboxesForAddressChange,
+  toInboxAddressResponse,
+} from '~/server/utils/inbox-address-rules'
 
 const bodySchema = z.object({
   behaviour: z.enum(['mail', 'helpdesk']).optional(),
@@ -118,6 +123,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const updated = await db.transaction(async (tx) => {
+    await lockInboxesForAddressChange(tx, [inboxId, targetInboxId])
     if (patch.isPrimary) {
       await tx
         .update(projectMailAddress)

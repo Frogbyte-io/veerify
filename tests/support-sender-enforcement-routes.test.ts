@@ -68,6 +68,12 @@ vi.mock('~/server/utils/mail-limits', () => ({
   lockMailUsage: vi.fn(async () => undefined),
   assertCanAddMailAddress: vi.fn(async () => undefined),
 }))
+// The inbox row lock is a SELECT … FOR UPDATE with no rows to return; keep it out
+// of the queued-rows sequence the handlers read.
+vi.mock('~/server/utils/inbox-address-rules', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/server/utils/inbox-address-rules')>()),
+  lockInboxesForAddressChange: vi.fn(async () => undefined),
+}))
 vi.mock('~/server/utils/inbound-routes', () => ({
   createDirectRouteForAddress: vi.fn(async () => null),
   deleteDirectRouteForAddress: vi.fn(async () => undefined),
@@ -369,7 +375,7 @@ describe('agent reply', () => {
       data: {
         error: {
           code: 'SENDER_NOT_VERIFIED',
-          message: 'Replies from support@acme.com are blocked until acme.com is verified in Support settings',
+          message: 'Replies from support@acme.com are blocked until acme.com is verified in Project settings → Email',
         },
       },
     })

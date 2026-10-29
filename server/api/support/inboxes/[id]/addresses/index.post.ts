@@ -87,6 +87,7 @@ import { assertCanAddMailAddress, getOrganizationIdForProject, lockMailUsage } f
 import {
   addressError,
   assertProductInProject,
+  lockInboxesForAddressChange,
   MAX_ADDRESS_LENGTH,
   parseReceivingAddress,
   resolveAddressDomainId,
@@ -132,6 +133,8 @@ export default defineEventHandler(async (event) => {
       // two concurrent creates cannot both pass the check.
       const organizationId = await getOrganizationIdForProject(inbox.projectId, tx)
       await lockMailUsage(organizationId, tx)
+      // Serializes primary changes with PATCH on the same inbox.
+      await lockInboxesForAddressChange(tx, [inboxId])
       await assertCanAddMailAddress(organizationId, tx)
 
       // 422 CATCH_ALL_DOMAIN_REQUIRED when a catch-all's domain is not one of

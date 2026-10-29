@@ -7,6 +7,7 @@ import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import {
   contact,
   conversation,
+  projectMailAddress,
   supportAttachmentUpload,
   supportEmailEvent,
   supportInbox,
@@ -146,11 +147,24 @@ test.describe.serial('outbound reply round trip', () => {
       expect(afterInbound).toHaveLength(1)
       conversationId = afterInbound[0].id
 
+      // Replies go out from the receiving address when it sits on a verified
+      // project domain. Detached from its domain (as an address forwarded in
+      // from elsewhere), the inbox's own sending address is required instead.
+      const [receivingAddress] = await db
+        .select({ id: projectMailAddress.id, domainId: projectMailAddress.domainId })
+        .from(projectMailAddress)
+        .where(eq(projectMailAddress.address, inboxAddress))
+      expect(receivingAddress.domainId).toBeTruthy()
+      await db.update(projectMailAddress).set({ domainId: null }).where(eq(projectMailAddress.id, receivingAddress.id))
       const rejectedReply = await request.post(`/api/support/conversations/${conversationId}/messages`, {
         headers,
         data: { kind: 'outgoing', body: 'Looking into this now.' },
       })
       expect(rejectedReply.status()).toBe(409)
+      await db
+        .update(projectMailAddress)
+        .set({ domainId: receivingAddress.domainId })
+        .where(eq(projectMailAddress.id, receivingAddress.id))
 
       // --- 1. Give the inbox a sending address, then reply -------------------
       const inboxUpdate = await request.put(`/api/support/inboxes/${inboxId}`, {
@@ -258,6 +272,12 @@ test.describe.serial('outbound reply round trip', () => {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
       expect(['pending', 'sent', 'failed']).toContain(finalStatus)
+      // Sent as the address the customer wrote to, not the inbox's sending address.
+      const [replyDelivery] = await db
+        .select({ payload: supportOutboundDelivery.payload })
+        .from(supportOutboundDelivery)
+        .where(eq(supportOutboundDelivery.messageId, replyMessage.id as string))
+      expect(replyDelivery.payload.from.address).toBe(inboxAddress)
       if (finalStatus === 'pending') {
         const [delivery] = await db
           .select()

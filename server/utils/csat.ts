@@ -3,6 +3,7 @@ import { and, asc, eq, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { helpdeskAppliesTo, helpdeskConversationFilter } from './conversation-behaviour'
 import { getCsatSurveyTemplate } from '~/lib/email-templates'
 import { db } from '~/server/database/drizzle'
+import { resolveConversationSender } from '~/server/utils/conversation-sender'
 import {
   contact,
   conversation,
@@ -251,9 +252,15 @@ async function contactWasRecentlySurveyed(
 async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<boolean> {
   // No survey for conversations started on a mail address, or in Spam or Trash.
   if (!helpdeskAppliesTo(candidate.conversation)) return false
-  if (!candidate.contact.email || !candidate.inbox.emailAddress) return false
+  if (!candidate.contact.email) return false
   const recipient = candidate.contact.email
-  const senderAddress = candidate.inbox.emailAddress
+  // Same sender as the agent's replies on this conversation.
+  const senderAddress = await resolveConversationSender({
+    inboxId: candidate.inbox.id,
+    inboxEmailAddress: candidate.inbox.emailAddress,
+    mailAddressId: candidate.conversation.mailAddressId,
+  })
+  if (!senderAddress) return false
   if (hasCsatOptedOut(candidate.contact.attributes)) return false
   if (!(await hasAgentReply(candidate.conversation.id))) return false
 

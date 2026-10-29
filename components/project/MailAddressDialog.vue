@@ -136,8 +136,11 @@
 
         <div class="flex items-center gap-2">
           <Switch id="mail-address-primary" v-model="isPrimary" :disabled="isSaving" />
-          <Label for="mail-address-primary">Primary sending address</Label>
+          <Label for="mail-address-primary">Primary address of the inbox</Label>
         </div>
+        <p class="text-xs text-muted-foreground">
+          Replies go out from the address a conversation arrived on, once its domain is verified.
+        </p>
 
         <p class="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Icon name="lucide:forward" class="h-3.5 w-3.5" />
