@@ -27,6 +27,12 @@ export async function completePublicAuthHandoffFromUrl() {
 }
 
 export async function fetchPublicAuthSession() {
-  const response = await $fetch<{ data?: { session?: any; user?: any } | null }>('/api/public/auth/session')
+  // Narrowly typed alias, as in dashboard-bootstrap-client.ts: Nitro's typed `$fetch`
+  // resolves the response against every API route and exceeds TypeScript's
+  // instantiation depth (TS2589) once enough routes exist.
+  const fetchSession = $fetch as unknown as (
+    url: string
+  ) => Promise<{ data?: { session?: any; user?: any } | null } | null>
+  const response = await fetchSession('/api/public/auth/session')
   return response?.data || { session: null, user: null }
 }

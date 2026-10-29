@@ -71,6 +71,15 @@ export function legacyRoadmapRedirect(path: string, search = ''): string | null 
   return `/dashboard${path}${search}`
 }
 
+/**
+ * The Inbox tool was called Support and lived under `/support`. Old links
+ * (bookmarks, notification rows stored before the rename) are forwarded.
+ */
+export function legacySupportRedirect(path: string, search = ''): string | null {
+  if (!matchesRoute(path, '/support')) return null
+  return `/inbox${path.slice('/support'.length)}${search}`
+}
+
 /** Redirect target for a path on a public host, or null to render it. */
 export function resolvePublicHostRedirect(path: string): string | null {
   return isPublicHostAppRoute(path) ? '/' : null

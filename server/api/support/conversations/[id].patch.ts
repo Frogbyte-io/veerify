@@ -59,6 +59,7 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, conversation, conversationTag } from '~/server/database/schema/support'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
+import { helpdeskAppliesTo } from '~/server/utils/conversation-behaviour'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { diffFolderPatch, recordFolderActivity } from '~/server/utils/support-trash'
 
@@ -100,9 +101,21 @@ export default defineEventHandler(async (event) => {
     return createSuccessResponse({ conversation: existing, changed: false })
   }
 
+  // Behaviour and folders after this patch, which decide whether an SLA applies.
+  const nextState = {
+    behaviour: existing.behaviour,
+    spamAt: 'spamAt' in updates ? (updates.spamAt as Date | null) : existing.spamAt,
+    deletedAt: 'deletedAt' in updates ? (updates.deletedAt as Date | null) : existing.deletedAt,
+  }
+  // Provider spam is created without an SLA. Taking a conversation out of Spam
+  // (or Trash) without one assigns it now.
+  const assignSlaOnRestore =
+    folderChanges.some((change) => !change.to) && !existing.slaPolicyId && helpdeskAppliesTo(nextState)
+  const recomputeSla = updates.priority !== undefined || assignSlaOnRestore
+
   let sla: Awaited<ReturnType<typeof resolveSlaAssignment>> | null | undefined
-  if (updates.priority !== undefined) {
-    const nextPriority = updates.priority as string | null
+  if (recomputeSla) {
+    const nextPriority = (updates.priority !== undefined ? updates.priority : existing.priority) as string | null
     const [contactRow] = await db
       .select({ companyId: contact.companyId })
       .from(contact)
@@ -119,7 +132,8 @@ export default defineEventHandler(async (event) => {
       companyId: contactRow?.companyId,
       tagIds: tags.map((tag) => tag.tagId),
       start: now,
-      conversation: existing,
+      includeNextResponse: assignSlaOnRestore ? Boolean(existing.firstResponseAt) : undefined,
+      conversation: nextState,
     })
   }
 
@@ -130,7 +144,7 @@ export default defineEventHandler(async (event) => {
       .set({
         ...updates,
         ...slaPause,
-        ...(updates.priority !== undefined
+        ...(recomputeSla
           ? (sla ?? { slaPolicyId: null, firstResponseDueAt: null, nextResponseDueAt: null, resolutionDueAt: null })
           : {}),
         lastActivityAt: now,

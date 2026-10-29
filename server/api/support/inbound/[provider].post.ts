@@ -518,7 +518,8 @@ export default defineEventHandler(async (event) => {
                 tagIds: tags.map((tag) => tag.tagId),
                 start: message.receivedAt,
                 includeNextResponse: true,
-                conversation: existingThread,
+                // The state after this reply: not spam (quiet replies never get here) and out of Trash.
+                conversation: { ...existingThread, spamAt: null, deletedAt: null },
               },
               tx
             )
@@ -595,13 +596,16 @@ export default defineEventHandler(async (event) => {
       }
 
       // ---- SUP-03-11: CC participants -------------------------------------
-      await resolveCcParticipants(tx, {
-        conversationId,
-        projectId: inbox.projectId,
-        cc: message.cc,
-        senderContactId: contactId,
-        ownAddresses,
-      })
+      // Spam does not turn every Cc'd address into a contact.
+      if (!quiet) {
+        await resolveCcParticipants(tx, {
+          conversationId,
+          projectId: inbox.projectId,
+          cc: message.cc,
+          senderContactId: contactId,
+          ownAddresses,
+        })
+      }
 
       // ---- SUP-04-8: auto-reply --------------------------------------------
       // Guard 1 (never on a detected auto-response) is enforced above this

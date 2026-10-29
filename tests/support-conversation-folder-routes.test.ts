@@ -13,7 +13,12 @@ const state = vi.hoisted(() => ({
     subject: 'Hello',
     spamAt: null as Date | null,
     deletedAt: null as Date | null,
+    behaviour: 'helpdesk',
+    priority: null as string | null,
+    slaPolicyId: null as string | null,
+    firstResponseAt: null as Date | null,
   },
+  sla: null as Record<string, unknown> | null,
   sets: [] as Record<string, unknown>[],
   inserts: [] as Record<string, unknown>[],
   published: [] as unknown[],
@@ -38,7 +43,7 @@ vi.mock('~/server/utils/support-realtime', () => ({
 }))
 vi.mock('~/server/utils/automation-engine', () => ({ triggerAutomationEvent: vi.fn(async () => undefined) }))
 vi.mock('~/server/utils/notifications', () => ({ notifyUser: vi.fn() }))
-vi.mock('~/server/utils/sla-assignment', () => ({ resolveSlaAssignment: vi.fn(async () => null) }))
+vi.mock('~/server/utils/sla-assignment', () => ({ resolveSlaAssignment: vi.fn(async () => state.sla) }))
 vi.mock('~/server/database/drizzle', () => {
   const tx = {
     update: () => ({
@@ -51,7 +56,17 @@ vi.mock('~/server/database/drizzle', () => {
       values: async (values: Record<string, unknown>) => void state.inserts.push(values),
     }),
   }
-  return { db: { transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) } }
+  // Contact and tag lookups for SLA assignment: every select resolves to no rows.
+  const rows = () => {
+    const chain: Record<string, unknown> = {
+      from: () => chain,
+      where: () => chain,
+      limit: async () => [],
+      then: (resolve: (value: unknown[]) => unknown) => resolve([]),
+    }
+    return chain
+  }
+  return { db: { select: rows, transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) } }
 })
 
 const handler = (await import('~/server/api/support/conversations/[id].patch')).default as EventHandler
@@ -62,6 +77,8 @@ beforeEach(() => {
   state.existing.status = 'open'
   state.existing.spamAt = null
   state.existing.deletedAt = null
+  state.existing.slaPolicyId = null
+  state.sla = null
   state.sets = []
   state.inserts = []
   state.published = []
@@ -98,6 +115,24 @@ describe('PATCH /api/support/conversations/[id] folders', () => {
     state.body = { deleted: false }
     await run()
     expect(state.sets[0]).toMatchObject({ deletedAt: null })
+  })
+
+  it('assigns an SLA when a conversation without one leaves Spam', async () => {
+    state.existing.spamAt = new Date()
+    state.sla = { slaPolicyId: 'policy-1', firstResponseDueAt: new Date() }
+    state.body = { spam: false }
+    await run()
+    expect(state.sets[0]).toMatchObject({ spamAt: null, slaPolicyId: 'policy-1' })
+  })
+
+  it('keeps the existing SLA when a conversation that has one leaves Trash', async () => {
+    state.existing.deletedAt = new Date()
+    state.existing.slaPolicyId = 'policy-0'
+    state.sla = { slaPolicyId: 'policy-1' }
+    state.body = { deleted: false }
+    await run()
+    expect(state.sets[0]).toMatchObject({ deletedAt: null })
+    expect(state.sets[0]).not.toHaveProperty('slaPolicyId')
   })
 
   it('is a no-op when the folder already matches', async () => {

@@ -6,6 +6,7 @@ import {
   conversationAttachment,
   conversationMessage,
   supportAttachmentUpload,
+  supportEmailEvent,
 } from '~/server/database/schema/support'
 import { getStorageProvider } from '~/server/utils/storage'
 import type { StorageProvider } from '~/server/utils/storage/types'
@@ -128,17 +129,26 @@ export interface TrashPurgeResult {
   claimed: number
   purged: number
   objectsDeleted: number
-  /** Conversations left in Trash because a storage delete failed; retried next pass. */
-  retried: number
+  /** Storage objects whose delete failed after their rows were gone; logged, the rows stay deleted. */
+  objectsFailed: number
 }
 
 /**
  * Permanently delete conversations whose `deletedAt` is older than the
- * retention window, in a bounded batch. Messages, attachment rows, upload
- * sessions, tags, read state and status events cascade with the conversation,
- * but the storage objects do not, so they are deleted first. A conversation
- * whose objects cannot all be deleted keeps its rows (and so its keys) and is
- * retried on the next pass; a missing object counts as deleted.
+ * retention window, in a bounded batch.
+ *
+ * Each conversation is purged in its own transaction: the row is locked
+ * (`FOR UPDATE`, so a concurrent Restore or inbound reply either finishes
+ * first and the conversation no longer qualifies, or waits and then finds it
+ * gone), its storage keys are collected, and the row is deleted. Messages,
+ * attachment rows, upload sessions, tags, read state and status events cascade.
+ * Inbound event rows outlive the conversation (they dedupe provider retries),
+ * so their raw payload key is cleared, and the raw object is deleted unless
+ * another surviving event still points at it.
+ *
+ * Storage objects are deleted only after the transaction commits. A failed
+ * object delete leaves an orphaned object (logged), never a live conversation
+ * whose attachments are gone; a missing object counts as deleted.
  */
 export async function runTrashPurge(
   input: { now?: Date; maxBatch?: number; storage?: StorageProvider } = {}
@@ -154,52 +164,76 @@ export async function runTrashPurge(
     .orderBy(conversation.deletedAt)
     .limit(maxBatch)
 
-  const result: TrashPurgeResult = { claimed: candidates.length, purged: 0, objectsDeleted: 0, retried: 0 }
+  const result: TrashPurgeResult = { claimed: candidates.length, purged: 0, objectsDeleted: 0, objectsFailed: 0 }
   if (candidates.length === 0) return result
 
   const storage = input.storage ?? getStorageProvider()
-  const ids = candidates.map((row) => row.id)
 
-  const attachmentRows = await db
-    .select({ conversationId: conversationMessage.conversationId, key: conversationAttachment.storageKey })
-    .from(conversationAttachment)
-    .innerJoin(conversationMessage, eq(conversationAttachment.messageId, conversationMessage.id))
-    .where(inArray(conversationMessage.conversationId, ids))
-  const uploadRows = await db
-    .select({
-      conversationId: supportAttachmentUpload.conversationId,
-      temp: supportAttachmentUpload.tempStorageKey,
-      final: supportAttachmentUpload.finalStorageKey,
+  for (const { id } of candidates) {
+    const keys = await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ id: conversation.id })
+        .from(conversation)
+        .where(and(eq(conversation.id, id), isNotNull(conversation.deletedAt), lt(conversation.deletedAt, cutoff)))
+        .for('update')
+      // Restored (or already purged) since the candidate query.
+      if (!locked) return null
+
+      const collected = new Set<string>()
+      const attachmentRows = await tx
+        .select({ key: conversationAttachment.storageKey })
+        .from(conversationAttachment)
+        .innerJoin(conversationMessage, eq(conversationAttachment.messageId, conversationMessage.id))
+        .where(eq(conversationMessage.conversationId, id))
+      for (const row of attachmentRows) collected.add(row.key)
+
+      const uploadRows = await tx
+        .select({ temp: supportAttachmentUpload.tempStorageKey, final: supportAttachmentUpload.finalStorageKey })
+        .from(supportAttachmentUpload)
+        .where(eq(supportAttachmentUpload.conversationId, id))
+      for (const row of uploadRows) {
+        collected.add(row.temp)
+        if (row.final) collected.add(row.final)
+      }
+
+      const rawRows = await tx
+        .select({ key: supportEmailEvent.rawStorageKey })
+        .from(supportEmailEvent)
+        .where(and(eq(supportEmailEvent.resultConversationId, id), isNotNull(supportEmailEvent.rawStorageKey)))
+      const rawKeys = [...new Set(rawRows.map((row) => row.key as string))]
+      if (rawKeys.length > 0) {
+        await tx
+          .update(supportEmailEvent)
+          .set({ rawStorageKey: null })
+          .where(and(eq(supportEmailEvent.resultConversationId, id), inArray(supportEmailEvent.rawStorageKey, rawKeys)))
+        const stillUsed = await tx
+          .select({ key: supportEmailEvent.rawStorageKey })
+          .from(supportEmailEvent)
+          .where(inArray(supportEmailEvent.rawStorageKey, rawKeys))
+        const shared = new Set(stillUsed.map((row) => row.key))
+        for (const key of rawKeys) if (!shared.has(key)) collected.add(key)
+      }
+
+      await tx.delete(conversation).where(eq(conversation.id, id))
+      return collected
     })
-    .from(supportAttachmentUpload)
-    .where(inArray(supportAttachmentUpload.conversationId, ids))
 
-  const keysByConversation = new Map<string, Set<string>>(ids.map((id) => [id, new Set<string>()]))
-  for (const row of attachmentRows) keysByConversation.get(row.conversationId)?.add(row.key)
-  for (const row of uploadRows) {
-    keysByConversation.get(row.conversationId)?.add(row.temp)
-    if (row.final) keysByConversation.get(row.conversationId)?.add(row.final)
-  }
-
-  for (const id of ids) {
-    let failed = false
-    for (const key of keysByConversation.get(id) ?? []) {
+    if (keys === null) continue
+    result.purged++
+    for (const key of keys) {
       try {
         await storage.deleteObject(key)
         result.objectsDeleted++
       } catch (error) {
-        if (!isMissingObject(error)) failed = true
+        if (isMissingObject(error)) continue
+        result.objectsFailed++
+        console.error('[support-trash] storage object left behind after purge', {
+          conversationId: id,
+          key,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     }
-    if (failed) {
-      result.retried++
-      continue
-    }
-    // Re-check deletedAt: an agent may have restored it while objects were deleted.
-    const deleted = await db
-      .delete(conversation)
-      .where(and(eq(conversation.id, id), isNotNull(conversation.deletedAt), lt(conversation.deletedAt, cutoff)))
-    if (deleted.rowCount === 1) result.purged++
   }
   return result
 }

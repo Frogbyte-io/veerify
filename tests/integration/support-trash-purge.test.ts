@@ -11,6 +11,7 @@ import {
   conversationAttachment,
   conversationMessage,
   supportAttachmentUpload,
+  supportEmailEvent,
   supportInbox,
 } from '../../server/database/schema/support'
 import { runTrashPurge } from '../../server/utils/support-trash'
@@ -33,6 +34,8 @@ class FakeStorage implements StorageProvider {
   readonly directUploadConstraints = 'proxy-required' as const
   readonly failed = new Set<string>()
   deletes: string[] = []
+  /** Runs before each delete; lets a test act while the purge is mid-batch. */
+  onDelete: ((key: string) => Promise<void>) | null = null
   async getPresignedUploadTarget() {
     return { uploadUrl: '/unused', method: 'PUT' as const, headers: {} }
   }
@@ -47,6 +50,7 @@ class FakeStorage implements StorageProvider {
     return Buffer.from('unused')
   }
   async deleteObject(key: string) {
+    await this.onDelete?.(key)
     this.deletes.push(key)
     if (this.failed.has(key)) throw new Error('provider unavailable')
   }
@@ -149,7 +153,7 @@ describe('support trash purge (real Postgres)', () => {
 
     const result = await runTrashPurge({ now, storage })
 
-    expect(result).toMatchObject({ purged: 1, retried: 0, objectsDeleted: 3 })
+    expect(result).toMatchObject({ purged: 1, objectsFailed: 0, objectsDeleted: 3 })
     expect(storage.deletes.sort()).toEqual([attachmentKey, finalKey, tempKey].sort())
     expect(await exists(old)).toBe(false)
     expect(await exists(recent)).toBe(true)
@@ -164,7 +168,7 @@ describe('support trash purge (real Postgres)', () => {
     expect(attachments).toEqual([])
   })
 
-  it('keeps a conversation, and its attachment keys, when an object cannot be deleted', async () => {
+  it('deletes the rows even when a storage object cannot be deleted, and reports the orphan', async () => {
     const storage = new FakeStorage()
     const stuck = await makeConversation({ deletedAt: daysAgo(45) })
     const messageId = `purge_message_${randomUUID()}`
@@ -184,14 +188,86 @@ describe('support trash purge (real Postgres)', () => {
     })
     storage.failed.add(key)
 
-    const failed = await runTrashPurge({ now, storage })
-    expect(failed).toMatchObject({ purged: 0, retried: 1 })
-    expect(await exists(stuck)).toBe(true)
-
-    storage.failed.clear()
-    const retried = await runTrashPurge({ now, storage })
-    expect(retried.purged).toBe(1)
+    const result = await runTrashPurge({ now, storage })
+    expect(result).toMatchObject({ purged: 1, objectsFailed: 1, objectsDeleted: 0 })
     expect(await exists(stuck)).toBe(false)
+  })
+
+  it('never touches a conversation restored while the batch runs', async () => {
+    const storage = new FakeStorage()
+    const first = await makeConversation({ deletedAt: daysAgo(60) })
+    const restored = await makeConversation({ deletedAt: daysAgo(59) })
+    const firstMessage = `purge_message_${randomUUID()}`
+    const restoredMessage = `purge_message_${randomUUID()}`
+    await db.insert(conversationMessage).values([
+      { id: firstMessage, conversationId: first, kind: 'message', body: 'a', senderKind: 'contact' },
+      { id: restoredMessage, conversationId: restored, kind: 'message', body: 'b', senderKind: 'contact' },
+    ])
+    const firstKey = `support/attachments/${randomUUID()}/first.pdf`
+    const restoredKey = `support/attachments/${randomUUID()}/restored.pdf`
+    await db.insert(conversationAttachment).values([
+      { id: `purge_attachment_${randomUUID()}`, messageId: firstMessage, storageKey: firstKey, fileName: 'a.pdf' },
+      {
+        id: `purge_attachment_${randomUUID()}`,
+        messageId: restoredMessage,
+        storageKey: restoredKey,
+        fileName: 'b.pdf',
+      },
+    ])
+    // Both are candidates; the second is restored while the first one's objects are deleted.
+    storage.onDelete = async (key) => {
+      if (key === firstKey) await db.update(conversation).set({ deletedAt: null }).where(eq(conversation.id, restored))
+    }
+
+    const result = await runTrashPurge({ now, storage, maxBatch: 2 })
+    expect(result).toMatchObject({ claimed: 2, purged: 1 })
+    expect(await exists(first)).toBe(false)
+    expect(await exists(restored)).toBe(true)
+    expect(storage.deletes).toEqual([firstKey])
+  })
+
+  it('deletes raw inbound payloads unless another event still uses them', async () => {
+    const storage = new FakeStorage()
+    const old = await makeConversation({ deletedAt: daysAgo(40) })
+    const other = await makeConversation()
+    const ownRaw = `support/inbound/${randomUUID()}.json`
+    const sharedRaw = `support/inbound/${randomUUID()}.json`
+    const events = [
+      { key: ownRaw, conversationId: old },
+      { key: sharedRaw, conversationId: old },
+      { key: sharedRaw, conversationId: other },
+    ].map((row) => ({
+      id: `purge_event_${randomUUID()}`,
+      inboxId: ids.inbox,
+      provider: 'mailgun',
+      providerEventId: `purge-${randomUUID()}`,
+      rawStorageKey: row.key,
+      status: 'processed',
+      resultConversationId: row.conversationId,
+    }))
+    await db.insert(supportEmailEvent).values(events)
+
+    await runTrashPurge({ now, storage })
+
+    expect(storage.deletes).toEqual([ownRaw])
+    const remaining = await db
+      .select({ key: supportEmailEvent.rawStorageKey, conversationId: supportEmailEvent.resultConversationId })
+      .from(supportEmailEvent)
+      .where(
+        inArray(
+          supportEmailEvent.id,
+          events.map((event) => event.id)
+        )
+      )
+    // The purged conversation's events stay (they dedupe provider retries) without their payload keys.
+    expect(remaining.filter((row) => row.key === null)).toHaveLength(2)
+    expect(remaining.filter((row) => row.key === sharedRaw)).toEqual([{ key: sharedRaw, conversationId: other }])
+    await db.delete(supportEmailEvent).where(
+      inArray(
+        supportEmailEvent.id,
+        events.map((event) => event.id)
+      )
+    )
   })
 
   it('works in batches', async () => {
