@@ -86,6 +86,7 @@ export default defineNuxtConfig({
       '*/10 * * * *': ['marketing:competitors-check', 'domains:status-refresh'],
       '*/15 * * * *': ['example:ping'],
       '0 * * * *': ['marketing:visibility-schedule'],
+      '45 * * * *': ['support:trash-purge'],
       '5 * * * *': ['marketing:audit-schedule'],
       '20 * * * *': ['marketing:search-sync'],
       '0 7-11 * * *': ['marketing:mentions-digest'],

@@ -27,6 +27,13 @@
           <Icon name="lucide:x" class="h-3.5 w-3.5" />
         </Button>
       </div>
+      <p
+        v-if="activeView === 'trash'"
+        data-testid="support-trash-note"
+        class="rounded-md border bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground"
+      >
+        Conversations in Trash are deleted permanently after 30 days.
+      </p>
       <div class="flex items-center gap-2 text-[11px] text-muted-foreground" aria-label="Unread queues">
         <span class="inline-flex items-center gap-1">
           Unassigned
@@ -102,9 +109,9 @@
           :name="searchQuery ? 'lucide:search-x' : 'lucide:inbox'"
           class="w-8 h-8 text-muted-foreground mx-auto mb-3"
         />
-        <p class="text-sm font-medium mb-1">{{ searchQuery ? 'No matching conversations' : 'No conversations' }}</p>
+        <p class="text-sm font-medium mb-1">{{ searchQuery ? 'No matching conversations' : emptyTitle }}</p>
         <p class="text-xs text-muted-foreground">
-          {{ searchQuery ? 'Try another search.' : 'Conversations for this view will appear here.' }}
+          {{ searchQuery ? 'Try another search.' : emptyHint }}
         </p>
       </div>
 
@@ -175,6 +182,14 @@
                   <Icon name="lucide:star" class="h-3 w-3" />
                   {{ item.csatRating }}
                 </span>
+                <span
+                  v-if="addressPill(item)"
+                  data-testid="support-conversation-address"
+                  class="inline-flex max-w-24 items-center truncate rounded-sm border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                  :title="item.mailAddress"
+                >
+                  {{ addressPill(item) }}
+                </span>
                 <span class="text-[11px] text-muted-foreground ml-auto">#{{ item.displayId }}</span>
               </div>
             </div>
@@ -206,6 +221,7 @@ export default {
     searchQuery: { type: String, default: '' },
     csatFilter: { type: String, default: 'all' },
     csatSummary: { type: Object, default: null },
+    activeView: { type: String, default: 'unassigned' },
     activeInboxId: { type: String, default: null },
     unreadCounts: {
       type: Object,
@@ -220,6 +236,20 @@ export default {
   },
 
   computed: {
+    emptyTitle() {
+      if (this.activeView === 'trash') return 'Trash is empty'
+      if (this.activeView === 'spam') return 'No spam'
+      if (this.activeView === 'archived') return 'Nothing archived'
+      return 'No conversations'
+    },
+
+    emptyHint() {
+      if (this.activeView === 'trash') return 'Deleted conversations are kept here for 30 days.'
+      if (this.activeView === 'spam') return 'Conversations marked as spam will appear here.'
+      if (this.activeView === 'archived') return 'Archived conversations will appear here.'
+      return 'Conversations for this view will appear here.'
+    },
+
     activeInboxScore() {
       return this.csatSummary?.byInbox?.find((item) => item.inboxId === this.activeInboxId) || null
     },
@@ -240,6 +270,13 @@ export default {
   },
 
   methods: {
+    /** `hello@acme.com` shows as `hello@`; a catch-all `*@acme.com` shows as `*@`. */
+    addressPill(item) {
+      if (!item.mailAddressId || !item.mailAddress) return ''
+      const at = item.mailAddress.indexOf('@')
+      return at > 0 ? item.mailAddress.slice(0, at + 1) : item.mailAddress
+    },
+
     rowClass(item) {
       if (item.id === this.selectedConversationId) return 'bg-accent'
       return item.isUnread ? 'bg-primary/[0.04] hover:bg-accent/60' : 'bg-transparent hover:bg-accent/50'

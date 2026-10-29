@@ -12,7 +12,11 @@
  *         schema: { type: string }
  *       - in: query
  *         name: view
- *         schema: { type: string, enum: [unassigned, assigned-to-me, resolved, breaching-soon, all] }
+ *         description: >
+ *           `archived` is status closed. `spam` and `trash` are folders (`spamAt` /
+ *           `deletedAt`); every other view, the counts and search exclude spam and
+ *           trashed conversations. `spam` lists spam that is not in Trash.
+ *         schema: { type: string, enum: [unassigned, assigned-to-me, resolved, breaching-soon, archived, spam, trash, all] }
  *       - in: query
  *         name: status
  *         schema: { type: string }
@@ -21,6 +25,10 @@
  *         schema: { type: string }
  *       - in: query
  *         name: contactId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: mailAddressId
+ *         description: Only conversations that arrived on this receiving address
  *         schema: { type: string }
  *       - in: query
  *         name: tagId
@@ -41,7 +49,7 @@
  *         name: cursor
  *         schema: { type: string }
  *     responses:
- *       200: { description: Conversation page }
+ *       200: { description: Conversation page; each item carries `mailAddressId` and `mailAddress` (the receiving address, or null) }
  *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  */
@@ -59,17 +67,20 @@ import {
   conversationReadState,
   conversationTag,
   csatResponse,
+  projectMailAddress,
 } from '~/server/database/schema/support'
 import { isConversationUnread } from '~/server/utils/conversation-read-state'
+import { CONVERSATION_LIST_VIEWS, folderCondition } from '~/server/utils/support-trash'
 
 const MAX_POSTGRES_INTEGER = 2147483647
 
 const querySchema = z.object({
   inboxId: z.string().min(1),
-  view: z.enum(['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all']).optional(),
+  view: z.enum(CONVERSATION_LIST_VIEWS).optional(),
   status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'closed']).optional(),
   assigneeUserId: z.string().optional(),
   contactId: z.string().optional(),
+  mailAddressId: z.string().optional(),
   tagId: z.string().optional(),
   projectId: z.string().optional(),
   csat: z.enum(['rated', 'unrated']).optional(),
@@ -84,7 +95,7 @@ export default defineEventHandler(async (event) => {
 
   await requireInboxAccess(query.inboxId, session.user.id)
 
-  const conditions = [eq(conversation.inboxId, query.inboxId)]
+  const conditions = [eq(conversation.inboxId, query.inboxId), folderCondition(query.view)]
   const activeStatuses = ['open', 'pending'] as const
   const search = query.search?.trim()
 
@@ -94,6 +105,8 @@ export default defineEventHandler(async (event) => {
     conditions.push(eq(conversation.assigneeUserId, session.user.id), inArray(conversation.status, activeStatuses))
   } else if (!search && query.view === 'resolved') {
     conditions.push(eq(conversation.status, 'resolved'))
+  } else if (!search && query.view === 'archived') {
+    conditions.push(eq(conversation.status, 'closed'))
   } else if (!search && query.view === 'breaching-soon') {
     const soon = new Date(Date.now() + 60 * 60_000)
     conditions.push(
@@ -110,6 +123,7 @@ export default defineEventHandler(async (event) => {
   if (query.status) conditions.push(eq(conversation.status, query.status))
   if (query.assigneeUserId) conditions.push(eq(conversation.assigneeUserId, query.assigneeUserId))
   if (query.contactId) conditions.push(eq(conversation.contactId, query.contactId))
+  if (query.mailAddressId) conditions.push(eq(conversation.mailAddressId, query.mailAddressId))
   if (query.projectId) conditions.push(eq(conversation.projectId, query.projectId))
 
   if (query.csat === 'rated') conditions.push(isNotNull(csatResponse.rating))
@@ -154,6 +168,7 @@ export default defineEventHandler(async (event) => {
   const listBase = db
     .select({
       ...getTableColumns(conversation),
+      mailAddress: projectMailAddress.address,
       lastReadAt: conversationReadState.lastReadAt,
       csatRating: csatResponse.rating,
       csatComment: csatResponse.comment,
@@ -165,6 +180,7 @@ export default defineEventHandler(async (event) => {
 
   const rows = await joinedListBase
     .leftJoin(csatResponse, eq(csatResponse.conversationId, conversation.id))
+    .leftJoin(projectMailAddress, eq(projectMailAddress.id, conversation.mailAddressId))
     .leftJoin(
       conversationReadState,
       and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))
@@ -198,7 +214,7 @@ export default defineEventHandler(async (event) => {
       conversationReadState,
       and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))
     )
-    .where(eq(conversation.inboxId, query.inboxId))
+    .where(and(eq(conversation.inboxId, query.inboxId), folderCondition(undefined)))
 
   return createSuccessResponse({
     conversations: items,
