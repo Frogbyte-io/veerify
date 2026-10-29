@@ -1,6 +1,6 @@
 <template>
   <PageContainer>
-    <PageHeader title="Support settings" description="Configure your project's shared inbox">
+    <PageHeader title="Inbox settings" description="Configure your project's shared inbox">
       <template #actions>
         <Button variant="outline" size="sm" as-child>
           <NuxtLink to="/inbox">
@@ -14,7 +14,7 @@
     <!-- Section nav sits in its final spot from first paint; pills fill in once the data is known -->
     <nav
       v-if="isLoading || (!error && sectionLinks.length > 1)"
-      aria-label="Support settings sections"
+      aria-label="Inbox settings sections"
       data-testid="support-settings-section-nav"
       class="sticky top-0 z-10 -mx-1 flex min-h-12 gap-1.5 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
     >
@@ -44,7 +44,7 @@
     <Card v-else-if="error">
       <CardContent class="text-center py-8">
         <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-        <p class="font-medium mb-2">Failed to load support settings</p>
+        <p class="font-medium mb-2">Failed to load inbox settings</p>
         <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
         <Button variant="outline" @click="initPage">
           <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
@@ -57,7 +57,7 @@
     <Card v-else-if="supportDisabled" data-testid="support-disabled">
       <CardContent class="text-center py-10 space-y-3">
         <Icon name="lucide:life-buoy" class="w-8 h-8 text-muted-foreground mx-auto" />
-        <p class="font-medium">Support is switched off for this project</p>
+        <p class="font-medium">Inbox is switched off for this project</p>
         <template v-if="activeProject?.role === 'admin'">
           <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
           <Button as-child variant="outline">
@@ -66,7 +66,7 @@
         </template>
         <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
           <Icon name="lucide:lock" class="w-3.5 h-3.5" />
-          Project admins can switch Support on.
+          Project admins can switch the Inbox on.
         </p>
       </CardContent>
     </Card>
@@ -74,10 +74,9 @@
     <!-- No inbox yet -->
     <Card v-else-if="!hasInboxes && canManageProjectSupport">
       <CardHeader>
-        <CardTitle>Create your support inbox</CardTitle>
+        <CardTitle>Create your inbox</CardTitle>
         <CardDescription>
-          Your project doesn't have a support inbox yet. Create one to start receiving and managing customer
-          conversations.
+          Your project doesn't have an inbox yet. Create one to start receiving and managing customer conversations.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -116,15 +115,15 @@
 
     <Card v-else-if="!hasInboxes" data-testid="support-no-assignment">
       <CardHeader>
-        <CardTitle>No support inboxes are assigned to you.</CardTitle>
-        <CardDescription>Ask a support administrator to add you to an inbox.</CardDescription>
+        <CardTitle>No inboxes are assigned to you.</CardTitle>
+        <CardDescription>Ask an inbox administrator to add you to an inbox.</CardDescription>
       </CardHeader>
     </Card>
 
     <Card v-else-if="!selectedInboxId" data-testid="support-no-assignment">
       <CardHeader>
-        <CardTitle>No support inboxes are assigned to you.</CardTitle>
-        <CardDescription>Ask a support administrator to add you to an inbox.</CardDescription>
+        <CardTitle>No inboxes are assigned to you.</CardTitle>
+        <CardDescription>Ask an inbox administrator to add you to an inbox.</CardDescription>
       </CardHeader>
     </Card>
 
@@ -681,14 +680,21 @@
         </CardContent>
       </Card>
 
-      <!-- Sending domains -->
-      <SupportSendingDomains
-        v-if="activeProjectId"
-        id="sending-domains"
-        class="scroll-mt-16"
-        :project-id="activeProjectId"
-        @loaded="(info, loadedProjectId) => onSendingDomainsLoaded(info, loadedProjectId)"
-      />
+      <!-- Domains moved to Project settings -> Email -->
+      <Card id="sending-domains" class="scroll-mt-16" data-testid="support-domains-moved">
+        <CardContent class="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
+          <p class="min-w-0 flex-1 text-muted-foreground">
+            Domains and email addresses are managed per project. Connect a domain and create addresses in Project
+            settings.
+          </p>
+          <Button variant="outline" size="sm" as-child>
+            <NuxtLink to="/project/settings?tab=email">
+              <Icon name="lucide:mail" class="mr-1.5 h-4 w-4" />
+              Open Project settings → Email
+            </NuxtLink>
+          </Button>
+        </CardContent>
+      </Card>
 
       <!-- Inbox settings -->
       <template v-if="hasInboxes">
@@ -1027,8 +1033,8 @@
                   <Button variant="outline" size="sm" @click="copy(primaryAddress)">Copy</Button>
                 </div>
                 <p class="text-xs text-muted-foreground">
-                  Point an MX record or a forwarding rule at this address. Add more addresses below to receive mail from
-                  other addresses in this inbox.
+                  Point an MX record or a forwarding rule at this address. Create more addresses in Project settings,
+                  Email, to receive mail for other addresses in this inbox.
                 </p>
               </div>
               <p v-else class="text-sm text-muted-foreground">
@@ -1178,84 +1184,37 @@
           </CardContent>
         </Card>
 
-        <!-- Receiving addresses -->
-        <Card id="addresses" class="scroll-mt-16">
+        <!-- Receiving addresses (read-only; managed in Project settings -> Email) -->
+        <Card id="addresses" class="scroll-mt-16" data-testid="support-settings-addresses">
           <CardHeader>
-            <CardTitle>Receiving addresses</CardTitle>
-            <CardDescription>
-              Mail sent to any of these addresses lands in this inbox. Setting a new primary address clears the previous
-              one.
-            </CardDescription>
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Receiving addresses</CardTitle>
+                <CardDescription>Mail sent to any of these addresses lands in this inbox.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" as-child>
+                <NuxtLink to="/project/settings?tab=email" data-testid="support-addresses-manage">
+                  Manage addresses in Project settings → Email
+                </NuxtLink>
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent class="space-y-4">
+          <CardContent>
             <div v-if="isSwitchingInbox" class="space-y-2">
-              <Skeleton v-for="i in 2" :key="i" class="h-14 w-full" />
+              <Skeleton v-for="i in 2" :key="i" class="h-10 w-full" />
             </div>
-            <div v-else>
-              <p v-if="addresses.length === 0" class="text-sm text-muted-foreground">
-                No receiving addresses configured yet.
-              </p>
-              <div v-else class="space-y-2">
-                <div
-                  v-for="address in addresses"
-                  :key="address.id"
-                  class="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-mono text-sm break-all">{{ address.address }}</span>
-                      <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
-                      <Badge v-if="address.kind === 'platform'" variant="outline" class="text-xs"
-                        >Veerify forwarding</Badge
-                      >
-                    </div>
-                  </div>
-                  <Button
-                    v-if="canManageInbox && address.kind !== 'platform'"
-                    variant="ghost"
-                    size="icon"
-                    class="shrink-0 ml-4"
-                    :aria-label="`Remove receiving address ${address.address}`"
-                    :disabled="removingAddressId === address.id"
-                    @click="openRemoveAddressDialog(address)"
-                  >
-                    <Icon name="lucide:x" class="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div v-if="!isSwitchingInbox && canManageInbox" class="space-y-3">
-              <div class="grid gap-4">
-                <div>
-                  <Label for="new-address">Email address</Label>
-                  <Input
-                    id="new-address"
-                    v-model="newAddress"
-                    type="email"
-                    placeholder="support@yourdomain.com"
-                    class="mt-2"
-                    :disabled="isAddingAddress"
-                  />
-                </div>
-              </div>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <Switch id="new-address-primary" v-model="newAddressIsPrimary" :disabled="isAddingAddress" />
-                  <Label for="new-address-primary">Primary sending address</Label>
-                </div>
-                <Button
-                  data-testid="support-address-add"
-                  :disabled="isAddingAddress || !newAddress.trim()"
-                  @click="addAddress"
-                >
-                  <Icon v-if="isAddingAddress" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                  Add address
-                </Button>
-              </div>
-            </div>
+            <p v-else-if="addresses.length === 0" class="text-sm text-muted-foreground">
+              No receiving addresses configured yet.
+            </p>
+            <ul v-else class="divide-y rounded-lg border">
+              <li v-for="address in addresses" :key="address.id" class="flex flex-wrap items-center gap-2 px-3 py-2">
+                <span class="font-mono text-sm break-all">{{ address.address }}</span>
+                <Badge v-if="address.address.startsWith('*@')" variant="secondary" class="text-xs">Catch-all</Badge>
+                <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
+                <Badge v-if="address.kind === 'platform'" variant="outline" class="text-xs">Veerify forwarding</Badge>
+                <span v-if="address.behaviour" class="text-xs text-muted-foreground">· {{ address.behaviour }}</span>
+              </li>
+            </ul>
           </CardContent>
         </Card>
       </template>
@@ -1318,34 +1277,6 @@
           >
             <Icon v-if="isRegeneratingPlatformAddress" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
             Regenerate address
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <!-- Remove address confirmation -->
-    <Dialog :open="isRemoveAddressDialogOpen" @update:open="isRemoveAddressDialogOpen = $event">
-      <DialogContent class="sm:max-w-[420px]" data-testid="support-remove-address-dialog">
-        <DialogHeader>
-          <DialogTitle>Remove address</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to remove "{{ addressPendingRemoval?.address }}"? Mail sent to this address will no
-            longer reach this inbox.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" @click="isRemoveAddressDialogOpen = false"> Cancel </Button>
-          <Button
-            variant="destructive"
-            :disabled="removingAddressId === addressPendingRemoval?.id"
-            @click="confirmRemoveAddress"
-          >
-            <Icon
-              v-if="removingAddressId === addressPendingRemoval?.id"
-              name="lucide:loader-2"
-              class="w-4 h-4 mr-2 animate-spin"
-            />
-            Remove address
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1516,14 +1447,6 @@ export default {
       removingMemberId: null,
       memberPendingRemoval: null,
       isRemoveMemberDialogOpen: false,
-
-      // receiving addresses
-      newAddress: '',
-      newAddressIsPrimary: false,
-      isAddingAddress: false,
-      removingAddressId: null,
-      addressPendingRemoval: null,
-      isRemoveAddressDialogOpen: false,
     }
   },
 
@@ -1537,9 +1460,6 @@ export default {
           { id: 'csat', label: 'CSAT' },
           { id: 'automation', label: 'Automation' }
         )
-      }
-      if (this.sendingDomainsInfo?.enabled === true && this.selectedInboxId) {
-        links.push({ id: 'sending-domains', label: 'Sending domains' })
       }
       if (this.hasInboxes && this.selectedInboxId) {
         links.push(
@@ -1722,6 +1642,7 @@ export default {
         this.projectSettings = projectSettingsResponse?.data?.settings || null
         this.projectSettingsCapabilities = projectSettingsResponse?.data?.capabilities || {}
         this.autoLinkFeedback = this.projectSettings?.autoLinkFeedback === true
+        this.loadSendingDomains(token, this.activeProjectId)
         if (this.canManageProjectSupport) {
           await Promise.all([this.loadSlaSettings(), this.loadCsatSurveys(), this.loadAutomationRules()])
         }
@@ -2699,6 +2620,19 @@ export default {
       return this.isCurrentRequest(token, projectId, inboxId)
     },
 
+    /** The From address picker needs the project's domains; they are managed in Project settings -> Email. */
+    async loadSendingDomains(token, projectId) {
+      let info = null
+      try {
+        const response = await $fetch(`/api/support/projects/${encodeURIComponent(projectId)}/sending-domains`)
+        info = response?.data || null
+      } catch {
+        // The picker falls back to platform addresses only.
+      }
+      if (token !== this.requestToken) return
+      this.onSendingDomainsLoaded(info, projectId)
+    },
+
     onSendingDomainsLoaded(info, loadedProjectId) {
       // Ignore a response that belongs to a project we have already switched away from.
       if (loadedProjectId && loadedProjectId !== this.activeProjectId) return
@@ -2782,75 +2716,6 @@ export default {
         if (!this.isCurrentRequest(token, projectId, inboxId)) return false
         if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ projectId })
         throw err
-      }
-    },
-
-    async addAddress() {
-      if (!this.newAddress.trim()) {
-        toast.error('Enter an email address')
-        return
-      }
-
-      this.isAddingAddress = true
-      const token = this.requestToken
-      const projectId = this.activeProjectId
-      const inboxId = this.selectedInboxId
-
-      try {
-        await $fetch(`/api/support/inboxes/${inboxId}/addresses`, {
-          method: 'POST',
-          body: {
-            address: this.newAddress.trim(),
-            isPrimary: this.newAddressIsPrimary,
-          },
-        })
-
-        if (!this.isCurrentRequest(token, projectId, inboxId)) return
-        toast.success('Address added')
-        this.newAddress = ''
-        this.newAddressIsPrimary = false
-        await this.reloadAddresses({ token, projectId, inboxId })
-      } catch (err) {
-        if (!this.isCurrentRequest(token, projectId, inboxId)) return
-        if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ projectId })
-          return
-        }
-        toast.error(this.extractErrorMessage(err, 'Failed to add address'))
-      } finally {
-        if (this.isCurrentRequest(token, projectId, inboxId)) this.isAddingAddress = false
-      }
-    },
-
-    openRemoveAddressDialog(address) {
-      this.addressPendingRemoval = address
-      this.isRemoveAddressDialogOpen = true
-    },
-
-    async confirmRemoveAddress() {
-      if (!this.addressPendingRemoval) return
-      const addressId = this.addressPendingRemoval.id
-      this.removingAddressId = addressId
-      const token = this.requestToken
-      const projectId = this.activeProjectId
-      const inboxId = this.selectedInboxId
-
-      try {
-        await $fetch(`/api/support/inboxes/${inboxId}/addresses/${addressId}`, { method: 'DELETE' })
-        if (!this.isCurrentRequest(token, projectId, inboxId)) return
-        toast.success('Address removed')
-        this.isRemoveAddressDialogOpen = false
-        this.addressPendingRemoval = null
-        await this.reloadAddresses({ token, projectId, inboxId })
-      } catch (err) {
-        if (!this.isCurrentRequest(token, projectId, inboxId)) return
-        if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ projectId })
-          return
-        }
-        toast.error(this.extractErrorMessage(err, 'Failed to remove address'))
-      } finally {
-        if (this.isCurrentRequest(token, projectId, inboxId)) this.removingAddressId = null
       }
     },
 
