@@ -210,10 +210,7 @@ describe('project sender policy (needs WP1)', () => {
     try {
       expect((await process(projectA, 'support@acme.test')).result).toMatchObject({ outcome: 'failed' })
     } finally {
-      await db
-        .update(projectMailDomain)
-        .set({ providerAccountKey: 'acct' })
-        .where(eq(projectMailDomain.id, domainA))
+      await db.update(projectMailDomain).set({ providerAccountKey: 'acct' }).where(eq(projectMailDomain.id, domainA))
     }
   })
 

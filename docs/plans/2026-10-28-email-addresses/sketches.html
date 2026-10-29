@@ -3,67 +3,307 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      * { box-sizing: border-box; }
-      body { font-family: var(--font-sans); color: var(--foreground); font-size: 13.5px; line-height: 1.5; margin: 0; }
-      h2 { font-size: 16px; margin: 30px 0 4px; }
-      h2:first-child { margin-top: 0; }
-      p { margin: 4px 0 10px; }
-      .muted { color: var(--muted-foreground); }
-      .small { font-size: 11.5px; }
-      .mono { font-family: var(--font-mono); font-size: 12px; }
-      .win { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--card); color: var(--card-foreground); }
-      .bar { display: flex; gap: 5px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--muted); }
-      .bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
-      .bar span { margin-left: 8px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
-      .pad { padding: 14px 16px; }
-      .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
-      .tabs span { padding: 6px 10px; font-size: 12px; color: var(--muted-foreground); }
-      .tabs span.on { color: var(--foreground); border-bottom: 2px solid var(--primary); font-weight: 600; }
-      .row { display: flex; align-items: center; gap: 10px; }
-      .between { justify-content: space-between; }
-      .card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
-      .pill { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground); white-space: nowrap; }
-      .ok { border-color: var(--success); color: var(--success); }
-      .warn { border-color: var(--warning); color: var(--warning); }
-      .bad { border-color: var(--destructive); color: var(--destructive); }
-      .info { border-color: var(--info); color: var(--info); }
-      .btn { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); white-space: nowrap; }
-      .btn.p { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
-      table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-      th { text-align: left; font-weight: 500; color: var(--muted-foreground); font-size: 11.5px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-      td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-      tr:last-child td { border-bottom: 0; }
-      .scroll { overflow-x: auto; }
-      .field { border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; font-size: 12.5px; background: var(--background); }
-      .label { font-size: 11.5px; font-weight: 600; margin: 10px 0 4px; }
-      .choice { border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; flex: 1; min-width: 150px; }
-      .choice.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-      .choices { display: flex; gap: 8px; flex-wrap: wrap; }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--foreground);
+        font-size: 13.5px;
+        line-height: 1.5;
+        margin: 0;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 30px 0 4px;
+      }
+      h2:first-child {
+        margin-top: 0;
+      }
+      p {
+        margin: 4px 0 10px;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      .small {
+        font-size: 11.5px;
+      }
+      .mono {
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .win {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--card);
+        color: var(--card-foreground);
+      }
+      .bar {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+      }
+      .bar i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border);
+      }
+      .bar span {
+        margin-left: 8px;
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+      .pad {
+        padding: 14px 16px;
+      }
+      .tabs {
+        display: flex;
+        gap: 2px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+      }
+      .tabs span {
+        padding: 6px 10px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+      .tabs span.on {
+        color: var(--foreground);
+        border-bottom: 2px solid var(--primary);
+        font-weight: 600;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .between {
+        justify-content: space-between;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        margin-bottom: 12px;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 10.5px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted-foreground);
+        white-space: nowrap;
+      }
+      .ok {
+        border-color: var(--success);
+        color: var(--success);
+      }
+      .warn {
+        border-color: var(--warning);
+        color: var(--warning);
+      }
+      .bad {
+        border-color: var(--destructive);
+        color: var(--destructive);
+      }
+      .info {
+        border-color: var(--info);
+        color: var(--info);
+      }
+      .btn {
+        display: inline-block;
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      .btn.p {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: var(--primary);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      th {
+        text-align: left;
+        font-weight: 500;
+        color: var(--muted-foreground);
+        font-size: 11.5px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border);
+      }
+      td {
+        padding: 7px 8px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .scroll {
+        overflow-x: auto;
+      }
+      .field {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 9px;
+        font-size: 12.5px;
+        background: var(--background);
+      }
+      .label {
+        font-size: 11.5px;
+        font-weight: 600;
+        margin: 10px 0 4px;
+      }
+      .choice {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 9px 11px;
+        flex: 1;
+        min-width: 150px;
+      }
+      .choice.on {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary);
+      }
+      .choices {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
       /* flow */
-      .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: stretch; }
-      @media (max-width: 600px) { .flow { grid-template-columns: 1fr 1fr; } }
-      .node { border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; font-size: 12px; }
-      .node b { display: block; font-size: 12.5px; margin-bottom: 2px; }
-      .node.a { border-color: var(--chart-1); }
-      .node.b { border-color: var(--chart-2); }
-      .node.c { border-color: var(--chart-3); }
-      .node.d { border-color: var(--chart-4); }
-      .arrow { text-align: center; color: var(--muted-foreground); font-size: 12px; margin: 4px 0; }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        align-items: stretch;
+      }
+      @media (max-width: 600px) {
+        .flow {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .node {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 9px 10px;
+        font-size: 12px;
+      }
+      .node b {
+        display: block;
+        font-size: 12.5px;
+        margin-bottom: 2px;
+      }
+      .node.a {
+        border-color: var(--chart-1);
+      }
+      .node.b {
+        border-color: var(--chart-2);
+      }
+      .node.c {
+        border-color: var(--chart-3);
+      }
+      .node.d {
+        border-color: var(--chart-4);
+      }
+      .arrow {
+        text-align: center;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        margin: 4px 0;
+      }
       /* inbox */
-      .inbox { display: grid; grid-template-columns: 170px 1fr; min-height: 300px; }
-      @media (max-width: 600px) { .inbox { grid-template-columns: 1fr; } }
-      .side { border-right: 1px solid var(--border); padding: 10px 8px; background: var(--background); font-size: 12px; }
-      .side div { padding: 4px 8px; border-radius: 6px; display: flex; justify-content: space-between; }
-      .side div.on { background: var(--accent); color: var(--accent-foreground); }
-      .side .h { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); background: none; margin-top: 8px; }
-      .msg { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
-      .msg .s { color: var(--muted-foreground); font-size: 12px; grid-column: 1 / -1; }
-      .msg.unread b { font-weight: 700; }
-      .actions { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--muted); flex-wrap: wrap; }
-      code.k { font-family: var(--font-mono); font-size: 11.5px; }
-      .tree { font-family: var(--font-mono); font-size: 12px; line-height: 1.65; white-space: pre; overflow-x: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--code-background); }
-      .tree .c { color: var(--muted-foreground); }
-      .tree .n { color: var(--success); }
+      .inbox {
+        display: grid;
+        grid-template-columns: 170px 1fr;
+        min-height: 300px;
+      }
+      @media (max-width: 600px) {
+        .inbox {
+          grid-template-columns: 1fr;
+        }
+      }
+      .side {
+        border-right: 1px solid var(--border);
+        padding: 10px 8px;
+        background: var(--background);
+        font-size: 12px;
+      }
+      .side div {
+        padding: 4px 8px;
+        border-radius: 6px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .side div.on {
+        background: var(--accent);
+        color: var(--accent-foreground);
+      }
+      .side .h {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+        background: none;
+        margin-top: 8px;
+      }
+      .msg {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 2px 10px;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .msg .s {
+        color: var(--muted-foreground);
+        font-size: 12px;
+        grid-column: 1 / -1;
+      }
+      .msg.unread b {
+        font-weight: 700;
+      }
+      .actions {
+        display: flex;
+        gap: 6px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+        flex-wrap: wrap;
+      }
+      code.k {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+      }
+      .tree {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.65;
+        white-space: pre;
+        overflow-x: auto;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--code-background);
+      }
+      .tree .c {
+        color: var(--muted-foreground);
+      }
+      .tree .n {
+        color: var(--success);
+      }
     </style>
   </head>
   <body>
@@ -71,32 +311,63 @@
     <p class="muted">The domain can be hosted anywhere. The customer adds one MX record, and Frogmail does the rest.</p>
     <div class="flow">
       <div class="node a"><b>Sender</b>jane@gmail.com → hello@newsite.com</div>
-      <div class="node b"><b>SES inbound</b>MX <span class="mono">inbound-smtp.us-east-1</span>; checks spam, virus, SPF, DKIM, DMARC</div>
-      <div class="node c"><b>Frogmail</b>Stores the message and matches a route: <span class="mono">hello@</span> → forward(email) + forward(Veerify)</div>
-      <div class="node d"><b>Destinations</b>① Veerify inbox (signed webhook)<br />② me@frogbyte.io (re-sent “Jane via hello@”)</div>
+      <div class="node b">
+        <b>SES inbound</b>MX <span class="mono">inbound-smtp.us-east-1</span>; checks spam, virus, SPF, DKIM, DMARC
+      </div>
+      <div class="node c">
+        <b>Frogmail</b>Stores the message and matches a route: <span class="mono">hello@</span> → forward(email) +
+        forward(Veerify)
+      </div>
+      <div class="node d">
+        <b>Destinations</b>① Veerify inbox (signed webhook)<br />② me@frogbyte.io (re-sent “Jane via hello@”)
+      </div>
     </div>
     <p class="small muted" style="margin-top: 8px">
-      Spam or a virus means no forward; the message still lands in Veerify under <b>Spam</b>. Replies sent from Veerify go out as
-      <span class="mono">hello@newsite.com</span> through the Frogmail SMTP gateway that already handles support replies.
+      Spam or a virus means no forward; the message still lands in Veerify under <b>Spam</b>. Replies sent from Veerify
+      go out as <span class="mono">hello@newsite.com</span> through the Frogmail SMTP gateway that already handles
+      support replies.
     </p>
 
     <h2>2. Project settings → Email</h2>
-    <p class="muted">A new tab. Domains and addresses belong to the project (brand). An address can be tagged with a product.</p>
+    <p class="muted">
+      A new tab. Domains and addresses belong to the project (brand). An address can be tagged with a product.
+    </p>
     <div class="win">
       <div class="bar"><i></i><i></i><i></i><span>/project/settings?tab=email</span></div>
       <div class="pad">
-        <div class="tabs"><span>General</span><span>Products</span><span>Access</span><span>Tools</span><span>Appearance</span><span>Domain</span><span class="on">Email</span><span>Danger</span></div>
+        <div class="tabs">
+          <span>General</span><span>Products</span><span>Access</span><span>Tools</span><span>Appearance</span
+          ><span>Domain</span><span class="on">Email</span><span>Danger</span>
+        </div>
         <div class="row between" style="margin-bottom: 8px">
           <div><b>Domains</b> <span class="small muted">2 of 3 in this workspace</span></div>
           <span class="btn">+ Connect domain</span>
         </div>
         <div class="card" style="padding: 0">
           <div class="scroll">
-          <table>
-            <tr><th>Domain</th><th>Sending</th><th>Receiving</th><th>Addresses</th><th></th></tr>
-            <tr><td><b>newsite.com</b></td><td><span class="pill ok">Verified</span></td><td><span class="pill ok">MX OK</span></td><td>3 + catch-all</td><td class="muted">Records ›</td></tr>
-            <tr><td><b>decker.app</b></td><td><span class="pill warn">Waiting for DNS</span></td><td><span class="pill warn">MX missing</span></td><td>—</td><td class="muted">Records ›</td></tr>
-          </table>
+            <table>
+              <tr>
+                <th>Domain</th>
+                <th>Sending</th>
+                <th>Receiving</th>
+                <th>Addresses</th>
+                <th></th>
+              </tr>
+              <tr>
+                <td><b>newsite.com</b></td>
+                <td><span class="pill ok">Verified</span></td>
+                <td><span class="pill ok">MX OK</span></td>
+                <td>3 + catch-all</td>
+                <td class="muted">Records ›</td>
+              </tr>
+              <tr>
+                <td><b>decker.app</b></td>
+                <td><span class="pill warn">Waiting for DNS</span></td>
+                <td><span class="pill warn">MX missing</span></td>
+                <td>—</td>
+                <td class="muted">Records ›</td>
+              </tr>
+            </table>
           </div>
         </div>
         <div class="row between" style="margin: 14px 0 8px">
@@ -105,42 +376,119 @@
         </div>
         <div class="card" style="padding: 0">
           <div class="scroll">
-          <table>
-            <tr><th>Address</th><th>Delivers to</th><th>Product</th><th>Status</th></tr>
-            <tr><td class="mono">hello@newsite.com</td><td>Inbox + <span class="mono">me@frogbyte.io</span></td><td>—</td><td><span class="pill ok">Active</span></td></tr>
-            <tr><td class="mono">support@newsite.com</td><td>Inbox · helpdesk</td><td>dot x</td><td><span class="pill ok">Active</span></td></tr>
-            <tr><td class="mono">invoices@newsite.com</td><td>Forward → <span class="mono">accounting@firm.no</span></td><td>—</td><td><span class="pill warn">Awaiting confirmation</span></td></tr>
-            <tr><td class="mono">*@newsite.com</td><td>Inbox · folder “Catch-all”</td><td>—</td><td><span class="pill ok">Active</span></td></tr>
-          </table>
+            <table>
+              <tr>
+                <th>Address</th>
+                <th>Delivers to</th>
+                <th>Product</th>
+                <th>Status</th>
+              </tr>
+              <tr>
+                <td class="mono">hello@newsite.com</td>
+                <td>Inbox + <span class="mono">me@frogbyte.io</span></td>
+                <td>—</td>
+                <td><span class="pill ok">Active</span></td>
+              </tr>
+              <tr>
+                <td class="mono">support@newsite.com</td>
+                <td>Inbox · helpdesk</td>
+                <td>dot x</td>
+                <td><span class="pill ok">Active</span></td>
+              </tr>
+              <tr>
+                <td class="mono">invoices@newsite.com</td>
+                <td>Forward → <span class="mono">accounting@firm.no</span></td>
+                <td>—</td>
+                <td><span class="pill warn">Awaiting confirmation</span></td>
+              </tr>
+              <tr>
+                <td class="mono">*@newsite.com</td>
+                <td>Inbox · folder “Catch-all”</td>
+                <td>—</td>
+                <td><span class="pill ok">Active</span></td>
+              </tr>
+            </table>
           </div>
         </div>
       </div>
     </div>
 
     <h2>3. Connect a domain</h2>
-    <p class="muted">Step 2 of 3: records to paste at your DNS host. We check every 5 minutes; “Check now” runs it immediately.</p>
+    <p class="muted">
+      Step 2 of 3: records to paste at your DNS host. We check every 5 minutes; “Check now” runs it immediately.
+    </p>
     <div class="win">
       <div class="bar"><i></i><i></i><i></i><span>Connect domain · newsite.com</span></div>
       <div class="pad">
         <div class="row" style="margin-bottom: 10px; gap: 6px">
-          <span class="pill ok">1 Domain</span><span class="pill info">2 DNS records</span><span class="pill">3 First address</span>
+          <span class="pill ok">1 Domain</span><span class="pill info">2 DNS records</span
+          ><span class="pill">3 First address</span>
         </div>
         <div class="choices" style="margin-bottom: 10px">
-          <div class="choice on"><b>Use newsite.com</b><div class="small muted">New domain, or one with no mail yet. Addresses look like hello@newsite.com.</div></div>
-          <div class="choice"><b>Use a subdomain</b><div class="small muted">Keeps your current mail (e.g. Google Workspace) untouched. Addresses look like hello@mail.newsite.com.</div></div>
+          <div class="choice on">
+            <b>Use newsite.com</b>
+            <div class="small muted">New domain, or one with no mail yet. Addresses look like hello@newsite.com.</div>
+          </div>
+          <div class="choice">
+            <b>Use a subdomain</b>
+            <div class="small muted">
+              Keeps your current mail (e.g. Google Workspace) untouched. Addresses look like hello@mail.newsite.com.
+            </div>
+          </div>
         </div>
         <div class="scroll">
-        <table>
-          <tr><th>Purpose</th><th>Type</th><th>Host</th><th>Value</th><th></th></tr>
-          <tr><td>Ownership</td><td>TXT</td><td class="mono">_veerify-mail</td><td class="mono">veerify-mail-verification=8f2c…</td><td><span class="pill ok">Found</span></td></tr>
-          <tr><td>Sending (DKIM) ×3</td><td>CNAME</td><td class="mono">abc._domainkey</td><td class="mono">abc.dkim.amazonses.com</td><td><span class="pill ok">Found</span></td></tr>
-          <tr><td>Receiving</td><td>MX</td><td class="mono">@</td><td class="mono">10 inbound-smtp.us-east-1.amazonaws.com</td><td><span class="pill warn">Not yet</span></td></tr>
-          <tr><td>SPF</td><td>TXT</td><td class="mono">@</td><td class="mono">v=spf1 include:amazonses.com ~all</td><td><span class="pill ok">Found</span></td></tr>
-          <tr><td>DMARC (recommended)</td><td>TXT</td><td class="mono">_dmarc</td><td class="mono">v=DMARC1; p=none; rua=…</td><td><span class="pill">Optional</span></td></tr>
-        </table>
+          <table>
+            <tr>
+              <th>Purpose</th>
+              <th>Type</th>
+              <th>Host</th>
+              <th>Value</th>
+              <th></th>
+            </tr>
+            <tr>
+              <td>Ownership</td>
+              <td>TXT</td>
+              <td class="mono">_veerify-mail</td>
+              <td class="mono">veerify-mail-verification=8f2c…</td>
+              <td><span class="pill ok">Found</span></td>
+            </tr>
+            <tr>
+              <td>Sending (DKIM) ×3</td>
+              <td>CNAME</td>
+              <td class="mono">abc._domainkey</td>
+              <td class="mono">abc.dkim.amazonses.com</td>
+              <td><span class="pill ok">Found</span></td>
+            </tr>
+            <tr>
+              <td>Receiving</td>
+              <td>MX</td>
+              <td class="mono">@</td>
+              <td class="mono">10 inbound-smtp.us-east-1.amazonaws.com</td>
+              <td><span class="pill warn">Not yet</span></td>
+            </tr>
+            <tr>
+              <td>SPF</td>
+              <td>TXT</td>
+              <td class="mono">@</td>
+              <td class="mono">v=spf1 include:amazonses.com ~all</td>
+              <td><span class="pill ok">Found</span></td>
+            </tr>
+            <tr>
+              <td>DMARC (recommended)</td>
+              <td>TXT</td>
+              <td class="mono">_dmarc</td>
+              <td class="mono">v=DMARC1; p=none; rua=…</td>
+              <td><span class="pill">Optional</span></td>
+            </tr>
+          </table>
         </div>
-        <p class="small muted" style="margin-top: 8px">⚠ If newsite.com already has MX records, receiving here replaces your current mail. Choose a subdomain instead to keep it.</p>
-        <div class="row" style="justify-content: flex-end; gap: 8px"><span class="btn">Check now</span><span class="btn p">Continue</span></div>
+        <p class="small muted" style="margin-top: 8px">
+          ⚠ If newsite.com already has MX records, receiving here replaces your current mail. Choose a subdomain instead
+          to keep it.
+        </p>
+        <div class="row" style="justify-content: flex-end; gap: 8px">
+          <span class="btn">Check now</span><span class="btn p">Continue</span>
+        </div>
       </div>
     </div>
 
@@ -149,34 +497,65 @@
       <div class="bar"><i></i><i></i><i></i><span>New address</span></div>
       <div class="pad">
         <div class="label">Address</div>
-        <div class="row"><span class="field" style="flex: 1">hello</span><span class="muted">@</span><span class="field">newsite.com ▾</span></div>
-        <div class="small muted" style="margin-top: 4px">Or use <span class="mono">*</span> for a catch-all: mail to any address on the domain that isn’t listed.</div>
+        <div class="row">
+          <span class="field" style="flex: 1">hello</span><span class="muted">@</span
+          ><span class="field">newsite.com ▾</span>
+        </div>
+        <div class="small muted" style="margin-top: 4px">
+          Or use <span class="mono">*</span> for a catch-all: mail to any address on the domain that isn’t listed.
+        </div>
         <div class="label">Where should mail go?</div>
         <div class="choices">
-          <div class="choice"><b>Inbox</b><div class="small muted">Lands in Veerify. Assign, reply, resolve.</div></div>
-          <div class="choice"><b>Forward</b><div class="small muted">Only re-sent to other addresses. Nothing kept in Veerify.</div></div>
-          <div class="choice on"><b>Inbox + forward</b><div class="small muted">Both. Replies from Veerify stay on the thread.</div></div>
+          <div class="choice">
+            <b>Inbox</b>
+            <div class="small muted">Lands in Veerify. Assign, reply, resolve.</div>
+          </div>
+          <div class="choice">
+            <b>Forward</b>
+            <div class="small muted">Only re-sent to other addresses. Nothing kept in Veerify.</div>
+          </div>
+          <div class="choice on">
+            <b>Inbox + forward</b>
+            <div class="small muted">Both. Replies from Veerify stay on the thread.</div>
+          </div>
         </div>
         <div class="label">Forward to</div>
-        <div class="row" style="margin-bottom: 4px"><span class="field" style="flex: 1">me@frogbyte.io</span><span class="pill ok">Confirmed</span></div>
-        <div class="row"><span class="field" style="flex: 1">partner@agency.com</span><span class="pill warn">Confirmation sent</span><span class="small muted">Resend</span></div>
-        <div class="small muted" style="margin-top: 4px">Each new destination gets a one-time confirmation email. Forwarding to it starts once it’s confirmed.</div>
+        <div class="row" style="margin-bottom: 4px">
+          <span class="field" style="flex: 1">me@frogbyte.io</span><span class="pill ok">Confirmed</span>
+        </div>
+        <div class="row">
+          <span class="field" style="flex: 1">partner@agency.com</span><span class="pill warn">Confirmation sent</span
+          ><span class="small muted">Resend</span>
+        </div>
+        <div class="small muted" style="margin-top: 4px">
+          Each new destination gets a one-time confirmation email. Forwarding to it starts once it’s confirmed.
+        </div>
         <div class="label">Inbox behaviour</div>
         <div class="choices">
-          <div class="choice on"><b>Mail</b><div class="small muted">No auto-reply, SLA or satisfaction survey. Just mail.</div></div>
-          <div class="choice"><b>Helpdesk</b><div class="small muted">Uses the inbox’s auto-replies, SLAs, CSAT and rules.</div></div>
+          <div class="choice on">
+            <b>Mail</b>
+            <div class="small muted">No auto-reply, SLA or satisfaction survey. Just mail.</div>
+          </div>
+          <div class="choice">
+            <b>Helpdesk</b>
+            <div class="small muted">Uses the inbox’s auto-replies, SLAs, CSAT and rules.</div>
+          </div>
         </div>
         <div class="row" style="gap: 14px; margin-top: 10px; flex-wrap: wrap">
           <span class="small"><b>Product</b> <span class="field">None ▾</span></span>
           <span class="small"><b>Default assignee</b> <span class="field">Unassigned ▾</span></span>
           <span class="small"><b>Sender name</b> <span class="field">Newsite</span></span>
         </div>
-        <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 12px"><span class="btn">Cancel</span><span class="btn p">Create address</span></div>
+        <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 12px">
+          <span class="btn">Cancel</span><span class="btn p">Create address</span>
+        </div>
       </div>
     </div>
 
     <h2>5. One inbox for everything</h2>
-    <p class="muted">The Inbox tool (formerly Support), filtered by address. Plain mail and helpdesk conversations live side by side.</p>
+    <p class="muted">
+      The Inbox tool (formerly Support), filtered by address. Plain mail and helpdesk conversations live side by side.
+    </p>
     <div class="win">
       <div class="bar"><i></i><i></i><i></i><span>/inbox</span></div>
       <div class="inbox">
@@ -195,35 +574,51 @@
           <div><span>Trash</span><span></span></div>
         </div>
         <div>
-          <div class="actions"><span class="btn">Assign ▾</span><span class="btn">Resolve</span><span class="btn">Archive</span><span class="btn">Spam</span><span class="btn">Delete</span></div>
-          <div class="msg unread"><b>Jane Doe — Partnership idea</b><span class="pill">hello@</span><span class="s">Hi! Saw the new site and wondered if… · forwarded to me@frogbyte.io</span></div>
-          <div class="msg unread"><b>Ola N. — Dot X won’t pair</b><span class="pill info">support@ · dot x</span><span class="s">Bought it last week and it doesn’t show up in… · SLA 3h left</span></div>
-          <div class="msg"><b>Stripe — Your invoice is ready</b><span class="pill">hello@</span><span class="s">Assigned to Andreas</span></div>
-          <div class="msg"><b>noreply@domain-registrar.com — Renewal</b><span class="pill">catch-all</span><span class="s">Sent to admin@newsite.com, which isn’t a listed address</span></div>
+          <div class="actions">
+            <span class="btn">Assign ▾</span><span class="btn">Resolve</span><span class="btn">Archive</span
+            ><span class="btn">Spam</span><span class="btn">Delete</span>
+          </div>
+          <div class="msg unread">
+            <b>Jane Doe — Partnership idea</b><span class="pill">hello@</span
+            ><span class="s">Hi! Saw the new site and wondered if… · forwarded to me@frogbyte.io</span>
+          </div>
+          <div class="msg unread">
+            <b>Ola N. — Dot X won’t pair</b><span class="pill info">support@ · dot x</span
+            ><span class="s">Bought it last week and it doesn’t show up in… · SLA 3h left</span>
+          </div>
+          <div class="msg">
+            <b>Stripe — Your invoice is ready</b><span class="pill">hello@</span
+            ><span class="s">Assigned to Andreas</span>
+          </div>
+          <div class="msg">
+            <b>noreply@domain-registrar.com — Renewal</b><span class="pill">catch-all</span
+            ><span class="s">Sent to admin@newsite.com, which isn’t a listed address</span>
+          </div>
         </div>
       </div>
     </div>
 
     <h2>6. Data model (Veerify)</h2>
-    <div class="tree"><span class="c">-- domain moves up from Support to the project; same table, wider job</span>
-support_sending_domain → <b>project_mail_domain</b>
-  + receiving_status      <span class="c">'missing_mx' | 'active' | 'conflict'</span>
-  + use_subdomain         <span class="c">true when hostname ≠ registrable domain</span>
+    <div class="tree">
+      <span class="c">-- domain moves up from Support to the project; same table, wider job</span>
+      support_sending_domain → <b>project_mail_domain</b> + receiving_status
+      <span class="c">'missing_mx' | 'active' | 'conflict'</span> + use_subdomain
+      <span class="c">true when hostname ≠ registrable domain</span>
 
-support_inbox_address → <b>project_mail_address</b>
-  inbox_id                <span class="n">nullable</span> <span class="c">— null = forward only</span>
-  + domain_id, local_part <span class="c">'*' = catch-all (one per domain)</span>
-  + product_id            <span class="n">nullable</span> <span class="c">tag for filtering/attribution</span>
-  + behaviour             <span class="c">'mail' | 'helpdesk'</span>
-  + forward_enabled, frogmail_route_id
+      support_inbox_address → <b>project_mail_address</b> inbox_id <span class="n">nullable</span>
+      <span class="c">— null = forward only</span> + domain_id, local_part
+      <span class="c">'*' = catch-all (one per domain)</span> + product_id <span class="n">nullable</span>
+      <span class="c">tag for filtering/attribution</span> + behaviour <span class="c">'mail' | 'helpdesk'</span>
+      + forward_enabled, frogmail_route_id
 
-<b>mail_forward_destination</b>   <span class="n">new</span>
-  address_id, email, frogmail_destination_id
-  status                  <span class="c">'pending' | 'confirmed' | 'revoked' | 'bouncing'</span>
+      <b>mail_forward_destination</b> <span class="n">new</span> address_id, email, frogmail_destination_id status
+      <span class="c">'pending' | 'confirmed' | 'revoked' | 'bouncing'</span>
 
-conversation.status       <span class="c">open | pending | snoozed | resolved | closed (= archived)</span>
-  + spam_at, deleted_at   <span class="c">Spam and Trash folders; trash purges after 30 days</span>
+      conversation.status <span class="c">open | pending | snoozed | resolved | closed (= archived)</span> + spam_at,
+      deleted_at <span class="c">Spam and Trash folders; trash purges after 30 days</span>
 
-<b>mail_entitlement</b>          <span class="n">new</span> <span class="c">organization_id, tier 'standard' (3/20/5,000) | 'owner' (69/420/80,085)</span></div>
+      <b>mail_entitlement</b> <span class="n">new</span>
+      <span class="c">organization_id, tier 'standard' (3/20/5,000) | 'owner' (69/420/80,085)</span>
+    </div>
   </body>
 </html>
