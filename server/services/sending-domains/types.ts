@@ -64,6 +64,12 @@ export interface SendingDomainProvider {
   remove(domain: string): Promise<{
     cleanup: { removed: string[]; kept: string[]; failed: string[] } | null
   }>
+  /**
+   * Route mail for `address` to `forwardUrl`. `address` is an exact address
+   * (matched exactly, evaluated first) or a catch-all `*@domain` (every address
+   * of exactly that domain, evaluated after every exact route). See
+   * `inboundRouteDefinition` in `providers/mailgun.ts`.
+   */
   createInboundRoute?(input: { address: string; forwardUrl: string; description: string }): Promise<{ routeId: string }>
   deleteInboundRoute?(routeId: string): Promise<void>
 }

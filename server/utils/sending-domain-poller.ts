@@ -8,6 +8,7 @@ import {
   pendingPeriodStart,
 } from '~/lib/support-sending-domains'
 import type { SendingDomainDnsRecord } from '~/lib/support-sending-domains'
+import { catchAllAddressFor } from '~/lib/mail-address'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { checkDmarc, checkOwnershipTxt, ownershipRecord } from '~/server/services/sending-domains/ownership'
 import {
@@ -593,21 +594,13 @@ export async function saveSendingDomainPatch(
   const policy = hooks.policy ?? resolveSenderPolicy
 
   if (!becomesVerified || policy() !== 'project') {
-    const updated = await db
-      .update(projectMailDomain)
-      .set(patch)
-      .where(guard)
-      .returning({ id: projectMailDomain.id })
+    const updated = await db.update(projectMailDomain).set(patch).where(guard).returning({ id: projectMailDomain.id })
     return updated.length > 0
   }
 
   const detach = hooks.detach ?? detachForeignAddresses
   const detached = await db.transaction(async (tx) => {
-    const updated = await tx
-      .update(projectMailDomain)
-      .set(patch)
-      .where(guard)
-      .returning({ id: projectMailDomain.id })
+    const updated = await tx.update(projectMailDomain).set(patch).where(guard).returning({ id: projectMailDomain.id })
     if (updated.length === 0) return null
     return detach(row, tx)
   })
@@ -638,11 +631,26 @@ export async function deleteSendingDomainRow(
   const conditions = [eq(projectMailDomain.id, row.id)]
   if (row.status) conditions.push(eq(projectMailDomain.status, row.status))
   if (opts.expiredBy) conditions.push(lte(projectMailDomain.expiresAt, opts.expiredBy))
-  const deleted = await db
-    .delete(projectMailDomain)
-    .where(and(...conditions))
-    .returning({ id: projectMailDomain.id })
-  return deleted.length > 0
+  return db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(projectMailDomain)
+      .where(and(...conditions))
+      .returning({ id: projectMailDomain.id, projectId: projectMailDomain.projectId, domain: projectMailDomain.domain })
+    if (deleted.length === 0) return false
+    // A catch-all only exists on a project mail domain: it goes with the domain,
+    // so it cannot keep routing (or block the address) once the domain is released.
+    // Exact addresses stay; their domainId is cleared by the foreign key.
+    const [gone] = deleted
+    await tx
+      .delete(projectMailAddress)
+      .where(
+        and(
+          eq(projectMailAddress.projectId, gone.projectId),
+          eq(projectMailAddress.address, catchAllAddressFor(gone.domain))
+        )
+      )
+    return true
+  })
 }
 
 export async function releaseSendingDomainLeases(ids: string[]): Promise<void> {
@@ -750,6 +758,8 @@ export interface DirectRouteReconciliation {
  * provider: retry routes whose creation failed, and create routes for the project's
  * custom addresses on the exact claimed domain that have none (for example
  * addresses added before the claim verified or before receiving was enabled).
+ * The domain's catch-all (`*@domain`) is one of them; the provider gives it the
+ * domain-wide route at the lowest precedence (`inboundRouteDefinition`).
  * A route failure never throws; the row is left `failed` for the next pass.
  */
 export async function reconcileDirectRoutes(

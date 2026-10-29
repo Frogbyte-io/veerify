@@ -160,6 +160,23 @@ describe('direct receiving routes', () => {
     expect(stored).toMatchObject({ providerRouteId: 'route-1', providerRouteStatus: 'active' })
   })
 
+  it('creates the domain-wide route for a catch-all on a verified, receiving claim', async () => {
+    await seedSendingDomain({ projectId: projectA.projectId, domain: 'route-all.example', receivesViaProvider: true })
+    const row = await addAddress(projectA, '*@route-all.example')
+
+    const status = await createDirectRouteForAddress({
+      projectId: projectA.projectId,
+      inboxId: projectA.inboxId,
+      address: row,
+    })
+
+    expect(status).toBe('active')
+    // The provider turns `*@domain` into match_recipient(".*@domain") at the catch-all priority.
+    expect(provider.createInboundRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ address: '*@route-all.example' })
+    )
+  })
+
   it('marks the route failed, keeps the address, and does not throw when the provider errors', async () => {
     await seedSendingDomain({ projectId: projectA.projectId, domain: 'route-fail.example', receivesViaProvider: true })
     const row = await addAddress(projectA, 'help@route-fail.example')
