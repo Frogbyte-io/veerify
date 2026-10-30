@@ -3,9 +3,11 @@
  *
  * Veerify has two kinds of outbound mail with different failure tolerances:
  *
- * - `support`: replies and auto-replies sent by the support outbox. Always the
- *   primary transport (`SMTP_*`, i.e. nuxt-nodemailer's runtime config), which
- *   is what a support provider such as Frogmail or Postmark is pointed at.
+ * - `support`: replies and auto-replies sent by the support outbox. Over SMTP,
+ *   always the primary transport (`SMTP_*`, i.e. nuxt-nodemailer's runtime
+ *   config), which is what a support provider such as Frogmail or Postmark is
+ *   pointed at. With `SUPPORT_SEND_TRANSPORT=mailgun` the outbox skips SMTP
+ *   and uses the provider's HTTP API instead (server/utils/support-mail-transport.ts).
  * - `system`: everything else - sign-in links, email verification, password
  *   reset, invitations, notifications and digests. Uses the optional
  *   `SYSTEM_SMTP_*` transport when `SYSTEM_SMTP_HOST` is set, and the primary

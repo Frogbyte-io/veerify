@@ -142,6 +142,10 @@ services:
       SUPPORT_MAILGUN_API_KEY: ${SUPPORT_MAILGUN_API_KEY:-}
       SUPPORT_MAILGUN_ACCOUNT_KEY: ${SUPPORT_MAILGUN_ACCOUNT_KEY:-}
       SUPPORT_MAILGUN_API_BASE_URL: ${SUPPORT_MAILGUN_API_BASE_URL:-}
+      # Support replies: `smtp` (default, SMTP_* below) or `mailgun` (the HTTP API
+      # above, with a send-only key; empty key falls back to SUPPORT_MAILGUN_API_KEY).
+      SUPPORT_SEND_TRANSPORT: ${SUPPORT_SEND_TRANSPORT:-}
+      SUPPORT_MAILGUN_SEND_API_KEY: ${SUPPORT_MAILGUN_SEND_API_KEY:-}
 
       # --- Customer sending domains (docs/deployment-mail.md) ---
       SUPPORT_SENDING_DOMAINS_ENABLED: ${SUPPORT_SENDING_DOMAINS_ENABLED:-}
