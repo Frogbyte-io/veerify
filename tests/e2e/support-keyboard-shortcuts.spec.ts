@@ -1,3 +1,4 @@
+import { withThreadDetails } from './helpers/support-details'
 import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -122,10 +123,12 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     )
     await page.keyboard.press('c')
     expect((await claimResponse).ok()).toBeTruthy()
-    await expect(page.getByTestId('support-thread-assignee')).toHaveValue(userId)
-    // Claim also refreshes the thread and list before another update is
-    // accepted. Waiting for the control avoids dropping the next shortcut.
-    await expect(page.getByTestId('support-thread-status')).toBeEnabled()
+    await withThreadDetails(page, async (details) => {
+      await expect(details.getByTestId('support-thread-assignee')).toHaveValue(userId)
+      // Claim also refreshes the thread and list before another update is
+      // accepted. Waiting for the control avoids dropping the next shortcut.
+      await expect(details.getByTestId('support-thread-status')).toBeEnabled()
+    })
 
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const resolveResponse = page.waitForResponse(
@@ -135,7 +138,10 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     )
     await page.keyboard.press('e')
     expect((await resolveResponse).ok()).toBeTruthy()
-    await expect(page.getByTestId('support-thread-status')).toHaveValue('resolved')
+    // The All view keeps resolved conversations, so the thread stays open.
+    await withThreadDetails(page, async (details) => {
+      await expect(details.getByTestId('support-thread-status')).toHaveValue('resolved')
+    })
 
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.keyboard.press('/')

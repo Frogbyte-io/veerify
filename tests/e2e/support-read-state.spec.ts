@@ -75,8 +75,8 @@ test.describe.serial('support conversation read state', () => {
       const row = page.getByTestId(`support-conversation-${conversationId}`)
       await expect(row).toHaveAttribute('data-unread', 'true')
       await expect(row.getByText('Unread styling check')).toHaveClass(/font-semibold/)
-      await expect(page.getByTestId('support-unread-unassigned')).toHaveText('1')
-      await expect(page.getByTestId('support-unread-assigned-to-me')).toHaveText('0')
+      await expect(page.getByTestId('support-view-count-unassigned')).toHaveText('1')
+      await expect(page.getByTestId('support-view-count-assigned-to-me')).toHaveCount(0)
 
       const markReadResponse = page.waitForResponse(
         (response) =>
@@ -86,7 +86,7 @@ test.describe.serial('support conversation read state', () => {
       await row.click()
       expect((await markReadResponse).ok()).toBeTruthy()
       await expect(row).toHaveAttribute('data-unread', 'false')
-      await expect(page.getByTestId('support-unread-unassigned')).toHaveText('0')
+      await expect(page.getByTestId('support-view-count-unassigned')).toHaveCount(0)
 
       const markUnreadResponse = page.waitForResponse(
         (response) =>
@@ -96,7 +96,7 @@ test.describe.serial('support conversation read state', () => {
       await page.getByTestId('support-thread-mark-unread').click()
       expect((await markUnreadResponse).ok()).toBeTruthy()
       await expect(row).toHaveAttribute('data-unread', 'true')
-      await expect(page.getByTestId('support-unread-unassigned')).toHaveText('1')
+      await expect(page.getByTestId('support-view-count-unassigned')).toHaveText('1')
     } finally {
       await db.delete(conversation).where(eq(conversation.id, conversationId))
       await db.delete(contact).where(eq(contact.id, contactId))

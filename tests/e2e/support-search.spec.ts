@@ -182,7 +182,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       waitUntil: 'domcontentloaded',
     })
 
-    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('support-view-inbox')).toHaveAttribute('aria-pressed', 'true')
     const searchInput = page.getByTestId('support-conversation-search')
     await expect(searchInput).toHaveValue(customerEmail)
     await expect(page.getByTestId(`support-conversation-${resolvedConversationId}`)).toBeVisible()
@@ -193,7 +193,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
     await expect(page.getByTestId(`support-conversation-${openConversationId}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${resolvedConversationId}`)).toHaveCount(0)
     expect(new URL(page.url()).searchParams.get('search')).toBeNull()
-    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('support-view-inbox')).toHaveAttribute('aria-pressed', 'true')
 
     await searchInput.fill(String(displayId))
     await expect(page.getByTestId(`support-conversation-${resolvedConversationId}`)).toBeVisible()
@@ -206,10 +206,11 @@ test('support search finds a resolved conversation from Unassigned by email and 
     await page.getByTestId('support-conversation-search-clear').click()
     await expect.poll(() => new URL(page.url()).searchParams.get('search')).toBeNull()
     expect(new URL(page.url()).searchParams.get('conversationId')).toBe(resolvedConversationId)
-    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('support-view-inbox')).toHaveAttribute('aria-pressed', 'true')
 
     await page.getByTestId('support-view-resolved').click()
     await expect(page.getByTestId(`support-conversation-${resolvedConversationId}`)).toBeVisible()
+    await page.getByTestId('support-filter-toggle').click()
     await page.getByTestId('support-csat-filter').selectOption('rated')
     await expect(page.getByTestId(`support-conversation-${resolvedConversationId}`)).toBeVisible()
     await expect(

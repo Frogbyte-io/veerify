@@ -1,4 +1,5 @@
 import { enableProjectSupport } from './helpers/support-project'
+import { closeThreadDetails, openThreadDetails, withThreadDetails } from './helpers/support-details'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
@@ -178,7 +179,9 @@ test.describe.serial('support conversation flow', () => {
         waitUntil: 'domcontentloaded',
       })
       await expect(page.getByTestId('support-thread-sla')).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
+      await withThreadDetails(page, async (details) => {
+        await expect(details.getByTestId('support-thread-assignee')).toHaveValue('')
+      })
 
       await page.getByTestId('support-composer-mode-note').click()
       await page.getByTestId('support-composer-input').fill('Third report of this today — possible regression.')
@@ -189,7 +192,7 @@ test.describe.serial('support conversation flow', () => {
       )
       await page.getByTestId('support-composer-submit').click()
       expect((await noteResponse).ok()).toBeTruthy()
-      await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
+      await expect(page.getByTestId('support-thread-claim')).toBeVisible()
       await expect(page.getByText('Third report of this today — possible regression.')).toBeVisible()
 
       const afterNoteResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
@@ -206,13 +209,14 @@ test.describe.serial('support conversation flow', () => {
       )
       await page.getByTestId('support-composer-submit').click()
       expect((await replyResponse).ok()).toBeTruthy()
-      await expect(page.getByTestId('support-thread-assignee')).toHaveValue(agentUserId)
       await expect(page.getByTestId('support-thread-claim')).toHaveCount(0)
       await expect(page.getByText('Have you tried resetting your password?')).toBeVisible()
 
       // 4. Handoff, release, and reclaim all use the same assignment API.
       if (!adminUserId) throw new Error('Support flow admin fixture disappeared')
-      const assigneeSelect = page.getByTestId('support-thread-assignee')
+      const details = await openThreadDetails(page)
+      const assigneeSelect = details.getByTestId('support-thread-assignee')
+      await expect(assigneeSelect).toHaveValue(agentUserId)
       const handoffResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'PATCH' &&
@@ -230,6 +234,7 @@ test.describe.serial('support conversation flow', () => {
       await assigneeSelect.selectOption('')
       expect((await unassignResponse).ok()).toBeTruthy()
       await expect(assigneeSelect).toHaveValue('')
+      await closeThreadDetails(page)
       await expect(page.getByTestId('support-thread-claim')).toBeVisible()
 
       const reclaimResponse = page.waitForResponse(
@@ -239,7 +244,8 @@ test.describe.serial('support conversation flow', () => {
       )
       await page.getByTestId('support-thread-claim').click()
       expect((await reclaimResponse).ok()).toBeTruthy()
-      await expect(assigneeSelect).toHaveValue(agentUserId)
+      await expect((await openThreadDetails(page)).getByTestId('support-thread-assignee')).toHaveValue(agentUserId)
+      await closeThreadDetails(page)
 
       // 5. Change status.
       const patchResponse = await request.patch(`/api/support/conversations/${conversationId}`, {

@@ -18,6 +18,7 @@ const deploymentMode =
 // definePageMeta, hence this hook. Matched against the page file path relative to pages/.
 const DASHBOARD_PAGE = /^(dashboard|feedback|reports|help|submissions|settings|workspace|project|marketing|inbox)\//
 const NOT_DASHBOARD_PAGE = /^feedback\/\[id\]\/edit\.vue$/
+const FLUSH_DASHBOARD_PAGE = /^inbox\/index\.vue$/
 
 type ExtendablePage = { file?: string; meta?: Record<string, unknown>; children?: ExtendablePage[] }
 
@@ -26,6 +27,10 @@ function assignDashboardLayout(pages: ExtendablePage[]) {
     const file = page.file?.replace(/\\/g, '/').split('/pages/').pop() || ''
     if (DASHBOARD_PAGE.test(file) && !NOT_DASHBOARD_PAGE.test(file)) {
       page.meta = { ...page.meta, layout: 'dashboard' }
+    }
+    // Full-bleed pages fill the space under the header, edge to edge (no gutters, no page scroll).
+    if (FLUSH_DASHBOARD_PAGE.test(file)) {
+      page.meta = { ...page.meta, flush: true }
     }
     // NuxtPage keys a page by its interpolated path, which would remount the public site (and
     // its persistent shell) on every tab change. One static key keeps it mounted across tabs.

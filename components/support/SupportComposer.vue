@@ -1,172 +1,254 @@
 <template>
-  <div
-    class="border-t p-3 transition-colors"
-    :class="isNote ? 'bg-amber-500/10 dark:bg-amber-500/[0.08] border-t-amber-400/70' : 'bg-background'"
-    :data-testid="`support-composer-${mode}`"
-    :data-composer-mode="mode"
-  >
-    <div class="flex items-center gap-1 mb-2">
-      <button
-        type="button"
-        data-testid="support-composer-mode-reply"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-        :class="
-          !isNote ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-        "
-        :aria-pressed="!isNote"
-        @click="setMode('reply')"
-      >
-        <Icon name="lucide:reply" class="w-3.5 h-3.5" />Reply
-      </button>
-      <button
-        type="button"
-        data-testid="support-composer-mode-note"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-        :class="
-          isNote
-            ? 'bg-amber-500 text-white dark:bg-amber-500 dark:text-amber-950'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-        "
-        :aria-pressed="isNote"
-        @click="setMode('note')"
-      >
-        <Icon name="lucide:lock" class="w-3.5 h-3.5" />Internal note
-      </button>
-      <span
-        v-if="isNote"
-        data-testid="support-composer-note-caption"
-        class="ml-auto text-xs font-medium text-amber-700 dark:text-amber-400"
-        >Only your project will see this</span
-      >
-      <span v-else class="ml-auto text-xs text-muted-foreground">Visible to the customer</span>
-    </div>
-
-    <textarea
-      ref="input"
-      v-model="draft"
-      data-testid="support-composer-input"
-      rows="3"
-      :placeholder="placeholder"
-      :disabled="submitting"
-      class="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-      :class="isNote ? 'border-amber-400/70' : 'border-input'"
-      @click="rememberCursor"
-      @keyup="rememberCursor"
-      @select="rememberCursor"
-      @keydown.ctrl.enter.prevent="submit"
-      @keydown.meta.enter.prevent="submit"
-    />
-
-    <div v-if="attachments.length > 0" class="flex flex-wrap gap-2 mt-2" data-testid="support-composer-attachments">
-      <div
-        v-for="attachment in attachments"
-        :key="attachment.clientId"
-        class="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs"
-        :class="attachment.phase === 'expired' || attachment.phase === 'failed' ? 'border-destructive/60' : ''"
-        :data-testid="`support-composer-attachment-${attachment.clientId}`"
-        :data-phase="attachment.phase"
-      >
-        <Icon
-          v-if="attachment.phase === 'uploading' || attachment.phase === 'completing'"
-          name="lucide:loader-circle"
-          class="w-3.5 h-3.5 animate-spin text-muted-foreground"
-        />
-        <Icon
-          v-else-if="attachment.phase === 'failed' || attachment.phase === 'expired'"
-          name="lucide:alert-circle"
-          class="w-3.5 h-3.5 text-destructive"
-        />
-        <Icon
-          v-else-if="attachment.phase === 'ready'"
-          name="lucide:check-circle-2"
-          class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"
-        />
-        <Icon v-else name="lucide:paperclip" class="w-3.5 h-3.5 text-muted-foreground" />
-        <span
-          class="max-w-[12rem] truncate"
-          :class="attachment.phase === 'failed' || attachment.phase === 'expired' ? 'text-destructive' : ''"
-          >{{ attachment.fileName }}</span
-        >
-        <span class="text-muted-foreground">{{ formatBytes(attachment.sizeBytes) }}</span>
-        <progress
-          v-if="attachment.phase === 'uploading' && attachment.progress !== null"
-          class="h-1.5 w-16 accent-primary"
-          role="progressbar"
-          :value="attachment.progress"
-          max="100"
-          :aria-label="`Uploading ${attachment.fileName}`"
-          :data-testid="`support-composer-attachment-${attachment.clientId}-progress`"
-        />
-        <span
-          class="text-muted-foreground max-w-[11rem] truncate"
-          role="status"
-          aria-live="polite"
-          :data-testid="`support-composer-attachment-${attachment.clientId}-status`"
-          >{{ attachmentStatus(attachment) }}</span
-        >
-        <span
-          v-if="attachment.phase === 'uploading' && attachment.progress !== null"
-          class="text-muted-foreground"
-          aria-hidden="true"
-          >{{ attachment.progress }}%</span
-        >
-        <button
-          v-if="attachment.phase === 'failed'"
-          type="button"
-          class="text-xs text-primary underline hover:no-underline"
-          :aria-label="`Retry upload for ${attachment.fileName}`"
-          :data-testid="`support-composer-attachment-${attachment.clientId}-retry`"
-          :disabled="submitting"
-          @click="retryAttachment(attachment)"
-        >
-          Retry
-        </button>
-        <button
-          type="button"
-          class="text-muted-foreground hover:text-foreground disabled:opacity-50"
-          :aria-label="`Remove ${attachment.fileName}`"
-          :data-testid="`support-composer-attachment-${attachment.clientId}-remove`"
-          :disabled="submitting"
-          @click="removeAttachment(attachment.clientId)"
-        >
-          <Icon name="lucide:x" class="w-3.5 h-3.5" />
-        </button>
-      </div>
-    </div>
-    <p
-      v-if="expiredAttachment"
-      class="mt-2 text-xs text-destructive"
-      role="alert"
-      data-testid="support-composer-expired-error"
+  <div class="px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-4">
+    <div
+      class="relative mx-auto w-full max-w-3xl rounded-xl border transition-colors"
+      :class="isNote ? 'border-amber-400/60 bg-amber-500/[0.07] dark:bg-amber-500/[0.06]' : 'bg-card'"
+      :data-testid="`support-composer-${mode}`"
+      :data-composer-mode="mode"
     >
-      {{ expiredCopy }}
-    </p>
+      <div class="flex flex-wrap items-center gap-1 gap-y-1.5 px-2 pt-2">
+        <button
+          type="button"
+          data-testid="support-composer-mode-reply"
+          :class="tabClass(!isNote, false)"
+          :aria-pressed="!isNote"
+          @click="setMode('reply')"
+        >
+          <Icon name="lucide:reply" class="h-3.5 w-3.5" />Reply
+        </button>
+        <button
+          type="button"
+          data-testid="support-composer-mode-note"
+          :class="tabClass(isNote, true)"
+          :aria-pressed="isNote"
+          @click="setMode('note')"
+        >
+          <Icon name="lucide:lock" class="h-3.5 w-3.5" />Note
+        </button>
 
-    <div class="flex items-center justify-between mt-2">
-      <div class="flex items-center gap-2">
-        <p class="text-xs text-muted-foreground">
-          <template v-if="isNote">Internal notes are stored on the ticket and never emailed.</template
-          ><template v-else>Replies are stored on the ticket. Sending by email arrives in a later stage.</template>
+        <span
+          v-if="isNote"
+          data-testid="support-composer-note-caption"
+          class="ml-auto pr-1 text-xs font-medium text-amber-700 dark:text-amber-400"
+          >Only your project will see this</span
+        >
+        <template v-else>
+          <!-- What this reply is: a plain mail or a tracked support case -->
+          <div
+            v-if="conversation"
+            class="ml-auto inline-flex gap-0.5 rounded-lg border p-0.5"
+            role="radiogroup"
+            aria-label="Send as"
+          >
+            <button
+              type="button"
+              role="radio"
+              data-testid="support-composer-type-mail"
+              :aria-checked="String(sendAs === 'mail')"
+              :class="segmentClass(sendAs === 'mail')"
+              title="A normal email, no case tracking"
+              @click="sendAs = 'mail'"
+            >
+              <Icon name="lucide:mail" class="h-3.5 w-3.5" />Mail
+            </button>
+            <button
+              type="button"
+              role="radio"
+              data-testid="support-composer-type-case"
+              :aria-checked="String(sendAs === 'helpdesk')"
+              :class="segmentClass(sendAs === 'helpdesk')"
+              title="Tracked with status, assignee, SLA and a rating survey"
+              @click="sendAs = 'helpdesk'"
+            >
+              <Icon name="lucide:life-buoy" class="h-3.5 w-3.5" />Support case
+            </button>
+          </div>
+
+          <DropdownMenu v-if="sendableAddresses.length > 1">
+            <DropdownMenuTrigger as-child>
+              <button
+                type="button"
+                data-testid="support-composer-from"
+                class="order-last flex w-full min-w-0 items-center gap-1 rounded-md bg-muted/60 px-2 py-1 text-left text-xs text-muted-foreground hover:text-foreground sm:order-none sm:w-auto sm:bg-transparent sm:hover:bg-accent"
+              >
+                From
+                <span class="min-w-0 truncate font-medium text-foreground">{{ fromAddressLabel }}</span>
+                <Icon name="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-72">
+              <DropdownMenuLabel class="text-xs text-muted-foreground">Reply from</DropdownMenuLabel>
+              <DropdownMenuItem
+                v-for="address in sendableAddresses"
+                :key="address.id || 'inbox'"
+                :data-testid="`support-composer-from-${address.id || 'inbox'}`"
+                @select="fromAddressId = address.id"
+              >
+                <Icon :name="address.behaviour === 'mail' ? 'lucide:mail' : 'lucide:life-buoy'" class="h-4 w-4" />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate">{{ address.address }}</span>
+                  <span
+                    v-if="address.id && address.id === conversation?.mailAddressId"
+                    class="text-[11px] text-muted-foreground"
+                  >
+                    Received here
+                  </span>
+                  <span v-else-if="!address.id" class="text-[11px] text-muted-foreground">Inbox default</span>
+                </span>
+                <Icon v-if="address.id === fromAddressId" name="lucide:check" class="h-4 w-4" />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <span
+            v-else-if="fromAddressLabel"
+            data-testid="support-composer-from-static"
+            class="order-last w-full truncate px-2 text-xs text-muted-foreground sm:order-none sm:w-auto"
+          >
+            From <span class="font-medium text-foreground">{{ fromAddressLabel }}</span>
+          </span>
+        </template>
+      </div>
+
+      <textarea
+        ref="input"
+        v-model="draft"
+        data-testid="support-composer-input"
+        rows="3"
+        :placeholder="placeholder"
+        :disabled="submitting"
+        class="block max-h-[40dvh] min-h-16 w-full resize-y bg-transparent px-3.5 py-2.5 text-base outline-none disabled:opacity-60 sm:text-sm"
+        @click="rememberCursor"
+        @keyup="rememberCursor"
+        @select="rememberCursor"
+        @keydown.enter.exact.ctrl.prevent="submit()"
+        @keydown.enter.exact.meta.prevent="submit()"
+        @keydown.enter.ctrl.shift.prevent="submit({ resolve: true })"
+        @keydown.enter.meta.shift.prevent="submit({ resolve: true })"
+      />
+
+      <p
+        v-if="typeChangeNote"
+        data-testid="support-composer-type-note"
+        class="flex gap-2 px-3.5 pb-2 text-xs text-muted-foreground"
+      >
+        <Icon
+          :name="sendAs === 'mail' ? 'lucide:mail' : 'lucide:life-buoy'"
+          class="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"
+        />
+        <span>{{ typeChangeNote }}</span>
+      </p>
+
+      <div class="px-3">
+        <div v-if="attachments.length > 0" class="flex flex-wrap gap-2 pb-2" data-testid="support-composer-attachments">
+          <div
+            v-for="attachment in attachments"
+            :key="attachment.clientId"
+            class="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs"
+            :class="attachment.phase === 'expired' || attachment.phase === 'failed' ? 'border-destructive/60' : ''"
+            :data-testid="`support-composer-attachment-${attachment.clientId}`"
+            :data-phase="attachment.phase"
+          >
+            <Icon
+              v-if="attachment.phase === 'uploading' || attachment.phase === 'completing'"
+              name="lucide:loader-circle"
+              class="w-3.5 h-3.5 animate-spin text-muted-foreground"
+            />
+            <Icon
+              v-else-if="attachment.phase === 'failed' || attachment.phase === 'expired'"
+              name="lucide:alert-circle"
+              class="w-3.5 h-3.5 text-destructive"
+            />
+            <Icon
+              v-else-if="attachment.phase === 'ready'"
+              name="lucide:check-circle-2"
+              class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"
+            />
+            <Icon v-else name="lucide:paperclip" class="w-3.5 h-3.5 text-muted-foreground" />
+            <span
+              class="max-w-[12rem] truncate"
+              :class="attachment.phase === 'failed' || attachment.phase === 'expired' ? 'text-destructive' : ''"
+              >{{ attachment.fileName }}</span
+            >
+            <span class="text-muted-foreground">{{ formatBytes(attachment.sizeBytes) }}</span>
+            <progress
+              v-if="attachment.phase === 'uploading' && attachment.progress !== null"
+              class="h-1.5 w-16 accent-primary"
+              role="progressbar"
+              :value="attachment.progress"
+              max="100"
+              :aria-label="`Uploading ${attachment.fileName}`"
+              :data-testid="`support-composer-attachment-${attachment.clientId}-progress`"
+            />
+            <span
+              class="text-muted-foreground max-w-[11rem] truncate"
+              role="status"
+              aria-live="polite"
+              :data-testid="`support-composer-attachment-${attachment.clientId}-status`"
+              >{{ attachmentStatus(attachment) }}</span
+            >
+            <span
+              v-if="attachment.phase === 'uploading' && attachment.progress !== null"
+              class="text-muted-foreground"
+              aria-hidden="true"
+              >{{ attachment.progress }}%</span
+            >
+            <button
+              v-if="attachment.phase === 'failed'"
+              type="button"
+              class="text-xs text-primary underline hover:no-underline"
+              :aria-label="`Retry upload for ${attachment.fileName}`"
+              :data-testid="`support-composer-attachment-${attachment.clientId}-retry`"
+              :disabled="submitting"
+              @click="retryAttachment(attachment)"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              class="text-muted-foreground hover:text-foreground disabled:opacity-50"
+              :aria-label="`Remove ${attachment.fileName}`"
+              :data-testid="`support-composer-attachment-${attachment.clientId}-remove`"
+              :disabled="submitting"
+              @click="removeAttachment(attachment.clientId)"
+            >
+              <Icon name="lucide:x" class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+        <p
+          v-if="expiredAttachment"
+          class="mt-2 text-xs text-destructive"
+          role="alert"
+          data-testid="support-composer-expired-error"
+        >
+          {{ expiredCopy }}
         </p>
+      </div>
+
+      <div class="flex items-center gap-1 px-2 pt-1 pb-2">
         <button
           v-if="!isNote"
           type="button"
           data-testid="support-composer-attach"
-          class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+          class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
           :disabled="submitting || attachments.length >= maxAttachmentFiles"
+          title="Attach files"
+          aria-label="Attach files"
           @click="openFilePicker"
         >
-          <Icon name="lucide:paperclip" class="w-3.5 h-3.5" />Attach
+          <Icon name="lucide:paperclip" class="h-4 w-4" />
         </button>
         <div class="relative">
           <button
             type="button"
             data-testid="support-composer-canned-trigger"
-            class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+            class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
             :disabled="submitting || !projectId"
+            title="Saved replies (type /)"
+            aria-label="Saved replies"
             @click="toggleCannedResponses"
           >
-            <Icon name="lucide:message-square-text" class="w-3.5 h-3.5" />Shortcodes
+            <Icon name="lucide:zap" class="h-4 w-4" />
           </button>
           <div
             v-if="showCannedResponses"
@@ -205,20 +287,52 @@
           data-testid="support-composer-file-input"
           @change="onFilesSelected"
         >
+        <span class="flex-1" />
+        <span class="mr-2 hidden text-[11px] text-muted-foreground [@media(hover:hover)]:inline">
+          <kbd class="rounded border border-b-2 px-1 font-mono">⌘</kbd>
+          <kbd class="rounded border border-b-2 px-1 font-mono">↵</kbd>
+          send
+        </span>
+        <div class="inline-flex">
+          <Button
+            size="sm"
+            data-testid="support-composer-submit"
+            class="h-8"
+            :class="[
+              isNote ? 'bg-amber-500 text-white hover:bg-amber-600 dark:text-amber-950' : '',
+              canResolveOnSend ? 'rounded-r-none' : '',
+            ]"
+            :disabled="!canSubmit"
+            @click="submit()"
+          >
+            <Icon v-if="submitting" name="lucide:loader-circle" class="h-3.5 w-3.5 animate-spin" /><Icon
+              v-else
+              :name="isNote ? 'lucide:lock' : 'lucide:send'"
+              class="h-3.5 w-3.5"
+            />{{ isNote ? 'Add note' : 'Send' }}
+          </Button>
+          <DropdownMenu v-if="canResolveOnSend">
+            <DropdownMenuTrigger as-child>
+              <Button
+                size="sm"
+                data-testid="support-composer-submit-menu"
+                class="h-8 w-8 rounded-l-none border-l border-l-primary-foreground/25 px-0"
+                :disabled="!canSubmit"
+                aria-label="More send options"
+              >
+                <Icon name="lucide:chevron-down" class="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-56">
+              <DropdownMenuItem data-testid="support-composer-submit-resolve" @select="submit({ resolve: true })">
+                <Icon name="lucide:check-check" class="h-4 w-4" />
+                <span class="flex-1">Send and {{ sendAs === 'mail' ? 'mark done' : 'resolve' }}</span>
+                <span class="text-[11px] text-muted-foreground">⌘⇧↵</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
-      <Button
-        size="sm"
-        data-testid="support-composer-submit"
-        :disabled="!canSubmit"
-        :class="isNote ? 'bg-amber-500 hover:bg-amber-600 text-white dark:text-amber-950' : ''"
-        @click="submit"
-      >
-        <Icon v-if="submitting" name="lucide:loader-circle" class="w-3.5 h-3.5 mr-1.5 animate-spin" /><Icon
-          v-else
-          :name="isNote ? 'lucide:lock' : 'lucide:send'"
-          class="w-3.5 h-3.5 mr-1.5"
-        />{{ isNote ? 'Add internal note' : 'Send reply' }}
-      </Button>
     </div>
   </div>
 </template>
@@ -262,6 +376,11 @@ export default {
     projectId: { type: String, default: '' },
     contact: { type: Object, default: null },
     currentUserName: { type: String, default: '' },
+    // The conversation being answered: its type (`behaviour`), case number and receiving address.
+    conversation: { type: Object, default: null },
+    // The inbox's addresses, each with `canSendFrom`.
+    addresses: { type: Array, default: () => [] },
+    inboxSendingAddress: { type: String, default: null },
   },
   emits: ['posted', 'draft-state-changed'],
 
@@ -278,12 +397,44 @@ export default {
       cannedResponsesError: null,
       showCannedResponses: false,
       lastCursor: 0,
+      // 'mail' | 'helpdesk': what this reply is sent as. Differs from the conversation's
+      // type when the agent switches it, and the send then changes the conversation.
+      sendAs: 'helpdesk',
+      // project_mail_address id to reply from; null means the inbox's own address.
+      fromAddressId: null,
     }
   },
 
   computed: {
     isNote() {
       return this.mode === 'note'
+    },
+    conversationType() {
+      return this.conversation?.behaviour === 'mail' ? 'mail' : 'helpdesk'
+    },
+    sendableAddresses() {
+      const options = this.addresses
+        .filter((address) => address.canSendFrom)
+        .map((address) => ({ id: address.id, address: address.address, behaviour: address.behaviour }))
+      if (this.inboxSendingAddress && !options.some((option) => option.address === this.inboxSendingAddress)) {
+        options.push({ id: null, address: this.inboxSendingAddress, behaviour: 'helpdesk' })
+      }
+      return options
+    },
+    fromAddressLabel() {
+      const match = this.sendableAddresses.find((option) => option.id === this.fromAddressId)
+      return match?.address || this.inboxSendingAddress || ''
+    },
+    typeChangeNote() {
+      if (this.isNote || !this.conversation || this.sendAs === this.conversationType) return ''
+      const number = this.conversation.displayId
+      if (this.sendAs === 'helpdesk') {
+        return `Sending this turns the mail into support case #${number}. It gets a status, assignee and SLA, and the customer gets a rating survey when it is resolved.`
+      }
+      return `Sending this as plain mail ends the support case. It keeps #${number} for reference, but the SLA stops and no rating survey goes out.`
+    },
+    canResolveOnSend() {
+      return !this.isNote && Boolean(this.conversation) && !this.conversation.deletedAt && !this.conversation.spamAt
     },
     maxAttachmentFiles() {
       return MAX_ATTACHMENT_FILES
@@ -318,6 +469,12 @@ export default {
       if (this.isRestoringDraft) return
       this.saveCurrentDraft()
     },
+    conversation(next, previous) {
+      if (next?.id !== previous?.id || next?.behaviour !== previous?.behaviour) this.resetSendOptions()
+    },
+    addresses() {
+      if (!this.sendableAddresses.some((option) => option.id === this.fromAddressId)) this.resetSendOptions()
+    },
     conversationId() {
       this.conversationGeneration += 1
       this.abortUploads()
@@ -335,6 +492,7 @@ export default {
   },
 
   mounted() {
+    this.resetSendOptions()
     this.restoreDraftForConversation()
     void this.loadCannedResponses()
   },
@@ -344,6 +502,27 @@ export default {
   },
 
   methods: {
+    tabClass(active, note) {
+      const base = 'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors'
+      if (!active) return `${base} text-muted-foreground hover:bg-muted hover:text-foreground`
+      return note ? `${base} bg-amber-500/25 text-amber-800 dark:text-amber-200` : `${base} bg-muted text-foreground`
+    },
+
+    segmentClass(active) {
+      const base = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-0.5 text-xs transition-colors'
+      return active
+        ? `${base} bg-muted font-medium text-foreground`
+        : `${base} text-muted-foreground hover:text-foreground`
+    },
+
+    /** Default to the conversation's own type and the address it arrived on, when that address can send. */
+    resetSendOptions() {
+      this.sendAs = this.conversationType
+      const received = this.conversation?.mailAddressId
+      const canSendFromReceived = this.sendableAddresses.some((option) => option.id && option.id === received)
+      this.fromAddressId = canSendFromReceived ? received : null
+    },
+
     setMode(mode) {
       if (this.submitting) return
       if (!DRAFT_MODES.includes(mode) || mode === this.mode) return
@@ -523,9 +702,10 @@ export default {
       }
     },
 
-    async submit() {
+    async submit({ resolve = false } = {}) {
       this.syncExpiredAttachments()
       if (!this.canSubmit) return
+      if (resolve && !this.canResolveOnSend) return
       const submitConversationId = this.conversationId
       const submitGeneration = this.conversationGeneration
       this.submitting = true
@@ -533,17 +713,25 @@ export default {
       const submitMode = this.mode
       const body = this.draft.trim()
       const attachments = this.attachments.map((attachment) => ({ uploadId: attachment.uploadId }))
+      const payload = { kind, body }
+      if (attachments.length > 0) payload.attachments = attachments
+      const changesType = !this.isNote && Boolean(this.conversation) && this.sendAs !== this.conversationType
+      if (!this.isNote) {
+        if (this.fromAddressId) payload.fromAddressId = this.fromAddressId
+        if (changesType) payload.behaviour = this.sendAs
+        if (resolve) payload.resolve = true
+      }
       try {
         await $fetch(`/api/support/conversations/${submitConversationId}/messages`, {
           method: 'POST',
-          body: attachments.length > 0 ? { kind, body, attachments } : { kind, body },
+          body: payload,
         })
         this.clearDraft(submitConversationId, submitMode)
         if (submitGeneration !== this.conversationGeneration || submitConversationId !== this.conversationId) return
         this.clearAttachmentTimers()
         this.draft = ''
         this.attachments = []
-        this.$emit('posted')
+        this.$emit('posted', { resolved: resolve, behaviour: changesType ? this.sendAs : null })
       } catch (err) {
         if (submitGeneration !== this.conversationGeneration || submitConversationId !== this.conversationId) return
         toast.error(err?.data?.error?.message || 'Failed to post message')
