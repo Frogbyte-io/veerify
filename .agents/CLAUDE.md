@@ -531,7 +531,9 @@ Veerify wins. Agent guide: `docs/mcp.md`.
   `DASHBOARD_PAGE`.
 - Clean pages (auth, public token pages) wrap their content in `<NuxtLayout name="clean">` and use `AuthCard`.
 - Dashboard pages render `PageContainer` (width `default` = `max-w-6xl`, `narrow` = `max-w-3xl` for detail and
-  editor pages, `full` for boards and the inbox) with a `PageHeader` first. The layout owns the gutters: no `p-6`.
+  editor pages, `full` for boards) with a `PageHeader` first. The layout owns the gutters: no `p-6`.
+- Full-bleed pages (the inbox) are listed in `FLUSH_DASHBOARD_PAGE` in `nuxt.config.ts`: the layout drops its gutters
+  and page scroll, and the page fills the space under the header with its own panes.
 - Header actions render from the first paint (disabled while loading), skeletons match the content's shape, and each
   `v-if` loading/content branch is a single element (multi-root `<template v-if>` branches break hydration).
 - Settings-style pages use `SettingsTabs` (`?tab=` in the URL; visited and hovered tabs stay mounted).

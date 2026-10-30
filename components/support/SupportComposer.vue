@@ -470,7 +470,9 @@ export default {
       this.saveCurrentDraft()
     },
     conversation(next, previous) {
-      if (next?.id !== previous?.id || next?.behaviour !== previous?.behaviour) this.resetSendOptions()
+      if (next?.id !== previous?.id) this.resetSendOptions()
+      // After a send switches the type, the switch follows it; the chosen From address stays.
+      else if (next?.behaviour !== previous?.behaviour) this.sendAs = this.conversationType
     },
     addresses() {
       if (!this.sendableAddresses.some((option) => option.id === this.fromAddressId)) this.resetSendOptions()
