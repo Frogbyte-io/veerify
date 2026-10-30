@@ -1,0 +1,2326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inbox redesign</title>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <style>
+      /* Tokens copied from assets/css/main.css (dark is the default here, like the screenshot) */
+      :root {
+        --background: oklch(0.15 0.02 240);
+        --foreground: oklch(0.95 0.01 240);
+        --card: oklch(0.18 0.02 240);
+        --primary: oklch(0.65 0.2 260);
+        --primary-foreground: oklch(0.98 0 0);
+        --muted: oklch(0.25 0.03 240);
+        --muted-foreground: oklch(0.65 0.02 240);
+        --accent: oklch(0.22 0.03 240);
+        --border: oklch(0.25 0.03 240);
+        --rail: oklch(0.165 0.02 240);
+        --danger: oklch(0.68 0.19 25);
+        --warn: oklch(0.8 0.15 75);
+        --ok: oklch(0.72 0.15 155);
+        --note-bg: oklch(0.8 0.15 75 / 0.08);
+        --radius: 0.75rem;
+        --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+        color-scheme: dark;
+      }
+      :root[data-theme='light'] {
+        --background: oklch(0.98 0.01 240);
+        --foreground: oklch(0.15 0.02 240);
+        --card: oklch(1 0 0);
+        --primary: oklch(0.52 0.2 260);
+        --muted: oklch(0.95 0.02 240);
+        --muted-foreground: oklch(0.5 0.02 240);
+        --accent: oklch(0.955 0.02 245);
+        --border: oklch(0.9 0.02 240);
+        --rail: oklch(0.97 0.012 240);
+        --danger: oklch(0.58 0.2 25);
+        --warn: oklch(0.68 0.15 70);
+        --ok: oklch(0.58 0.14 155);
+        --note-bg: oklch(0.85 0.12 85 / 0.18);
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--background);
+        color: var(--foreground);
+        font: 13px/1.45 var(--font-sans);
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 0;
+      }
+      svg.lucide {
+        width: 15px;
+        height: 15px;
+        stroke-width: 1.8;
+        flex-shrink: 0;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      kbd {
+        font: 10.5px var(--font-mono);
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 0 4px;
+        color: var(--muted-foreground);
+        background: var(--background);
+      }
+
+      /* ---------- App chrome (stand-in for the dashboard layout) ---------- */
+      .app {
+        display: flex;
+        height: 100vh;
+        height: 100dvh;
+      }
+      .appnav {
+        width: 48px;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 0;
+        background: var(--rail);
+      }
+      .appnav .logo {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--primary);
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .appnav button {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: var(--muted-foreground);
+      }
+      .appnav button.on {
+        background: var(--accent);
+        color: var(--foreground);
+      }
+      main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ---------- Inbox: full bleed, no card ---------- */
+      .inbox {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 228px 360px minmax(0, 1fr) auto;
+      }
+      .pane {
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+      }
+      .pane:last-child {
+        border-right: 0;
+      }
+
+      /* Rail */
+      .rail {
+        background: var(--rail);
+        padding: 10px 8px;
+        gap: 2px;
+        overflow-y: auto;
+      }
+      .switcher {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        text-align: left;
+        width: 100%;
+      }
+      .switcher:hover,
+      .nav:hover {
+        background: var(--accent);
+      }
+      .switcher .mark {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: oklch(0.55 0.15 200);
+        display: grid;
+        place-items: center;
+        font-weight: 600;
+        color: white;
+        font-size: 12px;
+      }
+      .switcher b {
+        display: block;
+        font-weight: 600;
+      }
+      .switcher small {
+        color: var(--muted-foreground);
+        font-size: 11px;
+      }
+      .compose {
+        margin: 8px 0 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        font-weight: 500;
+      }
+      .compose kbd {
+        margin-left: auto;
+      }
+      .group {
+        font-size: 10.5px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        padding: 12px 10px 4px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .group button {
+        color: var(--muted-foreground);
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 11px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 5px 10px;
+        border-radius: 7px;
+        width: 100%;
+        text-align: left;
+        color: var(--muted-foreground);
+      }
+      .nav > span:not(.dot):not(.n) {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nav.on {
+        background: var(--accent);
+        color: var(--foreground);
+        font-weight: 500;
+      }
+      .nav .n {
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted-foreground);
+      }
+      .nav .n.hot {
+        color: var(--danger);
+        font-weight: 600;
+      }
+      .nav .dot {
+        flex-shrink: 0;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin: 0 3.5px;
+      }
+      .rail .spacer {
+        flex: 1;
+      }
+      .rail .foot {
+        border-top: 1px solid var(--border);
+        margin-top: 8px;
+        padding-top: 8px;
+      }
+
+      /* List */
+      .listhead {
+        padding: 12px 14px 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .listhead h1 {
+        font-size: 15px;
+        margin: 0;
+        font-weight: 600;
+      }
+      .listhead .count {
+        color: var(--muted-foreground);
+      }
+      .iconbtn {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        display: inline-grid;
+        place-items: center;
+        color: var(--muted-foreground);
+      }
+      .iconbtn:hover {
+        background: var(--accent);
+        color: var(--foreground);
+      }
+      .search {
+        margin: 0 14px 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--background);
+        color: var(--muted-foreground);
+      }
+      .search input {
+        flex: 1;
+        min-width: 0;
+        background: none;
+        border: 0;
+        outline: 0;
+        color: var(--foreground);
+        font: inherit;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        padding: 0 14px 10px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--border);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        border: 1px dashed var(--border);
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+      .chip.on {
+        border-style: solid;
+        background: var(--accent);
+        color: var(--foreground);
+      }
+      .chip svg.lucide {
+        width: 12px;
+        height: 12px;
+      }
+      .bulkbar {
+        display: none;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--accent);
+      }
+      .bulkbar.show {
+        display: flex;
+      }
+      .rows {
+        overflow-y: auto;
+        flex: 1;
+      }
+      .row {
+        position: relative;
+        display: grid;
+        grid-template-columns: 30px 1fr;
+        gap: 10px;
+        padding: 11px 14px 11px 12px;
+        background: var(--background);
+        transition: transform 0.2s;
+        touch-action: pan-y;
+        cursor: pointer;
+        border-left: 2px solid transparent;
+      }
+      .row:hover {
+        background: var(--accent);
+      }
+      .row.sel {
+        background: var(--accent);
+        border-left-color: var(--primary);
+      }
+      .row .av {
+        position: relative;
+      }
+      .row .check {
+        display: none;
+        position: absolute;
+        inset: 0;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+      }
+      .row:hover .check,
+      .rows.bulk .check {
+        display: grid;
+      }
+      .row:hover .avatar,
+      .rows.bulk .avatar {
+        visibility: hidden;
+      }
+      .check i {
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid var(--muted-foreground);
+        border-radius: 4px;
+        display: grid;
+        place-items: center;
+      }
+      .row.picked .check i {
+        background: var(--primary);
+        border-color: var(--primary);
+      }
+      .row.picked .check i::after {
+        content: '';
+        width: 8px;
+        height: 4px;
+        border: 2px solid white;
+        border-top: 0;
+        border-right: 0;
+        transform: rotate(-45deg) translate(1px, -1px);
+      }
+      .avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: white;
+      }
+      .avatar.sm {
+        width: 20px;
+        height: 20px;
+        font-size: 9px;
+      }
+      .unread-dot {
+        position: absolute;
+        left: -9px;
+        top: 11px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary);
+      }
+      .r1 {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .r1 .who {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row.unread .who,
+      .row.unread .subj {
+        font-weight: 600;
+      }
+      .r1 time {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        font-variant-numeric: tabular-nums;
+      }
+      .subj,
+      .prev {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prev {
+        color: var(--muted-foreground);
+        font-size: 12.5px;
+      }
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        min-height: 20px;
+      }
+      .meta .push {
+        margin-left: auto;
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 5px;
+        background: var(--muted);
+        color: var(--muted-foreground);
+      }
+      .tag i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .sla {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 1px 6px;
+        border-radius: 5px;
+      }
+      .sla svg.lucide {
+        width: 11px;
+        height: 11px;
+      }
+      .sla.late {
+        color: var(--danger);
+        background: color-mix(in oklch, var(--danger) 14%, transparent);
+      }
+      .sla.soon {
+        color: var(--warn);
+        background: color-mix(in oklch, var(--warn) 14%, transparent);
+      }
+      .prio {
+        display: inline-flex;
+        gap: 1.5px;
+        align-items: flex-end;
+        height: 11px;
+      }
+      .prio b {
+        width: 3px;
+        border-radius: 1px;
+        background: var(--muted);
+      }
+      .prio b:nth-child(1) {
+        height: 5px;
+      }
+      .prio b:nth-child(2) {
+        height: 8px;
+      }
+      .prio b:nth-child(3) {
+        height: 11px;
+      }
+      .prio.p1 b:nth-child(-n + 1),
+      .prio.p2 b:nth-child(-n + 2),
+      .prio.p3 b {
+        background: var(--muted-foreground);
+      }
+      .prio.urgent b {
+        background: var(--danger);
+      }
+      .hoveracts {
+        display: none;
+        position: absolute;
+        right: 10px;
+        top: 8px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 2px;
+        box-shadow: 0 4px 14px oklch(0 0 0 / 0.25);
+      }
+      .row:hover .hoveracts {
+        display: flex;
+      }
+      .hoveracts .iconbtn {
+        width: 26px;
+        height: 26px;
+      }
+
+      /* Thread */
+      .thread {
+        background: var(--background);
+      }
+      .thead {
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .thead .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .thead h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .thead h2 > * {
+        margin-left: 6px;
+        vertical-align: 1px;
+      }
+      .thead h2 .id {
+        font-weight: 400;
+        color: var(--muted-foreground);
+        font-size: 12.5px;
+      }
+      .thead .sub {
+        margin-top: 3px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .acts {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 11px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--accent);
+      }
+      .btn.primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--primary-foreground);
+      }
+      .split {
+        display: inline-flex;
+      }
+      .split .btn:first-child {
+        border-radius: 8px 0 0 8px;
+      }
+      .split .btn:last-child {
+        border-radius: 0 8px 8px 0;
+        padding: 0 7px;
+        border-left: 1px solid oklch(1 0 0 / 0.25);
+      }
+      .msgs {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 18px 8px;
+      }
+      .msgs-inner {
+        max-width: 760px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .msg {
+        display: grid;
+        grid-template-columns: 30px 1fr;
+        gap: 12px;
+      }
+      .bubble {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--card);
+        padding: 11px 14px;
+      }
+      .bubble header {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        margin-bottom: 6px;
+      }
+      .bubble header b {
+        font-weight: 600;
+      }
+      .bubble header time {
+        margin-left: auto;
+        color: var(--muted-foreground);
+        font-size: 11.5px;
+      }
+      .bubble p {
+        margin: 0 0 8px;
+      }
+      .bubble p:last-child {
+        margin: 0;
+      }
+      .msg.agent .bubble {
+        background: color-mix(in oklch, var(--primary) 8%, var(--card));
+        border-color: color-mix(in oklch, var(--primary) 25%, var(--border));
+      }
+      .msg.note .bubble {
+        background: var(--note-bg);
+        border-color: color-mix(in oklch, var(--warn) 40%, transparent);
+      }
+      .msg.note header .lbl {
+        color: var(--warn);
+        font-size: 11px;
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .activity {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        padding-left: 42px;
+      }
+      .activity::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .attach {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        margin-top: 4px;
+        background: var(--background);
+      }
+
+      .composer {
+        margin: 8px 18px 16px;
+      }
+      .composer-inner {
+        position: relative;
+        max-width: 760px;
+        margin: 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--card);
+        transition: background 0.15s;
+      }
+      .composer.note .composer-inner {
+        background: var(--note-bg);
+        border-color: color-mix(in oklch, var(--warn) 45%, transparent);
+      }
+      .ctabs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 6px 8px 0;
+      }
+      .ctab {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 9px;
+        border-radius: 6px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .ctab.on {
+        background: var(--muted);
+        color: var(--foreground);
+      }
+      .composer.note .ctab.on {
+        background: color-mix(in oklch, var(--warn) 25%, transparent);
+      }
+      .ctabs .from {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--muted-foreground);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 6px;
+        border-radius: 6px;
+      }
+      .ctabs .from:hover {
+        background: var(--accent);
+      }
+      .composer textarea {
+        display: block;
+        width: 100%;
+        min-height: 74px;
+        resize: none;
+        border: 0;
+        outline: 0;
+        background: none;
+        color: var(--foreground);
+        font: inherit;
+        padding: 10px 14px;
+      }
+      .ctools {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 6px 8px 8px;
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin-left: auto;
+      }
+      .seg + .from {
+        margin-left: 6px;
+      }
+      .seg button {
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+      .seg button.on {
+        background: var(--muted);
+        color: var(--foreground);
+        font-weight: 500;
+      }
+      .seg svg.lucide,
+      .kind svg.lucide,
+      .casehint svg.lucide {
+        width: 13px;
+        height: 13px;
+      }
+      .casehint {
+        display: flex;
+        gap: 7px;
+        padding: 0 14px 10px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+      .casehint svg.lucide {
+        margin-top: 2px;
+        color: var(--primary);
+      }
+      .kind {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--muted-foreground);
+      }
+      .frompop {
+        top: 34px;
+        right: 8px;
+        min-width: 300px;
+      }
+      .poplabel {
+        font-size: 11px;
+        color: var(--muted-foreground);
+        padding: 6px 10px 4px;
+      }
+      .popover .nav small {
+        color: var(--muted-foreground);
+        font-size: 11px;
+      }
+      .ctools .hint {
+        margin-left: auto;
+        margin-right: 8px;
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+      }
+
+      /* Details */
+      .details {
+        width: 296px;
+        overflow-y: auto;
+        background: var(--rail);
+      }
+      .details.hidden {
+        display: none;
+      }
+      .sect {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .sect h3 {
+        margin: 0 0 10px;
+        font-size: 10.5px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        font-weight: 500;
+        display: flex;
+        justify-content: space-between;
+      }
+      .contact {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .contact .avatar {
+        width: 38px;
+        height: 38px;
+        font-size: 13px;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 82px 1fr;
+        row-gap: 4px;
+        align-items: center;
+      }
+      .kv dt {
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+      .kv dd {
+        margin: 0;
+        min-width: 0;
+      }
+      .prop {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 6px;
+        margin-left: -6px;
+        border-radius: 6px;
+        width: calc(100% + 6px);
+        text-align: left;
+      }
+      .prop:hover {
+        background: var(--accent);
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        border: 2px solid var(--primary);
+      }
+      .linkbox {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        padding: 9px 10px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        color: var(--muted-foreground);
+        width: 100%;
+        text-align: left;
+      }
+      .linkbox:hover {
+        border-style: solid;
+        color: var(--foreground);
+      }
+      .past {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 6px 0;
+      }
+      .past b {
+        font-weight: 500;
+        display: block;
+      }
+      .past small {
+        color: var(--muted-foreground);
+      }
+
+      /* Empty states */
+      .empty {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 30px;
+      }
+      .empty .ic {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--muted);
+        display: grid;
+        place-items: center;
+        margin: 0 auto 12px;
+        color: var(--muted-foreground);
+      }
+      .empty .ic.ok {
+        background: color-mix(in oklch, var(--ok) 15%, transparent);
+        color: var(--ok);
+      }
+      .empty h4 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      .empty p {
+        margin: 0 0 14px;
+        color: var(--muted-foreground);
+        max-width: 280px;
+      }
+      .shortcuts {
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 6px 14px;
+        text-align: left;
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin: 0 auto;
+      }
+
+      /* Toast + sketch controls */
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        transform: translateX(-50%) translateY(12px);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          transform 0.2s,
+          opacity 0.2s;
+        background: var(--foreground);
+        color: var(--background);
+        border-radius: 10px;
+        padding: 9px 12px 9px 14px;
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        font-weight: 500;
+        z-index: 20;
+      }
+      .toast.show {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(-50%);
+      }
+      .toast button {
+        color: var(--primary);
+        font-weight: 600;
+      }
+      .sketchbar {
+        position: fixed;
+        right: 14px;
+        bottom: 14px;
+        z-index: 30;
+        display: flex;
+        gap: 6px;
+      }
+      .sketchbar .btn {
+        box-shadow: 0 4px 16px oklch(0 0 0 / 0.3);
+      }
+      .notes {
+        position: fixed;
+        right: 14px;
+        bottom: 56px;
+        width: 380px;
+        max-height: 70vh;
+        overflow-y: auto;
+        z-index: 30;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+        box-shadow: 0 12px 40px oklch(0 0 0 / 0.4);
+        display: none;
+      }
+      .notes.show {
+        display: block;
+      }
+      .notes h5 {
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+      .notes ol {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 7px;
+      }
+      .notes li b {
+        font-weight: 600;
+      }
+
+      .popover {
+        position: absolute;
+        z-index: 15;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 4px;
+        box-shadow: 0 12px 30px oklch(0 0 0 / 0.35);
+        min-width: 200px;
+        display: none;
+      }
+      .popover.show {
+        display: block;
+      }
+      .popover .nav {
+        color: var(--foreground);
+      }
+      .popover hr {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 4px 0;
+      }
+
+      .only-compact,
+      .only-phone,
+      .mtop,
+      .dhead,
+      .scrim {
+        display: none;
+      }
+      .swipe {
+        position: relative;
+        overflow: hidden;
+        border-bottom: 1px solid var(--border);
+      }
+      .under {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 22px;
+        font-weight: 600;
+        color: white;
+        background: linear-gradient(90deg, var(--warn) 50%, var(--ok) 50%);
+      }
+      .under span {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        background: oklch(0 0 0 / 0.45);
+      }
+      .dhead {
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px 10px 16px;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        background: var(--rail);
+        z-index: 1;
+      }
+
+      /* Details becomes an overlay sheet */
+      @media (max-width: 1360px) {
+        .details {
+          position: fixed;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          z-index: 40;
+          box-shadow: -10px 0 30px oklch(0 0 0 / 0.3);
+          border-left: 1px solid var(--border);
+        }
+        .dhead {
+          display: flex;
+        }
+        body.details-open .scrim {
+          display: block;
+        }
+      }
+      /* Tablet: list + thread, the rail becomes a drawer */
+      @media (max-width: 1080px) {
+        .inbox {
+          grid-template-columns: 320px minmax(0, 1fr) auto;
+        }
+        .rail {
+          display: none;
+        }
+        .only-compact {
+          display: inline-grid;
+        }
+        body.drawer .rail {
+          display: flex;
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: min(300px, 86vw);
+          z-index: 40;
+          box-shadow: 10px 0 30px oklch(0 0 0 / 0.3);
+          padding-top: max(10px, env(safe-area-inset-top));
+        }
+        body.drawer .scrim {
+          display: block;
+        }
+        .thead {
+          gap: 6px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .thead h2 {
+          white-space: normal;
+          font-size: 15px;
+        }
+        .acts {
+          width: 100%;
+          gap: 4px;
+        }
+        .acts .split {
+          order: 9;
+          margin-left: auto;
+        }
+        .ctabs {
+          flex-wrap: wrap;
+          row-gap: 6px;
+          padding: 6px 6px 0;
+        }
+        .ctabs .from {
+          order: 5;
+          width: 100%;
+          margin-left: 0;
+          padding: 6px 8px;
+          background: var(--muted);
+        }
+        .seg + .from {
+          margin-left: 0;
+        }
+        .sketchbar {
+          right: auto;
+          left: 14px;
+        }
+      }
+      /* Phone: one pane at a time */
+      @media (max-width: 767px) {
+        .appnav {
+          display: none;
+        }
+        .mtop {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 48px;
+          padding: 0 8px;
+          padding-top: env(safe-area-inset-top);
+          border-bottom: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+        .inbox {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .inbox.show-thread > .listpane,
+        .inbox:not(.show-thread) > .thread {
+          display: none;
+        }
+        .pane {
+          border-right: 0;
+        }
+        .only-phone {
+          display: inline-grid;
+        }
+        .details {
+          width: 100%;
+          border-left: 0;
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+        .listhead {
+          padding: 10px 12px 8px 8px;
+        }
+        .search {
+          margin: 0 12px 8px;
+          height: 38px;
+        }
+        .search kbd {
+          display: none;
+        }
+        .chips {
+          padding: 0 12px 10px;
+        }
+        .row {
+          padding: 12px;
+        }
+        .iconbtn {
+          width: 36px;
+          height: 36px;
+        }
+        .thead {
+          padding: 8px 10px 10px;
+        }
+        .thead .hide-phone {
+          display: none;
+        }
+        .acts .lbl {
+          display: none;
+        }
+        .btn {
+          height: 36px;
+        }
+        .msgs {
+          padding: 14px 10px 6px;
+        }
+        .msg {
+          grid-template-columns: 24px 1fr;
+          gap: 8px;
+        }
+        .msg > div:first-child .avatar {
+          width: 24px;
+          height: 24px;
+          font-size: 9.5px;
+        }
+        .bubble {
+          padding: 10px 12px;
+        }
+        .bubble header {
+          flex-wrap: wrap;
+          gap: 2px 8px;
+        }
+        .bubble header .muted {
+          display: none;
+        }
+        .activity {
+          padding-left: 32px;
+          font-size: 11.5px;
+        }
+        .composer {
+          margin: 4px 8px max(8px, env(safe-area-inset-bottom));
+        }
+        .frompop {
+          top: auto;
+          bottom: calc(100% + 6px);
+          left: 0;
+          right: 0;
+          min-width: 0;
+        }
+        .composer textarea,
+        .search input {
+          font-size: 16px; /* stops iOS zooming on focus */
+        }
+        .composer textarea {
+          min-height: 48px;
+          padding: 8px 10px;
+        }
+        .ctools .hint {
+          display: none;
+        }
+        .ctools > :last-child {
+          margin-left: auto;
+        }
+        .casehint {
+          padding: 0 10px 8px;
+          font-size: 11.5px;
+        }
+        .sketchbar {
+          left: auto;
+          bottom: auto;
+          top: max(8px, env(safe-area-inset-top));
+          right: 8px;
+        }
+        .sketchbar .btn {
+          height: 32px;
+          padding: 0 9px;
+        }
+        .sketchbar .t {
+          display: none;
+        }
+        .notes {
+          left: 8px;
+          right: 8px;
+          width: auto;
+          top: 52px;
+          bottom: auto;
+        }
+        .toast {
+          bottom: 100px;
+          max-width: calc(100% - 24px);
+          font-size: 12.5px;
+        }
+      }
+      /* Touch: no hover toolbars, swipe instead */
+      @media (hover: none) {
+        .hoveracts {
+          display: none !important;
+        }
+        .row:not(.sel):hover {
+          background: var(--background);
+        }
+        .row:hover .check {
+          display: none;
+        }
+        .row:hover .avatar {
+          visibility: visible;
+        }
+        .rows.bulk .check {
+          display: grid;
+        }
+        .rows.bulk .avatar {
+          visibility: hidden;
+        }
+        .shortcuts {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- Collapsed app sidebar (unchanged; stand-in only) -->
+      <nav class="appnav">
+        <div class="logo">V</div>
+        <button><i data-lucide="layout-dashboard"></i></button>
+        <button><i data-lucide="message-square"></i></button>
+        <button><i data-lucide="map"></i></button>
+        <button class="on"><i data-lucide="inbox"></i></button>
+        <button><i data-lucide="megaphone"></i></button>
+        <div style="flex: 1"></div>
+        <button><i data-lucide="bell"></i></button>
+        <button><i data-lucide="settings"></i></button>
+      </nav>
+
+      <main>
+        <!-- Stand-in for the dashboard layout's own mobile header -->
+        <div class="mtop">
+          <button class="iconbtn"><i data-lucide="menu"></i></button>
+          <b>Veerify</b>
+        </div>
+        <div class="inbox">
+          <!-- ============ Rail ============ -->
+          <aside class="pane rail">
+            <button class="switcher" id="switcherBtn">
+              <span class="mark">S</span>
+              <span style="flex: 1; min-width: 0"><b>Support</b><small>Helpdesk · 3 addresses</small></span>
+              <i data-lucide="chevrons-up-down" class="muted"></i>
+            </button>
+            <div class="popover" id="switcherPop" style="top: 52px; left: 8px; width: 240px">
+              <button class="nav on">
+                <span class="dot" style="background: oklch(0.55 0.15 200)"></span><span>Support</span
+                ><i data-lucide="check"></i>
+              </button>
+              <button class="nav">
+                <span class="dot" style="background: oklch(0.6 0.15 320)"></span><span>Sales</span
+                ><span class="n">2</span>
+              </button>
+              <hr />
+              <button class="nav"><i data-lucide="plus"></i><span>New inbox</span></button>
+              <button class="nav"><i data-lucide="settings"></i><span>Inbox settings</span></button>
+            </div>
+
+            <button class="compose"><i data-lucide="pen-square"></i>New conversation<kbd>C</kbd></button>
+
+            <button class="nav" data-view="open">
+              <i data-lucide="inbox"></i><span>Inbox</span><span class="n" data-count="open"></span>
+            </button>
+            <button class="nav" data-view="mine">
+              <i data-lucide="user-round"></i><span>Assigned to me</span><span class="n" data-count="mine"></span>
+            </button>
+            <button class="nav" data-view="unassigned">
+              <i data-lucide="user-round-x"></i><span>Unassigned</span><span class="n" data-count="unassigned"></span>
+            </button>
+            <button class="nav" data-view="breaching">
+              <i data-lucide="alarm-clock"></i><span>Breaching soon</span
+              ><span class="n hot" data-count="breaching"></span>
+            </button>
+            <button class="nav" data-view="snoozed">
+              <i data-lucide="clock"></i><span>Snoozed</span><span class="n" data-count="snoozed"></span>
+            </button>
+            <button class="nav" data-view="resolved"><i data-lucide="check-circle-2"></i><span>Resolved</span></button>
+
+            <div class="group">Addresses</div>
+            <button class="nav" data-addr="all"><i data-lucide="mails"></i><span>All addresses</span></button>
+            <button class="nav" data-addr="support" title="Helpdesk address">
+              <i data-lucide="life-buoy"></i><span>support@dotmatrix.no</span
+              ><span class="n" data-addrcount="support"></span>
+            </button>
+            <button class="nav" data-addr="billing" title="Helpdesk address">
+              <i data-lucide="life-buoy"></i><span>billing@dotmatrix.no</span
+              ><span class="n" data-addrcount="billing"></span>
+            </button>
+            <button class="nav" data-addr="hello" title="Mail address">
+              <i data-lucide="mail"></i><span>hello@dotmatrix.no</span><span class="n" data-addrcount="hello"></span>
+            </button>
+
+            <div class="group">Tags <button title="Manage tags in inbox settings">Manage</button></div>
+            <button class="nav" data-view="tag:bug">
+              <span class="dot" style="background: oklch(0.68 0.19 25)"></span><span>bug</span>
+            </button>
+            <button class="nav" data-view="tag:billing">
+              <span class="dot" style="background: oklch(0.75 0.14 150)"></span><span>billing</span>
+            </button>
+            <button class="nav" data-view="tag:onboarding">
+              <span class="dot" style="background: oklch(0.7 0.14 260)"></span><span>onboarding</span>
+            </button>
+
+            <div class="spacer"></div>
+            <div class="foot">
+              <button class="nav" data-view="archived"><i data-lucide="archive"></i><span>Archived</span></button>
+              <button class="nav" data-view="spam">
+                <i data-lucide="shield-alert"></i><span>Spam</span><span class="n">3</span>
+              </button>
+              <button class="nav" data-view="trash"><i data-lucide="trash-2"></i><span>Trash</span></button>
+            </div>
+          </aside>
+
+          <!-- ============ List ============ -->
+          <section class="pane listpane" style="position: relative">
+            <div class="listhead">
+              <button class="iconbtn only-compact" id="drawerBtn" title="Inboxes and views">
+                <i data-lucide="panel-left"></i>
+              </button>
+              <h1 id="viewTitle">Inbox</h1>
+              <span class="count" id="viewCount"></span>
+              <span style="flex: 1"></span>
+              <button class="iconbtn" title="Select" id="selectToggle"><i data-lucide="list-checks"></i></button>
+              <button class="iconbtn" title="Sort: newest first"><i data-lucide="arrow-down-wide-narrow"></i></button>
+            </div>
+            <label class="search">
+              <i data-lucide="search"></i>
+              <input id="search" placeholder="Search name, email, subject…" />
+              <kbd>/</kbd>
+            </label>
+            <div class="chips">
+              <button class="chip" id="filterBtn"><i data-lucide="list-filter"></i>Filter</button>
+              <button class="chip on" id="addrChip"></button>
+              <button class="chip on" id="unreadChip">Unread only <i data-lucide="x"></i></button>
+            </div>
+            <div class="popover" id="filterPop" style="top: 118px; left: 14px">
+              <button class="nav">
+                <i data-lucide="circle-dashed"></i><span>Status</span><i data-lucide="chevron-right"></i>
+              </button>
+              <button class="nav">
+                <i data-lucide="signal-high"></i><span>Priority</span><i data-lucide="chevron-right"></i>
+              </button>
+              <button class="nav">
+                <i data-lucide="user-round"></i><span>Assignee</span><i data-lucide="chevron-right"></i>
+              </button>
+              <button class="nav"><i data-lucide="tag"></i><span>Tag</span><i data-lucide="chevron-right"></i></button>
+              <button class="nav">
+                <i data-lucide="at-sign"></i><span>Address</span><i data-lucide="chevron-right"></i>
+              </button>
+              <hr />
+              <button class="nav">
+                <i data-lucide="star"></i><span>CSAT rating</span><i data-lucide="chevron-right"></i>
+              </button>
+              <button class="nav"><i data-lucide="mail"></i><span>Unread only</span><i data-lucide="check"></i></button>
+            </div>
+            <div class="bulkbar" id="bulkbar">
+              <b id="bulkCount">0 selected</b>
+              <span style="flex: 1"></span>
+              <button class="iconbtn" title="Assign"><i data-lucide="user-plus"></i></button>
+              <button class="iconbtn" title="Tag"><i data-lucide="tag"></i></button>
+              <button class="iconbtn" title="Snooze"><i data-lucide="clock"></i></button>
+              <button class="iconbtn" title="Resolve" id="bulkResolve"><i data-lucide="check"></i></button>
+              <button class="iconbtn" title="Spam"><i data-lucide="shield-alert"></i></button>
+              <button class="iconbtn" title="Cancel" id="bulkCancel"><i data-lucide="x"></i></button>
+            </div>
+            <div class="rows" id="rows"></div>
+          </section>
+
+          <!-- ============ Thread ============ -->
+          <section class="pane thread" id="thread"></section>
+
+          <!-- ============ Details ============ -->
+          <aside class="pane details" id="details"></aside>
+        </div>
+      </main>
+    </div>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="toast" id="toast"><span id="toastText"></span><button id="undo">Undo</button></div>
+
+    <div class="notes" id="notes">
+      <h5>What changed, and why</h5>
+      <ol>
+        <li>
+          <b>No card.</b> The inbox fills the content area edge to edge. Panes are split by hairlines only, so there's
+          no double border and no wasted gutter.
+        </li>
+        <li>
+          <b>Inbox switcher is a dropdown.</b> A full column for a single "Inbox" item left most of the rail empty. The
+          workspace-style switcher at the top lists inboxes and links to settings.
+        </li>
+        <li>
+          <b>Inbox comes first and is the default.</b> It shows every open conversation, assigned or not. Assigned to
+          me, Unassigned and Breaching soon narrow it down. Counts appear in one place only (they were shown twice).
+          "Breaching soon" turns red when it has items.
+        </li>
+        <li>
+          <b>Archived / Spam / Trash move to the rail footer.</b> You rarely need them, so they sit out of the way.
+        </li>
+        <li><b>Tag creation moves to settings.</b> Tags in the rail are now filters; "Manage" opens Inbox settings.</li>
+        <li>
+          <b>The CSAT dropdown is gone from the list header.</b> CSAT, status, priority, assignee, tag and address all
+          live in one Filter menu. Active filters show as removable chips.
+        </li>
+        <li>
+          <b>Rows you can scan.</b> Unread dot, sender, time, subject, preview, then SLA, priority bars, tags and
+          assignee. Hovering shows quick actions (assign, snooze, resolve). The avatar turns into a checkbox for bulk
+          actions.
+        </li>
+        <li>
+          <b>Thread header has one primary action.</b> <i>Resolve</i> (split button with Close / Spam / Trash) next to
+          Assign and Snooze. The three status/priority/assignee selects become properties in the details panel.
+        </li>
+        <li>
+          <b>Details panel.</b> Contact, properties, SLA, linked feedback and past conversations, toggled with
+          <kbd>I</kbd>. Below 1360px it becomes an overlay.
+        </li>
+        <li>
+          <b>Addresses filter every view.</b> "All addresses" is the default. Clicking an address narrows the current
+          view (Unassigned, Assigned to me…) to mail sent to that address, and a chip in the list shows it. Helpdesk
+          addresses have a life-buoy icon, Mail addresses an envelope.
+        </li>
+        <li>
+          <b>Reply box</b> is a single box with Reply / Note tabs. The <i>From</i> picker chooses which address to reply
+          from, defaulting to the one the mail was sent to. A <i>Mail / Support case</i> switch decides what the reply
+          is: switching a plain mail to a support case gives it a ticket number, status, assignee, SLA and a CSAT
+          survey. Cases send with <i>Send & resolve</i>; mail sends with <i>Send</i>.
+        </li>
+        <li>
+          <b>Empty states do something.</b> With nothing selected you see the keyboard shortcuts. An empty view says
+          "All caught up" and links to the next useful view.
+        </li>
+        <li>
+          <b>Mobile.</b> Below 1080px the left column becomes a drawer (panel button by the view title). On phones one
+          pane shows at a time: list, then the conversation with a back button, and details as a full-screen sheet. Rows
+          swipe left to resolve and right to snooze. The reply box puts From on its own row, and inputs use 16px text so
+          iOS doesn't zoom.
+        </li>
+        <li>
+          <b>Keyboard:</b> <kbd>J</kbd>/<kbd>K</kbd> move, <kbd>E</kbd> resolve, <kbd>A</kbd> assign to me,
+          <kbd>R</kbd> reply, <kbd>N</kbd> note, <kbd>/</kbd> search, <kbd>X</kbd> select, <kbd>I</kbd> details.
+        </li>
+      </ol>
+    </div>
+
+    <div class="sketchbar">
+      <button class="btn" id="notesBtn"><i data-lucide="sticky-note"></i><span class="t">Notes</span></button>
+      <button class="btn" id="themeBtn"><i data-lucide="sun-moon"></i><span class="t">Theme</span></button>
+    </div>
+
+    <script>
+      const COLORS = [
+        'oklch(0.6 0.15 30)',
+        'oklch(0.6 0.13 150)',
+        'oklch(0.58 0.16 260)',
+        'oklch(0.62 0.15 320)',
+        'oklch(0.62 0.13 200)',
+        'oklch(0.66 0.14 80)',
+      ]
+      const TAGC = { bug: 'oklch(0.68 0.19 25)', billing: 'oklch(0.75 0.14 150)', onboarding: 'oklch(0.7 0.14 260)' }
+      const ME = { name: 'Andreas F', initials: 'AF', color: 'oklch(0.58 0.16 260)' }
+      const KARI = { name: 'Kari N', initials: 'KN', color: 'oklch(0.62 0.15 320)' }
+
+      const ADDRS = {
+        support: { email: 'support@dotmatrix.no', kind: 'case', label: 'Helpdesk', icon: 'life-buoy' },
+        billing: { email: 'billing@dotmatrix.no', kind: 'case', label: 'Helpdesk', icon: 'life-buoy' },
+        hello: { email: 'hello@dotmatrix.no', kind: 'mail', label: 'Mail', icon: 'mail' },
+      }
+      const convos = [
+        {
+          id: 1048,
+          who: 'Maja Lindqvist',
+          email: 'maja@nordlys.se',
+          company: 'Nordlys AB',
+          subj: 'Invoice charged twice this month',
+          prev: 'Hi! We were billed 2× for October, see the attached statement. Can you refund…',
+          time: '4m',
+          unread: true,
+          sla: { t: '-12m', c: 'late' },
+          prio: 3,
+          urgent: true,
+          tags: ['billing'],
+          addr: 'billing',
+          assignee: null,
+          status: 'open',
+        },
+        {
+          id: 1047,
+          who: 'Tom Becker',
+          email: 'tom@pixelbude.de',
+          company: 'Pixelbude',
+          subj: 'Roadmap embed is blank on Safari 18',
+          prev: 'The iframe loads but stays white. Console shows a CSP frame-ancestors error…',
+          time: '18m',
+          unread: true,
+          sla: { t: '38m', c: 'soon' },
+          prio: 2,
+          tags: ['bug'],
+          addr: 'support',
+          assignee: null,
+          status: 'open',
+        },
+        {
+          id: 1049,
+          who: 'Erik Haugen',
+          email: 'erik@haugen.no',
+          company: 'Haugen Consulting',
+          subj: 'Partnership: Veerify in our CRM?',
+          prev: 'We build CRM setups for Nordic agencies and would love to offer a Veerify integration…',
+          time: '35m',
+          unread: true,
+          sla: null,
+          prio: 0,
+          tags: [],
+          addr: 'hello',
+          assignee: null,
+          status: 'open',
+        },
+        {
+          id: 1046,
+          who: 'Priya Shah',
+          email: 'priya@loomly.io',
+          company: 'Loomly',
+          subj: 'How do I move feedback between products?',
+          prev: 'We split our board into two products and need to move ~40 items over to the new one.',
+          time: '1h',
+          unread: false,
+          sla: { t: '3h', c: '' },
+          prio: 1,
+          tags: ['onboarding'],
+          addr: 'support',
+          assignee: null,
+          status: 'open',
+        },
+        {
+          id: 1045,
+          who: 'Ola Nordmann',
+          email: 'ola@fjord.no',
+          company: 'Fjord Studio',
+          subj: 'Custom domain stuck on "verifying"',
+          prev: 'Added the CNAME yesterday, still pending. dig shows it pointing to you correctly.',
+          time: '2h',
+          unread: true,
+          sla: null,
+          prio: 2,
+          tags: ['bug'],
+          addr: 'support',
+          assignee: 'me',
+          status: 'open',
+        },
+        {
+          id: 1044,
+          who: 'Sofia Russo',
+          email: 'sofia@casa.it',
+          company: 'Casa Digitale',
+          subj: 'Can we get an annual plan?',
+          prev: 'We would love to pay yearly. Do you offer a discount for 12 months upfront?',
+          time: '3h',
+          unread: false,
+          sla: null,
+          prio: 0,
+          tags: ['billing'],
+          addr: 'hello',
+          assignee: 'me',
+          status: 'open',
+        },
+        {
+          id: 1043,
+          who: 'Jonas Berg',
+          email: 'jonas@berg.dev',
+          company: null,
+          subj: 'Re: Import from Canny',
+          prev: 'Thanks, the second run worked. One question about the vote counts though…',
+          time: 'Tue',
+          unread: false,
+          sla: null,
+          prio: 1,
+          tags: ['onboarding'],
+          addr: 'support',
+          assignee: 'kari',
+          status: 'open',
+        },
+        {
+          id: 1042,
+          who: 'Lea Martin',
+          email: 'lea@atelier.fr',
+          company: 'Atelier',
+          subj: 'Two-factor codes rejected',
+          prev: 'Snoozed until Monday: waiting for the customer to check the device clock.',
+          time: 'Mon',
+          unread: false,
+          sla: null,
+          prio: 2,
+          tags: ['bug'],
+          addr: 'support',
+          assignee: 'me',
+          status: 'snoozed',
+        },
+      ]
+      convos.forEach((c, i) => {
+        c.initials = c.who
+          .split(' ')
+          .map((s) => s[0])
+          .join('')
+        c.color = COLORS[i % COLORS.length]
+        c.kind = ADDRS[c.addr].kind
+        c.from = c.addr
+        c.asCase = c.kind === 'case'
+        c.caseNo = c.kind === 'case' ? c.id : null
+      })
+
+      const VIEWS = {
+        mine: { title: 'Assigned to me', f: (c) => c.assignee === 'me' && c.status === 'open' },
+        unassigned: { title: 'Unassigned', f: (c) => !c.assignee && c.status === 'open' },
+        breaching: { title: 'Breaching soon', f: (c) => c.status === 'open' && c.kind === 'case' && c.sla && c.sla.c },
+        open: { title: 'Inbox', f: (c) => c.status === 'open' },
+        snoozed: { title: 'Snoozed', f: (c) => c.status === 'snoozed' },
+        resolved: { title: 'Resolved', f: (c) => c.status === 'resolved' },
+        archived: { title: 'Archived', f: () => false },
+        spam: { title: 'Spam', f: () => false },
+        trash: { title: 'Trash', f: () => false },
+      }
+      const state = {
+        view: 'open',
+        sel: 1048,
+        details: true,
+        mode: 'reply',
+        unreadOnly: false,
+        q: '',
+        bulk: false,
+        picked: new Set(),
+        undo: null,
+        mobileThread: false,
+        drawer: false,
+        addr: 'all',
+        fromOpen: false,
+        drafts: {},
+      }
+
+      const $ = (id) => document.getElementById(id)
+      const icons = () => window.lucide && lucide.createIcons()
+      const av = (p, cls = '') => `<span class="avatar ${cls}" style="background:${p.color}">${p.initials}</span>`
+      const person = (a) => (a === 'me' ? ME : a === 'kari' ? KARI : null)
+      const prioHtml = (c) =>
+        c.prio
+          ? `<span class="prio p${c.prio} ${c.urgent ? 'urgent' : ''}" title="${['', 'Low', 'Normal', 'High'][c.prio]}${c.urgent ? ' · urgent' : ''}"><b></b><b></b><b></b></span>`
+          : ''
+      const tagHtml = (t) => `<span class="tag"><i style="background:${TAGC[t]}"></i>${t}</span>`
+      const slaHtml = (s) => (s && s.c ? `<span class="sla ${s.c}"><i data-lucide="timer"></i>${s.t}</span>` : '')
+
+      function viewDef(v) {
+        if (v.startsWith('tag:')) {
+          const t = v.slice(4)
+          return { title: `#${t}`, f: (c) => c.tags.includes(t) && c.status === 'open' }
+        }
+        return VIEWS[v]
+      }
+      const inAddr = (c) => state.addr === 'all' || c.addr === state.addr
+      function visible() {
+        const q = state.q.toLowerCase()
+        return convos
+          .filter(viewDef(state.view).f)
+          .filter(inAddr)
+          .filter((c) => !state.unreadOnly || c.unread)
+          .filter((c) => !q || (c.who + c.email + c.subj).toLowerCase().includes(q))
+      }
+
+      function renderRail() {
+        document
+          .querySelectorAll('.rail .nav[data-view]')
+          .forEach((b) => b.classList.toggle('on', b.dataset.view === state.view))
+        document.querySelectorAll('[data-count]').forEach((n) => {
+          const k = convos.filter(VIEWS[n.dataset.count].f).filter(inAddr).length
+          n.textContent = k || ''
+        })
+        document
+          .querySelectorAll('.rail .nav[data-addr]')
+          .forEach((b) => b.classList.toggle('on', b.dataset.addr === state.addr))
+        document.querySelectorAll('[data-addrcount]').forEach((n) => {
+          const k = convos.filter((c) => c.addr === n.dataset.addrcount && c.status === 'open' && c.unread).length
+          n.textContent = k || ''
+        })
+      }
+
+      function renderList() {
+        const list = visible()
+        $('viewTitle').textContent = viewDef(state.view).title
+        $('viewCount').textContent = list.length || ''
+        $('unreadChip').style.display = state.unreadOnly ? '' : 'none'
+        $('addrChip').style.display = state.addr === 'all' ? 'none' : ''
+        if (state.addr !== 'all')
+          $('addrChip').innerHTML =
+            `<i data-lucide="${ADDRS[state.addr].icon}"></i>${ADDRS[state.addr].email}<i data-lucide="x"></i>`
+        $('rows').classList.toggle('bulk', state.bulk)
+        $('bulkbar').classList.toggle('show', state.bulk)
+        $('bulkCount').textContent = `${state.picked.size} selected`
+        if (!list.length) {
+          const caughtUp = ['mine', 'unassigned', 'breaching', 'open'].includes(state.view) && !state.q
+          $('rows').innerHTML = caughtUp
+            ? `<div class="empty"><div><div class="ic ok"><i data-lucide="party-popper"></i></div><h4>All caught up</h4><p>Nothing ${viewDef(state.view).title.toLowerCase()} right now. New conversations show up here as they arrive.</p>${state.view === 'open' ? '' : '<button class="btn" data-goto="open"><i data-lucide="inbox"></i>Back to Inbox</button>'}</div></div>`
+            : `<div class="empty"><div><div class="ic"><i data-lucide="${state.q ? 'search-x' : 'inbox'}"></i></div><h4>${state.q ? 'No matches' : 'Nothing here'}</h4><p>${state.q ? `No conversations match "${state.q}" in this view.` : 'Conversations in this folder will appear here.'}</p>${state.q ? '<button class="btn" data-clear>Clear search</button>' : ''}</div></div>`
+          icons()
+          return
+        }
+        $('rows').innerHTML = list
+          .map((c) => {
+            const a = person(c.assignee)
+            return `<div class="swipe"><div class="under"><span><i data-lucide="clock"></i>Snooze</span><span>${c.kind === 'case' ? 'Resolve' : 'Done'}<i data-lucide="check"></i></span></div><div class="row ${c.id === state.sel ? 'sel' : ''} ${c.unread ? 'unread' : ''} ${state.picked.has(c.id) ? 'picked' : ''}" data-id="${c.id}">
+              <div class="av">${c.unread ? '<span class="unread-dot"></span>' : ''}${av(c)}<span class="check" data-pick="${c.id}"><i></i></span></div>
+              <div style="min-width:0">
+                <div class="r1"><span class="who">${c.who}</span><time>${c.time}</time></div>
+                <div class="subj">${c.subj}</div>
+                <div class="prev">${c.prev}</div>
+                <div class="meta">${c.kind === 'mail' ? '<span class="kind"><i data-lucide="mail"></i>Mail</span>' : slaHtml(c.sla)}${prioHtml(c)}${c.tags.map(tagHtml).join('')}<span class="push" style="display:flex;gap:6px;align-items:center">${state.addr === 'all' ? `<span class="kind">${c.addr}@</span>` : ''}${a ? av(a, 'sm') : ''}</span></div>
+              </div>
+              <div class="hoveracts">
+                <button class="iconbtn" title="Assign to me (A)" data-act="assign" data-id="${c.id}"><i data-lucide="user-plus"></i></button>
+                <button class="iconbtn" title="Snooze (H)" data-act="snooze" data-id="${c.id}"><i data-lucide="clock"></i></button>
+                <button class="iconbtn" title="Resolve (E)" data-act="resolve" data-id="${c.id}"><i data-lucide="check"></i></button>
+              </div>
+            </div></div>`
+          })
+          .join('')
+        icons()
+      }
+
+      function renderThread() {
+        const c = convos.find((x) => x.id === state.sel && visible().includes(x))
+        if (!c) {
+          $('thread').innerHTML = `<div class="empty"><div>
+            <div class="ic"><i data-lucide="mails"></i></div>
+            <h4>No conversation selected</h4>
+            <p>Pick one from the list, or work through the queue with the keyboard.</p>
+            <div class="shortcuts">
+              <span><kbd>J</kbd> <kbd>K</kbd></span><span>Next / previous</span>
+              <span><kbd>E</kbd></span><span>Resolve</span>
+              <span><kbd>A</kbd></span><span>Assign to me</span>
+              <span><kbd>R</kbd> / <kbd>N</kbd></span><span>Reply / internal note</span>
+              <span><kbd>/</kbd></span><span>Search</span>
+            </div></div></div>`
+          $('details').innerHTML = ''
+          $('details').classList.add('hidden')
+          icons()
+          return
+        }
+        const a = person(c.assignee)
+        $('thread').innerHTML = `
+          <div class="thead">
+            <button class="iconbtn only-phone" data-back title="Back to list"><i data-lucide="arrow-left"></i></button>
+            <div class="t">
+              <h2>${c.subj} ${c.kind === 'mail' ? '<span class="kind"><i data-lucide="mail"></i>Mail</span>' : ''}${c.caseNo ? `<span class="id">#${c.caseNo}</span>` : ''} ${c.kind === 'case' ? slaHtml(c.sla) : ''}</h2>
+              <div class="sub"><span>${c.who}</span><span class="hide-phone">·</span><span class="hide-phone">${c.email}</span><span>·</span><span>to ${ADDRS[c.addr].email}</span></div>
+            </div>
+            <div class="acts">
+              <button class="btn" data-act="assign" data-id="${c.id}" title="Assign (A)">${a ? av(a, 'sm') + `<span class="lbl">${a.name}</span>` : '<i data-lucide="user-plus"></i><span class="lbl">Assign to me</span>'}</button>
+              <button class="iconbtn" title="Snooze (H)" data-act="snooze" data-id="${c.id}"><i data-lucide="clock"></i></button>
+              <span class="split"><button class="btn primary" data-act="resolve" data-id="${c.id}"><i data-lucide="check"></i>${c.kind === 'case' ? 'Resolve' : 'Done'}</button><button class="btn primary" title="Close, Spam, Trash"><i data-lucide="chevron-down"></i></button></span>
+              <button class="iconbtn" title="More: mark unread, convert to feedback, print"><i data-lucide="more-horizontal"></i></button>
+              <button class="iconbtn" id="detailsBtn" title="Details (I)"><i data-lucide="panel-right"></i></button>
+            </div>
+          </div>
+          <div class="msgs"><div class="msgs-inner">
+            <div class="msg"><div>${av(c)}</div><div class="bubble"><header><b>${c.who}</b><span class="muted">${c.email}</span><time>Today 10:14</time></header>
+              <p>${c.prev.replace('…', '.')}</p><p>Thanks,<br />${c.who.split(' ')[0]}</p>
+              ${c.id === 1048 ? '<span class="attach"><i data-lucide="file-text"></i>statement-oct.pdf <span class="muted">84 KB</span></span>' : ''}
+            </div></div>
+            ${c.tags.length ? `<div class="activity"><i data-lucide="tag"></i>Auto-tagged <b>${c.tags[0]}</b> by rule “${c.addr} → ${c.tags[0]}” · 10:14</div>` : ''}
+            ${c.kind === 'case' ? '<div class="activity"><i data-lucide="send"></i>Auto-reply sent · 10:14</div>' : ''}
+            ${
+              c.id === 1048
+                ? `<div class="msg note"><div>${av(KARI)}</div><div class="bubble"><header><b>Kari N</b><span class="lbl"><i data-lucide="lock"></i>Internal note</span><time>10:21</time></header>
+              <p>Stripe shows two charges on Oct 1. Looks like the retry bug from last week. @Andreas can you refund one and link this to the feedback item?</p>
+            </div></div>`
+                : ''
+            }
+          </div></div>
+          <div class="composer ${state.mode === 'note' ? 'note' : ''}" id="composer">
+            <div class="composer-inner">
+              <div class="ctabs">
+                <button class="ctab ${state.mode === 'reply' ? 'on' : ''}" data-mode="reply"><i data-lucide="reply"></i>Reply</button>
+                <button class="ctab ${state.mode === 'note' ? 'on' : ''}" data-mode="note"><i data-lucide="lock"></i>Note</button>
+                ${state.mode === 'reply' ? `<div class="seg" role="radiogroup" aria-label="Send as"><button class="${!c.asCase ? 'on' : ''}" data-case="0" title="A normal email, no ticket"><i data-lucide="mail"></i>Mail</button><button class="${c.asCase ? 'on' : ''}" data-case="1" title="Tracked case with SLA, status and CSAT"><i data-lucide="life-buoy"></i>Support case</button></div>` : ''}
+                ${state.mode === 'reply' ? `<button class="from" id="fromBtn" title="Reply from">From <b style="color:var(--foreground);font-weight:500">${ADDRS[c.from].email}</b><i data-lucide="chevron-down"></i></button>` : '<span class="from">Only your team sees notes</span>'}
+              </div>
+              ${
+                state.mode === 'reply' && state.fromOpen
+                  ? `<div class="popover show frompop">
+                <div class="poplabel">Reply from</div>
+                ${Object.entries(ADDRS)
+                  .map(
+                    ([k, x]) =>
+                      `<button class="nav" data-from="${k}"><i data-lucide="${x.icon}"></i><span>${x.email}${k === c.addr ? ' <small>· received here</small>' : ''}</span><small>${x.label}</small>${k === c.from ? '<i data-lucide="check"></i>' : '<i style="width:15px"></i>'}</button>`
+                  )
+                  .join('')}
+              </div>`
+                  : ''
+              }
+              <textarea id="reply" placeholder="${state.mode === 'reply' ? `Reply to ${c.who.split(' ')[0]}…  Type / for saved replies` : 'Write a note. @mention a teammate to notify them'}">${state.drafts[c.id] || ''}</textarea>
+              ${state.mode === 'reply' && c.asCase && c.kind === 'mail' ? `<div class="casehint"><i data-lucide="life-buoy"></i><span>Sending this turns the mail into support case <b>#${c.caseNo || c.id}</b>. It gets a status, assignee and SLA, the subject gets a [#${c.caseNo || c.id}] reference, and the customer gets a rating survey when it's resolved.</span></div>` : ''}
+              ${state.mode === 'reply' && !c.asCase && c.kind === 'case' ? `<div class="casehint"><i data-lucide="mail"></i><span>Sending this as plain mail ends the support case. It keeps #${c.caseNo} for reference, but the SLA stops and no rating survey goes out.</span></div>` : ''}
+              <div class="ctools">
+                <button class="iconbtn" title="Attach"><i data-lucide="paperclip"></i></button>
+                <button class="iconbtn" title="Saved replies (/)"><i data-lucide="zap"></i></button>
+                <button class="iconbtn" title="Link feedback"><i data-lucide="message-square-plus"></i></button>
+                <span class="hint"><kbd>⌘</kbd> <kbd>↵</kbd> send</span>
+                ${state.mode !== 'reply' ? '<button class="btn" data-send="note">Add note</button>' : c.asCase ? '<span class="split"><button class="btn primary" data-send="resolve"><i data-lucide="send"></i>Send & resolve</button><button class="btn primary" title="Send, Send & snooze"><i data-lucide="chevron-down"></i></button></span>' : '<button class="btn primary" data-send="send"><i data-lucide="send"></i>Send</button>'}
+              </div>
+            </div>
+          </div>`
+        $('details').classList.toggle('hidden', !state.details)
+        $('details').innerHTML = `
+          <div class="dhead"><b>Details</b><button class="iconbtn" data-closedetails title="Close"><i data-lucide="x"></i></button></div>
+          <div class="sect">
+            <div class="contact">${av(c)}<div style="min-width:0"><b>${c.who}</b><div class="muted" style="font-size:12px">${c.email}</div></div></div>
+            <dl class="kv" style="margin:12px 0 0">
+              ${c.company ? `<dt>Company</dt><dd>${c.company}</dd>` : ''}
+              <dt>Local time</dt><dd>11:32 (CET)</dd>
+              <dt>Customer</dt><dd>since Mar 2025</dd>
+            </dl>
+          </div>
+          <div class="sect">
+            <h3>Properties</h3>
+            <dl class="kv">
+              <dt>Type</dt><dd><span class="prop">${c.kind === 'case' ? `<i data-lucide="life-buoy"></i>Support case #${c.id}` : `<i data-lucide="mail"></i>Mail${c.caseNo ? ` <span class="muted">· was case #${c.caseNo}</span>` : ''}`}</span></dd>
+              <dt>Status</dt><dd><button class="prop"><span class="status-dot"></span>Open</button></dd>
+              <dt>Priority</dt><dd><button class="prop">${prioHtml(c) || '<span class="muted">None</span>'}${c.prio ? ['', 'Low', 'Normal', 'High'][c.prio] : ''}${c.urgent ? ' · urgent' : ''}</button></dd>
+              <dt>Assignee</dt><dd><button class="prop">${a ? av(a, 'sm') + a.name : '<span class="muted">Unassigned</span>'}</button></dd>
+              <dt>Tags</dt><dd><button class="prop" style="flex-wrap:wrap">${c.tags.map(tagHtml).join('')}<i data-lucide="plus" class="muted"></i></button></dd>
+            </dl>
+          </div>
+          ${c.sla && c.kind === 'case' ? `<div class="sect"><h3>SLA</h3><dl class="kv"><dt>First reply</dt><dd>${slaHtml(c.sla) || c.sla.t + ' left'}</dd><dt>Resolution</dt><dd class="muted">due Fri 16:00</dd></dl></div>` : ''}
+          <div class="sect">
+            <h3>Feedback</h3>
+            <button class="linkbox"><i data-lucide="message-square-plus"></i><span>Convert to feedback, or link to an existing item</span></button>
+          </div>
+          <div class="sect">
+            <h3>Past conversations <span>2</span></h3>
+            <button class="past"><b>Seat limit on the Team plan</b><small>Resolved · Aug 12 · ★ 5</small></button>
+            <button class="past"><b>SSO setup question</b><small>Resolved · May 3</small></button>
+          </div>`
+        icons()
+      }
+
+      const isPhone = () => matchMedia('(max-width: 767px)').matches
+      const detailsIsOverlay = () => matchMedia('(max-width: 1360px)').matches
+      // Panes and overlays that depend on screen size
+      function syncChrome() {
+        const thread = !!state.sel && (!isPhone() || state.mobileThread)
+        document.querySelector('.inbox').classList.toggle('show-thread', state.mobileThread && !!state.sel)
+        $('details').classList.toggle('hidden', !state.details || !state.sel)
+        document.body.classList.toggle('details-open', state.details && thread && detailsIsOverlay())
+        document.body.classList.toggle('drawer', state.drawer)
+      }
+      function render() {
+        renderRail()
+        renderList()
+        renderThread()
+        syncChrome()
+      }
+
+      function toast(text, undo) {
+        $('toastText').textContent = text
+        state.undo = undo
+        $('toast').classList.add('show')
+        clearTimeout(toast.t)
+        toast.t = setTimeout(() => $('toast').classList.remove('show'), 4000)
+      }
+      function act(kind, id) {
+        const c = convos.find((x) => x.id === id)
+        if (!c) return
+        const before = { ...c }
+        const list = visible()
+        const idx = list.indexOf(c)
+        if (kind === 'resolve') c.status = 'resolved'
+        if (kind === 'snooze') c.status = 'snoozed'
+        if (kind === 'assign') c.assignee = 'me'
+        c.unread = false
+        // Keep the queue moving: select the next conversation when this one leaves the view
+        if (!visible().includes(c) && state.sel === id) {
+          const nl = visible()
+          state.sel = nl.length ? nl[Math.min(idx, nl.length - 1)].id : null
+          // On a phone, go back to the list rather than jumping into the next conversation
+          if (isPhone()) state.mobileThread = false
+        }
+        render()
+        const label = {
+          resolve: c.kind === 'case' ? 'Resolved' : 'Done',
+          snooze: 'Snoozed until tomorrow 09:00',
+          assign: 'Assigned to you',
+        }[kind]
+        toast(`${label} · #${id}`, () => {
+          Object.assign(c, before)
+          state.sel = id
+          render()
+        })
+      }
+      function send(kind) {
+        const c = convos.find((x) => x.id === state.sel)
+        if (!c) return
+        delete state.drafts[c.id]
+        if (kind === 'note') {
+          renderThread()
+          return toast('Note added', null)
+        }
+        const converted = c.asCase !== (c.kind === 'case')
+        c.kind = c.asCase ? 'case' : 'mail'
+        if (c.kind === 'case' && !c.caseNo) c.caseNo = c.id
+        if (c.kind === 'case' && !c.sla) c.sla = { t: '4h', c: '' }
+        const text = `Sent from ${ADDRS[c.from].email}${converted ? (c.kind === 'case' ? ` · now support case #${c.caseNo}` : ` · now plain mail (keeps #${c.caseNo})`) : ''}`
+        if (kind === 'resolve') {
+          act('resolve', c.id)
+          return toast(text + ' · resolved', state.undo)
+        }
+        render()
+        toast(text, null)
+      }
+      function move(d) {
+        const list = visible()
+        if (!list.length) return
+        const i = list.findIndex((c) => c.id === state.sel)
+        const n = list[Math.max(0, Math.min(list.length - 1, i + d))]
+        state.sel = n.id
+        n.unread = false
+        render()
+      }
+
+      document.addEventListener('click', (e) => {
+        const t = e.target
+        const addr = t.closest('[data-addr]')
+        if (addr || t.closest('#addrChip')) {
+          state.addr = addr ? addr.dataset.addr : 'all'
+          state.drawer = false
+          state.mobileThread = false
+          if (!visible().some((c) => c.id === state.sel)) state.sel = (visible()[0] || {}).id ?? null
+          return render()
+        }
+        const cur = convos.find((x) => x.id === state.sel)
+        if (t.closest('#fromBtn')) {
+          state.fromOpen = !state.fromOpen
+          return renderThread()
+        }
+        const from = t.closest('[data-from]')
+        if (from) {
+          cur.from = from.dataset.from
+          state.fromOpen = false
+          return renderThread()
+        }
+        if (state.fromOpen && !t.closest('.frompop')) {
+          state.fromOpen = false
+          renderThread()
+        }
+        const asCase = t.closest('[data-case]')
+        if (asCase) {
+          cur.asCase = asCase.dataset.case === '1'
+          return renderThread()
+        }
+        const sendBtn = t.closest('[data-send]')
+        if (sendBtn) return send(sendBtn.dataset.send)
+        const view = t.closest('[data-view]')
+        const goto = t.closest('[data-goto]')
+        if (view || goto) {
+          state.view = (view || goto).dataset.view || goto.dataset.goto
+          state.drawer = false
+          state.mobileThread = false
+          state.sel = (visible()[0] || {}).id ?? null
+          state.picked.clear()
+          return render()
+        }
+        if (t.closest('[data-clear]')) {
+          state.q = ''
+          $('search').value = ''
+          return render()
+        }
+        const a = t.closest('[data-act]')
+        if (a) {
+          e.stopPropagation()
+          return act(a.dataset.act, +a.dataset.id)
+        }
+        const pick = t.closest('[data-pick]')
+        if (pick) {
+          const id = +pick.dataset.pick
+          state.picked.has(id) ? state.picked.delete(id) : state.picked.add(id)
+          state.bulk = state.picked.size > 0
+          return renderList()
+        }
+        const row = t.closest('.row')
+        if (row) {
+          if (swiped) return
+          state.sel = +row.dataset.id
+          state.mobileThread = true
+          convos.find((c) => c.id === state.sel).unread = false
+          return render()
+        }
+        const mode = t.closest('[data-mode]')
+        if (mode) {
+          state.mode = mode.dataset.mode
+          renderThread()
+          return $('reply').focus()
+        }
+        if (t.closest('#detailsBtn')) {
+          state.details = !state.details
+          return syncChrome()
+        }
+        if (t.closest('[data-closedetails]') || t.closest('#scrim')) {
+          if (detailsIsOverlay()) state.details = false
+          state.drawer = false
+          return syncChrome()
+        }
+        if (t.closest('[data-back]')) {
+          state.mobileThread = false
+          return render()
+        }
+        if (t.closest('#drawerBtn')) {
+          state.drawer = true
+          return syncChrome()
+        }
+        if (t.closest('#undo')) {
+          state.undo && state.undo()
+          return $('toast').classList.remove('show')
+        }
+        if (t.closest('#unreadChip')) {
+          state.unreadOnly = false
+          return render()
+        }
+        if (t.closest('#selectToggle')) {
+          state.bulk = !state.bulk
+          if (!state.bulk) state.picked.clear()
+          return renderList()
+        }
+        if (t.closest('#bulkCancel')) {
+          state.bulk = false
+          state.picked.clear()
+          return renderList()
+        }
+        if (t.closest('#bulkResolve')) {
+          const n = state.picked.size
+          state.picked.forEach((id) => (convos.find((c) => c.id === id).status = 'resolved'))
+          state.picked.clear()
+          state.bulk = false
+          if (!visible().some((c) => c.id === state.sel)) state.sel = (visible()[0] || {}).id ?? null
+          render()
+          return toast(`Resolved ${n} conversations`, null)
+        }
+        for (const [btn, pop] of [
+          ['filterBtn', 'filterPop'],
+          ['switcherBtn', 'switcherPop'],
+        ]) {
+          if (t.closest('#' + btn)) return $(pop).classList.toggle('show')
+          if (!t.closest('#' + pop)) $(pop).classList.remove('show')
+        }
+        if (t.closest('#filterPop .nav') && t.closest('.nav').textContent.includes('Unread')) {
+          state.unreadOnly = true
+          $('filterPop').classList.remove('show')
+          return render()
+        }
+        if (t.closest('#notesBtn')) return $('notes').classList.toggle('show')
+        if (t.closest('#themeBtn')) {
+          const r = document.documentElement
+          r.dataset.theme = r.dataset.theme === 'light' ? 'dark' : 'light'
+        }
+      })
+
+      document.addEventListener('input', (e) => {
+        if (e.target.id === 'reply' && state.sel) state.drafts[state.sel] = e.target.value
+      })
+      $('search').addEventListener('input', (e) => {
+        state.q = e.target.value
+        renderList()
+        renderThread()
+      })
+
+      document.addEventListener('keydown', (e) => {
+        if (e.target.matches('input, textarea')) {
+          if (e.key === 'Escape') e.target.blur()
+          return
+        }
+        const k = e.key.toLowerCase()
+        if (k === 'j' || e.key === 'ArrowDown') move(1)
+        else if (k === 'k' || e.key === 'ArrowUp') move(-1)
+        else if (k === 'e' && state.sel) act('resolve', state.sel)
+        else if (k === 'a' && state.sel) act('assign', state.sel)
+        else if (k === 'h' && state.sel) act('snooze', state.sel)
+        else if (k === 'i') {
+          state.details = !state.details
+          syncChrome()
+        } else if (k === 'r' || k === 'n') {
+          state.mode = k === 'r' ? 'reply' : 'note'
+          renderThread()
+          $('reply') && $('reply').focus()
+        } else if (k === 'x' && state.sel) {
+          state.picked.has(state.sel) ? state.picked.delete(state.sel) : state.picked.add(state.sel)
+          state.bulk = state.picked.size > 0
+          renderList()
+        } else if (e.key === '/') {
+          e.preventDefault()
+          $('search').focus()
+        } else return
+        e.preventDefault()
+      })
+
+      // Swipe a row: left resolves, right snoozes
+      let sw = null
+      let swiped = false
+      $('rows').addEventListener(
+        'touchstart',
+        (e) => {
+          const row = e.target.closest('.row')
+          swiped = false
+          if (!row || state.bulk) return
+          sw = { row, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, lock: null }
+        },
+        { passive: true }
+      )
+      $('rows').addEventListener(
+        'touchmove',
+        (e) => {
+          if (!sw) return
+          const dx = e.touches[0].clientX - sw.x
+          const dy = e.touches[0].clientY - sw.y
+          if (sw.lock === null && Math.abs(dx) + Math.abs(dy) > 8) sw.lock = Math.abs(dx) > Math.abs(dy)
+          if (!sw.lock) return
+          sw.dx = dx
+          sw.row.style.transition = 'none'
+          sw.row.style.transform = `translateX(${dx}px)`
+        },
+        { passive: true }
+      )
+      $('rows').addEventListener('touchend', () => {
+        if (!sw) return
+        const { row, dx } = sw
+        sw = null
+        row.style.transition = ''
+        swiped = Math.abs(dx) > 8
+        if (Math.abs(dx) < 90) return (row.style.transform = '')
+        row.style.transform = `translateX(${dx > 0 ? '100%' : '-100%'})`
+        setTimeout(() => act(dx < 0 ? 'resolve' : 'snooze', +row.dataset.id), 180)
+      })
+      matchMedia('(max-width: 1360px)').addEventListener('change', syncChrome)
+      matchMedia('(max-width: 767px)').addEventListener('change', syncChrome)
+
+      state.details = !detailsIsOverlay()
+      render()
+    </script>
+  </body>
+</html>
