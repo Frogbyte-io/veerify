@@ -114,23 +114,25 @@ mail still arrives through the previous provider.
 
 ## Customer sending domains
 
-With `SUPPORT_SENDING_DOMAINS_ENABLED=true`, team admins register their own sending domain on
-`/support/settings`. Design: `docs/plans/2026-10-22-custom-sending-domains/design.md`.
+With `SUPPORT_SENDING_DOMAINS_ENABLED=true`, project admins connect their own domains in Project settings → Email.
+Designs: `docs/plans/2026-10-22-custom-sending-domains/design.md` (sending) and
+`docs/plans/2026-10-28-email-addresses/design.md` (addresses, receiving, forwarding).
 
 ### Flow
 
-1. An admin adds `acme.com`. Veerify records a claim for that team and calls Frogmail
+1. An admin adds `acme.com`. Veerify records a claim for that project and calls Frogmail
    (`POST /v4/domains`) with the project key. A domain the project already has is adopted, never deleted
    by Veerify later.
 2. The settings card shows the DNS records: the Frogmail sending records plus a Veerify ownership TXT
-   `_veerify-mail.<domain>` (`veerify-mail-verification=<token>`). DKIM alone does not prove which team owns
+   `_veerify-mail.<domain>` (`veerify-mail-verification=<token>`). DKIM alone does not prove which project owns
    a domain, so every claim needs its own TXT proof.
 3. A poller (every 5 minutes, `support:sending-domains-poll`) checks the pending claims. The domain becomes
    Verified once the TXT resolves and Frogmail reports it `active`. Admins can click Verify now.
-4. Only then may inbox From addresses on that domain send. Pending claims expire after 7 days. A team may hold
-   10 domains, 3 of them pending.
+4. Only then may inbox From addresses on that domain send. Pending claims expire after 7 days. Domain and address
+   limits count per workspace (`lib/mail-plans.ts`): `standard` 3 domains and 20 addresses, `owner` 69 and 420,
+   at most 3 domains pending. Set a workspace's tier with `yarn mail:set-tier <workspace-slug> standard|owner`.
 
-Under the `team` policy (forced by the flag) a From address must sit on a verified claim of the inbox's team,
+Under the project policy (forced by the flag) a From address must sit on a verified claim of the inbox's project,
 or be its platform address. The outbox re-checks this as the final step and fails the delivery with
 `SENDER_DOMAIN_NOT_AUTHORIZED` instead of sending. A domain Frogmail reports as owned by another project
 (`frogmail_sending_owner: "other_project"`) stays Waiting for DNS with the note "Another service already sends
@@ -182,7 +184,7 @@ yarn db:backfill-sending-domains --json           # the same, machine readable
 yarn db:backfill-sending-domains --apply          # create the claims
 ```
 
-It collects every From domain in use (`support_inbox.email_address` and custom `support_inbox_address` rows),
+It collects every From domain in use (`support_inbox.email_address` and custom `project_mail_address` rows),
 grouped by team, and skips platform, reserved and mailbox-provider domains. Per domain:
 
 - Used by one team and `active` on the provider: creates an adopted `pending` claim through the normal claim rules.
@@ -197,11 +199,54 @@ The run is idempotent and calls the provider one domain at a time (`--delay-ms`,
 database host is not local, unless you add `--i-know-this-is-production`. A team at its claim limits (10 domains,
 3 pending) shows as `BLOCKED`. The closing summary lists claims created, conflicts and teams needing DNS action.
 
+### Receiving and forwarding through SES (`MAIL_FORWARDING_ENABLED`)
+
+With Frogmail's SES receiving, a connected domain (apex or subdomain, on any DNS host) gets its own MX record and
+receives mail directly, so a brand-new site can have `hello@newsite.com` without any other mail system. Each address
+delivers to the project's Inbox, forwards to up to 5 external mailboxes, or both. Off by default; until it is on,
+domains behave as described above.
+
+Before turning it on:
+
+1. Frogmail: SES receiving enabled (its one-time AWS setup), and acceptance passed on staging.
+2. The `SUPPORT_MAILGUN_API_KEY` key also needs `usage:read`, on top of `domains:read`, `domains:manage` and
+   `routes:manage`.
+3. Subscribe a native webhook endpoint with the same key (`POST /api/v1/webhook-endpoints`) to
+   `forward_destination.verified`, `forward_destination.revoked` and `forward_destination.suspended`, with URL
+   `https://<veerify-host>/api/support/frogmail/events`. Put its signing secret in `FROGMAIL_WEBHOOK_SECRET`
+   (comma-separate two secrets while rotating). Unset, the endpoint answers 404; the 5-minute domain poll still
+   reconciles destination status, only later.
+4. Add `complained` to the delivery webhook subscriptions (`/api/support/delivery/mailgun`).
+5. Set `MAIL_FORWARDING_ENABLED=true` and redeploy.
+
+What Veerify then does:
+
+- The domain poll enables receiving for every claim (`PUT /api/v1/domains/{d}/receiving`) and stores its status
+  (`pending_verification`, `pending_mx`, `active`). The MX record (`10 inbound-smtp.us-east-1.amazonaws.com`) is
+  shown with the other DNS records. A domain that already receives through Cloudflare stays on the routes-only path.
+- Each address is one route: `match_recipient("^addr$")` at priority 10, or `match_recipient("^.*@domain$")` at
+  priority 100 for a catch-all, with `forward("<inbox URL>")` when it delivers to the Inbox, `forward("<mailbox>")`
+  per forward, then `stop()`. Never `catch_all()`: all customers share one Frogmail project.
+- Every forward mailbox confirms once per domain through an email from Frogmail. Status shows in the address editor;
+  admins can resend or stop it. Spam and virus mail is never forwarded; it lands in the Inbox Spam folder.
+- `mail:forward-usage` (hourly, minute 15) sums `forwarded` from `GET /api/v1/domain-usage` over each workspace's
+  receiving domains for the calendar month (UTC). At the tier limit (`standard` 5,000, `owner` 80,085) it pauses
+  forwarding on those domains (`PATCH …/receiving {"forwarding_paused": true}`); mail still reaches the Inbox. It
+  resumes them in a new month or after a tier change. Forwards count per mailbox.
+- Deleting a domain (`DELETE /v3/domains/{d}`) disables receiving first and revokes its forward mailboxes.
+
+Rollback: set `MAIL_FORWARDING_ENABLED=false`. Existing routes keep their forward actions until each address is
+saved again or the domain is removed; pause forwarding in Frogmail to stop it at once.
+
 ### Frogmail error codes
 
-Veerify reads `X-Frogmail-Error` on domain calls: `domain_taken` (adopt), `domain_owned_elsewhere` (409),
-`invalid_domain` (422), `provider_unavailable` (502, retried), `domain_receives_mail`, plus the auth codes
-`missing_scope` and `unauthenticated`. Without a code it falls back to matching the message text.
+Veerify reads `X-Frogmail-Error` on Mailgun-compatible calls and `code` on native `/api/v1` calls: `domain_taken`
+(adopt), `domain_owned_elsewhere` (409), `invalid_domain` (422), `provider_unavailable` (502, retried),
+`domain_receives_mail`, plus the auth codes `missing_scope` and `unauthenticated`. With forwarding:
+`domain_receives_elsewhere` and `receiving_provider_conflict` (receiving retried on later polls),
+`forward_destination_invalid` and `forward_would_loop` (400 on the address), `forward_requires_ses`,
+`forward_requires_domain`, `domain_not_receiving` and `receiving_unavailable` (409), and `verification_throttled`
+(429 with `Retry-After` on resend). Without a code it falls back to matching the message text.
 
 ### Rollback
 

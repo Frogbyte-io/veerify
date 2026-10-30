@@ -1,13 +1,8 @@
 # Project email addresses — Design
 
 **Created:** October 28, 2026
-**Status:** E1 and E2 merged (PR #106). E3 in progress on `t3/mail-forwarding-e3`, against Frogmail `main` 19c761b
-(Frogbyte-io/frogmail PR #56). See [E3 build](#e3-build).
-**Sketches:** [sketches.html](sketches.html)
-**Builds on:** [custom sending domains](../2026-10-22-custom-sending-domains/design.md),
-[projects and products](../2026-10-23-projects-products/design.md), [support platform](../2026-08-11-support-platform/design.md)
-**Frogmail side:** SES inbound receiving and `forward(email)` routes, designed in the Frogmail repository
-(branch `frogmail/ses-inbound-forwarding`).
+**Status:** E1 and E2 merged (PR #106), E3 merged (PR #107), E4 docs and MCP tools on `t3/mail-e4-docs-mcp`. The
+staging test waits for Frogmail's SES setup; see [Staging acceptance](#staging-acceptance).
 
 **Goal:** A paying workspace adds a project, connects a domain hosted at any DNS provider, and creates email
 addresses on it. Each address delivers to the project's inbox, forwards to any external address, or both. Every
@@ -226,6 +221,42 @@ it resumes the domains it paused. The count is cached per workspace for the Emai
 status (Waiting for confirmation, Confirmed, Bounced, Stopped) and Resend. Email tab: receiving status and the MX
 record per domain, the forwards usage line, and a paused banner. Message view: skipped forwards and removed
 attachments.
+
+## E4 build
+
+- `docs/deployment-mail.md` → "Receiving and forwarding through SES": switch, key scopes, webhook subscription,
+  usage pause, rollback. Stale team-era wording updated to projects and workspace limits.
+- `docs/mcp.md` and `server/mcp/tools/mail.ts`: `mail_list_domains`, `mail_add_domain`, `mail_verify_domain`,
+  `mail_remove_domain`, `mail_list_addresses`, `mail_list_inboxes`, `mail_create_address`, `mail_update_address`,
+  `mail_delete_address`, `mail_resend_forward_confirmation`, `mail_stop_forwarding`. Thin wrappers over the routes,
+  so permissions and validation stay in one place.
+- OpenAPI: every E3 route already carries its `@openapi` block (`yarn openapi:check`).
+
+## Staging acceptance
+
+Run on staging once Frogmail has SES receiving there, with `MAIL_FORWARDING_ENABLED=true`, a webhook endpoint
+subscribed and `FROGMAIL_WEBHOOK_SECRET` set. Use a fresh subdomain of a domain we control (for example
+`e4.frogbyte-test.com`).
+
+1. Connect the subdomain in Project settings → Email. The records list ownership TXT, DKIM, SPF and the SES MX.
+   Publish them. The domain turns Verified, then receiving `active`.
+2. Create `hello@` with Inbox + forward to a mailbox we read. The forward shows Waiting for confirmation; the
+   confirmation email arrives. Before clicking, send a test mail: it reaches the Inbox, and the message shows
+   "Not forwarded … has not confirmed yet".
+3. Click Confirm (the page needs the button press). The forward shows Confirmed within a minute (webhook), or by
+   the next poll with the webhook endpoint disabled.
+4. Send again: it reaches the Inbox and the mailbox, as `"Name via hello@…"` with `Reply-To` the sender.
+5. Send GTUBE (spam) and EICAR (virus) test mails: both land in Spam, neither is forwarded; the virus mail shows
+   "Attachments removed".
+6. Create `*@` (catch-all, forward-only). Mail to `random@` is forwarded and does not reach the Inbox; mail to
+   `hello@` still follows step 4.
+7. Resend twice within 10 minutes: the second answers with a wait time. Stop forwarding: mail stops reaching the
+   mailbox.
+8. To test the pause without sending 5,000 mails, deploy a staging build with `standard.forwardsPerMonth` in
+   `lib/mail-plans.ts` lowered to 2, then run `mail:forward-usage`. Check the paused banner, that mail still
+   reaches the Inbox and is not forwarded, and that restoring the limit resumes forwarding on the next run.
+9. Remove the domain: Frogmail's domain, routes and destinations are gone; the MX can be deleted.
+10. MCP: repeat steps 1–2 with the `mail_*` tools from Claude Code against staging.
 
 ## Open questions
 
