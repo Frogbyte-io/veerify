@@ -39,6 +39,7 @@ import { requireConversationAccess } from '~/server/utils/support-access'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
+import { resolveConversationSender } from '~/server/utils/conversation-sender'
 import { contact, conversationMessage, conversationParticipant, supportInbox } from '~/server/database/schema/support'
 import { emailDomain, parseReferences } from '~/server/services/support-channels/types'
 import { buildOutgoingReply } from '~/server/utils/outbound-reply'
@@ -109,11 +110,20 @@ export default defineEventHandler(async (event) => {
 
   if (isOutgoing) {
     const [inbox] = await db.select().from(supportInbox).where(eq(supportInbox.id, existing.inboxId)).limit(1)
+    // The address the conversation arrived on when it is one of the project's
+    // verified addresses, otherwise the inbox's sending address.
+    const senderAddress = inbox
+      ? await resolveConversationSender({
+          inboxId: inbox.id,
+          inboxEmailAddress: inbox.emailAddress,
+          mailAddressId: existing.mailAddressId,
+        })
+      : null
 
     // Settings surfaces this before an agent gets here (SUP-04-6); this is
     // the backstop for the case that slipped through - failing loudly here
     // beats silently queuing a delivery that can never send.
-    if (!inbox?.emailAddress) {
+    if (!inbox || !senderAddress) {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
@@ -124,14 +134,14 @@ export default defineEventHandler(async (event) => {
     // Project sender policy (design §4.5). Checked before anything is reserved or
     // written so a blocked reply leaves no half-finished state. Never blocks
     // under the legacy policy.
-    if (!(await isSenderAllowedForProject(existing.projectId, inbox.emailAddress))) {
-      const senderDomain = emailDomain(inbox.emailAddress) ?? inbox.emailAddress
+    if (!(await isSenderAllowedForProject(existing.projectId, senderAddress))) {
+      const senderDomain = emailDomain(senderAddress) ?? senderAddress
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
         data: createErrorResponse(
           'SENDER_NOT_VERIFIED',
-          `Replies from ${inbox.emailAddress} are blocked until ${senderDomain} is verified in Support settings`
+          `Replies from ${senderAddress} are blocked until ${senderDomain} is verified in Project settings → Email`
         ),
       })
     }
@@ -180,11 +190,11 @@ export default defineEventHandler(async (event) => {
       userId: session.user.id,
     })
 
-    const domain = emailDomain(inbox.emailAddress) ?? emailDomain(process.env.MAIL_FROM ?? '') ?? 'localhost'
+    const domain = emailDomain(senderAddress) ?? emailDomain(process.env.MAIL_FROM ?? '') ?? 'localhost'
 
     try {
       outgoing = buildOutgoingReply({
-        inbox: { emailAddress: inbox.emailAddress, fromName: inbox.fromName, signature: inbox.signature },
+        inbox: { emailAddress: senderAddress, fromName: inbox.fromName, signature: inbox.signature },
         contact: { email: contactRow.email, name: contactRow.name },
         cc: ccContacts.filter((c) => c.email).map((c) => ({ email: c.email as string })),
         subject: existing.subject ?? '(no subject)',

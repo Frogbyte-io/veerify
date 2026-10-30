@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { supportInboxAddress } from '../../server/database/schema/support'
+import { projectMailAddress } from '../../server/database/schema/support'
 import {
   deleteOrganization,
   seedOrganization,
@@ -86,8 +86,8 @@ describe('platform address generation', () => {
 
     const rows = await db
       .select()
-      .from(supportInboxAddress)
-      .where(and(eq(supportInboxAddress.inboxId, projectA.inboxId), eq(supportInboxAddress.kind, 'platform')))
+      .from(projectMailAddress)
+      .where(and(eq(projectMailAddress.inboxId, projectA.inboxId), eq(projectMailAddress.kind, 'platform')))
     expect(rows).toHaveLength(1)
   })
 
@@ -97,8 +97,8 @@ describe('platform address generation', () => {
     expect(new Set(results.map((row) => row?.id)).size).toBe(1)
     const rows = await db
       .select()
-      .from(supportInboxAddress)
-      .where(and(eq(supportInboxAddress.inboxId, projectB.inboxId), eq(supportInboxAddress.kind, 'platform')))
+      .from(projectMailAddress)
+      .where(and(eq(projectMailAddress.inboxId, projectB.inboxId), eq(projectMailAddress.kind, 'platform')))
     expect(rows).toHaveLength(1)
   })
 
@@ -132,7 +132,7 @@ describe('platform address generation', () => {
 describe('direct receiving routes', () => {
   async function addAddress(seed: SeededProject, address: string, kind = 'custom') {
     const [row] = await db
-      .insert(supportInboxAddress)
+      .insert(projectMailAddress)
       .values({ id: `addr_${randomUUID()}`, inboxId: seed.inboxId, projectId: seed.projectId, address, kind })
       .returning()
     return row
@@ -156,8 +156,25 @@ describe('direct receiving routes', () => {
         forwardUrl: expect.stringMatching(/\/api\/support\/inbound\/mailgun$/),
       })
     )
-    const [stored] = await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, row.id))
+    const [stored] = await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, row.id))
     expect(stored).toMatchObject({ providerRouteId: 'route-1', providerRouteStatus: 'active' })
+  })
+
+  it('creates the domain-wide route for a catch-all on a verified, receiving claim', async () => {
+    await seedSendingDomain({ projectId: projectA.projectId, domain: 'route-all.example', receivesViaProvider: true })
+    const row = await addAddress(projectA, '*@route-all.example')
+
+    const status = await createDirectRouteForAddress({
+      projectId: projectA.projectId,
+      inboxId: projectA.inboxId,
+      address: row,
+    })
+
+    expect(status).toBe('active')
+    // The provider turns `*@domain` into match_recipient(".*@domain") at the catch-all priority.
+    expect(provider.createInboundRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ address: '*@route-all.example' })
+    )
   })
 
   it('marks the route failed, keeps the address, and does not throw when the provider errors', async () => {
@@ -172,7 +189,7 @@ describe('direct receiving routes', () => {
     })
 
     expect(status).toBe('failed')
-    const [stored] = await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, row.id))
+    const [stored] = await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, row.id))
     expect(stored).toMatchObject({ providerRouteId: null, providerRouteStatus: 'failed' })
   })
 

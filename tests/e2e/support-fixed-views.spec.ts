@@ -11,7 +11,7 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
 test('support inbox exposes fixed views with Unassigned as the scoped landing view', async ({ page, request }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const headers = withAuthHeaders(sessionCookie, '/support')
+  const headers = withAuthHeaders(sessionCookie, '/inbox')
   const projectResponse = await request.get('/api/projects/active', { headers })
   expect(projectResponse.ok()).toBeTruthy()
   const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
@@ -134,7 +134,7 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
       .where(eq(conversation.id, conversationRows[0].id))
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto(`/support?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`/inbox?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
 
     await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('support-view-assigned-to-me')).toHaveAttribute('aria-pressed', 'false')
@@ -155,7 +155,7 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
     await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[0].id}`)).toHaveCount(0)
 
-    await page.goto(`/support?inboxId=${inboxId}&view=resolved`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`/inbox?inboxId=${inboxId}&view=resolved`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId('support-view-resolved')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId(`support-conversation-${conversationRows[2].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toHaveCount(0)

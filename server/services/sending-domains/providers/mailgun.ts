@@ -54,7 +54,45 @@ export function escapeRouteAddress(address: string): string {
   if (!/^[a-z0-9._-]+@[a-z0-9.-]+$/.test(value)) {
     throw new SendingDomainProviderError('invalid_domain', 'The address cannot be used in a provider route', false)
   }
+  return escapeRoutePattern(value)
+}
+
+/** Escapes the regex metacharacters a validated route pattern can contain (`.`, `-`, `_`). */
+function escapeRoutePattern(value: string): string {
   return value.replace(/[.\-_]/g, (char) => `\\${char}`)
+}
+
+/** Exact addresses are evaluated first; a catch-all only gets what no exact route took. */
+export const EXACT_ROUTE_PRIORITY = 10
+export const CATCH_ALL_ROUTE_PRIORITY = 100
+
+const ROUTE_DOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/
+
+/**
+ * The route expression and priority for a receiving address (design
+ * 2026-10-28-email-addresses, "Frogmail contract"):
+ *
+ * - `support@acme.com`: `match_recipient("^support@acme\.com$")` at priority 10;
+ * - `*@acme.com` (catch-all): `match_recipient("^.*@acme\.com$")` at priority 100,
+ *   every address of exactly that domain, not of its subdomains. Frogmail reads
+ *   `.*@domain` as the zone's catch-all and strips the anchors; on Mailgun the
+ *   anchors keep `x@acme.com.evil.test` from matching.
+ *
+ * Never `catch_all()`: in Frogmail's shared project it would match every
+ * customer's domains. The caller adds `stop()` to both.
+ */
+export function inboundRouteDefinition(address: string): { expression: string; priority: number } {
+  const value = String(address ?? '')
+    .trim()
+    .toLowerCase()
+  if (value.startsWith('*@')) {
+    const domain = value.slice(2)
+    if (!ROUTE_DOMAIN.test(domain)) {
+      throw new SendingDomainProviderError('invalid_domain', 'The domain cannot be used in a provider route', false)
+    }
+    return { expression: `match_recipient("^.*@${escapeRoutePattern(domain)}$")`, priority: CATCH_ALL_ROUTE_PRIORITY }
+  }
+  return { expression: `match_recipient("^${escapeRouteAddress(value)}$")`, priority: EXACT_ROUTE_PRIORITY }
 }
 
 function mapRecord(
@@ -180,11 +218,11 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     forwardUrl: string
     description: string
   }): Promise<{ routeId: string }> {
-    const pattern = escapeRouteAddress(input.address)
+    const route = inboundRouteDefinition(input.address)
     const form = new URLSearchParams()
-    form.append('priority', '10')
+    form.append('priority', String(route.priority))
     form.append('description', input.description)
-    form.append('expression', `match_recipient("^${pattern}$")`)
+    form.append('expression', route.expression)
     form.append('action', `forward("${input.forwardUrl.replace(/["\\]/g, '')}")`)
     form.append('action', 'stop()')
 

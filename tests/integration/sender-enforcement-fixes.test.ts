@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import { db } from '../../server/database/drizzle'
 import { user } from '../../server/database/schema/auth'
-import { conversationMessage, supportSendingDomain } from '../../server/database/schema/support'
+import { conversationMessage, projectMailDomain } from '../../server/database/schema/support'
 import {
   deleteOrganization,
   seedOrganization,
@@ -99,8 +99,7 @@ let projectB: SeededProject
 const domainA = fresh()
 // Decided before this file inserts anything, so the legacy-without-claims block
 // only runs against a database that really has no claims (a CI database does).
-const claimsExistAtStart =
-  (await db.select({ id: supportSendingDomain.id }).from(supportSendingDomain).limit(1)).length > 0
+const claimsExistAtStart = (await db.select({ id: projectMailDomain.id }).from(projectMailDomain).limit(1)).length > 0
 
 function actAs(seed: SeededProject, emailAddress: string, params: Record<string, string> = {}) {
   state.projectId = seed.projectId
@@ -189,7 +188,7 @@ describe.skipIf(claimsExistAtStart)('H1: flag off and no claims anywhere (legacy
 
     expect(await sendingDomains.resolveEffectiveSenderPolicy()).toBe('project')
     // Leave the table as found, for the stale-cache test that follows.
-    await db.delete(supportSendingDomain).where(eq(supportSendingDomain.id, created.id))
+    await db.delete(projectMailDomain).where(eq(projectMailDomain.id, created.id))
     await db.delete(user).where(eq(user.id, `sfix_user_${run}`))
   })
 
@@ -344,9 +343,9 @@ describe('H2: receiving addresses on a provider that routes by header (Postmark)
 
   it('refuses a domain that is only pending for the project', async () => {
     const [pending] = await db
-      .select({ domain: supportSendingDomain.domain })
-      .from(supportSendingDomain)
-      .where(eq(supportSendingDomain.projectId, projectB.projectId))
+      .select({ domain: projectMailDomain.domain })
+      .from(projectMailDomain)
+      .where(eq(projectMailDomain.projectId, projectB.projectId))
     expect(pending).toBeTruthy()
     await expect(
       sendingDomains.assertReceivingAddressAllowed(projectB.projectId, `support@${unclaimed}`)
@@ -409,12 +408,10 @@ describe('L1: concurrent claims by one project', () => {
       const results = await Promise.all(attempts)
 
       const created = results.filter((r) => r === 'ok').length
-      expect(created).toBe(3) // MAX_PENDING_PER_PROJECT
-      expect(results.filter((r) => r === 'PENDING_LIMIT_REACHED')).toHaveLength(5)
-      const rows = await db
-        .select()
-        .from(supportSendingDomain)
-        .where(eq(supportSendingDomain.projectId, racer.projectId))
+      // Standard tier: 3 domains (and 3 pending) per workspace; the domain limit is checked first.
+      expect(created).toBe(3)
+      expect(results.filter((r) => r === 'MAIL_DOMAIN_LIMIT_REACHED')).toHaveLength(5)
+      const rows = await db.select().from(projectMailDomain).where(eq(projectMailDomain.projectId, racer.projectId))
       expect(rows).toHaveLength(3)
     } finally {
       await deleteOrganization(orgIdLocal)

@@ -99,12 +99,12 @@
           >
             <Icon name="lucide:alert-circle" class="w-3 h-3 text-destructive shrink-0" />
             <span v-if="isSenderBlocked" class="text-xs text-destructive" data-testid="support-message-sender-blocked">
-              Not sent: this inbox's From address isn't verified for your project.
+              Not sent: the From address isn't verified for your project.
               <NuxtLink
-                to="/support/settings"
+                to="/project/settings?tab=email"
                 class="underline hover:no-underline"
                 data-testid="support-message-sender-link"
-                >Verify the domain in Support settings.</NuxtLink
+                >Verify the domain in Project settings → Email.</NuxtLink
               >
             </span>
             <span v-else class="text-xs text-destructive">{{

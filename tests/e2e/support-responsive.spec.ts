@@ -28,14 +28,14 @@ test.describe.serial('support inbox responsive layout', () => {
     const page = await context.newPage()
     await loginViaProgrammaticPage(page, fixture.users.projectAdmin)
     const activeProject = await page.request.post('/api/projects/active', {
-      headers: withOriginHeaders('/support'),
+      headers: withOriginHeaders('/inbox'),
       data: { projectId: fixture.projectId },
     })
     expect(activeProject.ok()).toBe(true)
 
     if (!conversationId) {
       const contacts = await page.request.post('/api/support/contacts', {
-        headers: withOriginHeaders('/support'),
+        headers: withOriginHeaders('/inbox'),
         data: {
           projectId: fixture.projectId,
           name: 'Responsive Customer',
@@ -46,7 +46,7 @@ test.describe.serial('support inbox responsive layout', () => {
       const contactId = (await contacts.json()).data.contact.id as string
       fixture.contactIds.push(contactId)
       const created = await page.request.post('/api/support/conversations', {
-        headers: withOriginHeaders('/support'),
+        headers: withOriginHeaders('/inbox'),
         data: { inboxId: fixture.primaryInboxId, contactId, subject: 'Responsive layout check' },
       })
       expect(created.ok()).toBe(true)
@@ -54,7 +54,7 @@ test.describe.serial('support inbox responsive layout', () => {
       fixture.conversationIds.push(conversationId)
     }
 
-    await page.goto(`/support?inboxId=${fixture.primaryInboxId}&view=all`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`/inbox?inboxId=${fixture.primaryInboxId}&view=all`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId(`support-conversation-${conversationId}`)).toBeVisible()
     return page
   }
@@ -82,7 +82,7 @@ test.describe.serial('support inbox responsive layout', () => {
 
     await page.getByTestId('support-thread-back').click()
     await expect(page.getByTestId('support-conversation-search')).toBeVisible()
-    await expect(page.getByTestId('support-settings-link')).toHaveAttribute('href', '/support/settings')
+    await expect(page.getByTestId('support-settings-link')).toHaveAttribute('href', '/inbox/settings')
   })
 
   test('tablet shows the list beside the thread', async ({ browser }) => {
@@ -106,7 +106,7 @@ test.describe.serial('support inbox responsive layout', () => {
 
   test('settings page fits a phone and offers section links', async ({ browser }) => {
     const page = await openInbox(browser, { width: 390, height: 844 })
-    await page.goto(`/support/settings?inboxId=${fixture.primaryInboxId}`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`/inbox/settings?inboxId=${fixture.primaryInboxId}`, { waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId('support-settings-section-nav')).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(1)

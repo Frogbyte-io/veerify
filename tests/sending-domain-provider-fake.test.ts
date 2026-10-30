@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSendingDomainProvider } from '../server/services/sending-domains'
 import {
   FakeSendingDomainProvider,
+  fakeInboundRoutes,
   resetFakeSendingDomainState,
 } from '../server/services/sending-domains/providers/fake'
 import { MailgunSendingDomainProvider } from '../server/services/sending-domains/providers/mailgun'
@@ -53,6 +54,16 @@ describe('fake provider', () => {
       description: 'd',
     })
     await expect(provider.deleteInboundRoute(routeId)).resolves.toBeUndefined()
+  })
+
+  it('records exact and catch-all routes with the Mailgun expression and priority', async () => {
+    const provider = new FakeSendingDomainProvider()
+    await provider.createInboundRoute({ address: 'hello@acme.test', forwardUrl: 'https://x', description: 'd' })
+    await provider.createInboundRoute({ address: '*@acme.test', forwardUrl: 'https://x', description: 'd' })
+    expect(fakeInboundRoutes()).toEqual([
+      { address: 'hello@acme.test', expression: 'match_recipient("^hello@acme\\.test$")', priority: 10 },
+      { address: '*@acme.test', expression: 'match_recipient("^.*@acme\\.test$")', priority: 100 },
+    ])
   })
 })
 

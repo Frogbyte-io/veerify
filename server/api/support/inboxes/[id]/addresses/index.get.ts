@@ -4,6 +4,10 @@
  *   get:
  *     tags: [Support]
  *     summary: List an inbox's receiving addresses
+ *     description: >
+ *       Each address carries its behaviour (`mail` or `helpdesk`), product tag,
+ *       the project email domain it sits on (`domainId`), its provider route
+ *       state and `isCatchAll` (true for `*@domain`).
  *     operationId: listSupportInboxAddresses
  *     parameters:
  *       - in: path
@@ -11,7 +15,20 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Address list }
+ *       200:
+ *         description: Address list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     addresses:
+ *                       type: array
+ *                       items: { $ref: '#/components/schemas/SupportInboxAddress' }
  *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  */
@@ -20,7 +37,8 @@ import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
-import { supportInboxAddress } from '~/server/database/schema/support'
+import { projectMailAddress } from '~/server/database/schema/support'
+import { toInboxAddressResponse } from '~/server/utils/inbox-address-rules'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -30,9 +48,9 @@ export default defineEventHandler(async (event) => {
 
   const addresses = await db
     .select()
-    .from(supportInboxAddress)
-    .where(eq(supportInboxAddress.inboxId, inboxId))
-    .orderBy(asc(supportInboxAddress.createdAt))
+    .from(projectMailAddress)
+    .where(eq(projectMailAddress.inboxId, inboxId))
+    .orderBy(asc(projectMailAddress.createdAt))
 
-  return createSuccessResponse({ addresses })
+  return createSuccessResponse({ addresses: addresses.map(toInboxAddressResponse) })
 })

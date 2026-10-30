@@ -3,6 +3,7 @@ import {
   isProtectedRoute,
   isPublicHostAppRoute,
   legacyChangelogRedirect,
+  legacySupportRedirect,
   legacyRoadmapRedirect,
   resolvePublicHostRedirect,
 } from '~/lib/route-guard'
@@ -46,6 +47,14 @@ describe('app host', () => {
     expect(legacyChangelogRedirect('/changelog/e1', '?product=acme')).toBe('/dashboard/changelog/e1?product=acme')
     expect(legacyChangelogRedirect('/changelogs')).toBeNull()
     expect(legacyChangelogRedirect('/dashboard/changelog')).toBeNull()
+  })
+
+  it('forwards old /support links to /inbox, keeping the rest of the path and the query', () => {
+    expect(legacySupportRedirect('/support', '?conversationId=c1')).toBe('/inbox?conversationId=c1')
+    expect(legacySupportRedirect('/support/settings', '?inboxId=i1')).toBe('/inbox/settings?inboxId=i1')
+    expect(legacySupportRedirect('/support/contacts/k1')).toBe('/inbox/contacts/k1')
+    expect(legacySupportRedirect('/supportive')).toBeNull()
+    expect(legacySupportRedirect('/api/support/conversations')).toBeNull()
   })
 
   it('protects the dashboard roadmap and keeps bare /roadmap out of the protected set', () => {

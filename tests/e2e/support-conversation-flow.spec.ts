@@ -84,7 +84,7 @@ test.describe.serial('support conversation flow', () => {
         .values({ id: projectMemberId, projectId, userId: adminUserId, role: 'admin', createdAt: new Date() })
 
       const agentCookie = await signInAndGetSessionCookie(request, agentCredentials)
-      const headers = withAuthHeaders(agentCookie, '/support')
+      const headers = withAuthHeaders(agentCookie, '/inbox')
       const deniedResponse = await request.post('/api/support/inboxes', {
         headers,
         data: { projectId, name: `Denied E2E Inbox ${suffix}`, slug: `denied-e2e-inbox-${suffix}` },
@@ -93,7 +93,7 @@ test.describe.serial('support conversation flow', () => {
       expect(await deniedResponse.text()).toContain('FORBIDDEN')
 
       const adminCookie = await signInAndGetSessionCookie(request, adminCredentials)
-      const adminHeaders = withAuthHeaders(adminCookie, '/support')
+      const adminHeaders = withAuthHeaders(adminCookie, '/inbox')
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers: adminHeaders,
         data: { projectId, name: `E2E Inbox ${suffix}`, slug: `e2e-inbox-${suffix}` },
@@ -170,11 +170,11 @@ test.describe.serial('support conversation flow', () => {
       // the note cannot accidentally become customer-visible.
       await loginViaProgrammaticPage(page, agentCredentials)
       const activeProjectResponse = await page.request.post('/api/projects/active', {
-        headers: withOriginHeaders('/support'),
+        headers: withOriginHeaders('/inbox'),
         data: { projectId },
       })
       expect(activeProjectResponse.ok()).toBeTruthy()
-      await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
+      await page.goto(`/inbox?inboxId=${inboxId}&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })
       await expect(page.getByTestId('support-thread-sla')).toBeVisible({ timeout: 30_000 })

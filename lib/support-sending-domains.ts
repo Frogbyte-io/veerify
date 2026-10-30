@@ -4,6 +4,7 @@
  */
 
 import { parse as parseDomain } from 'tldts'
+import type { MailUsage } from './mail-plans'
 
 export const SUPPORT_SENDING_DOMAIN_STATUSES = [
   'provisioning',
@@ -65,7 +66,13 @@ export interface SendingDomainListResponse {
   provider: string | null
   capabilities: SendingDomainCapabilities | null
   canManage: boolean
+  /**
+   * `maxDomains` / `maxPending` are the workspace mail limits (shared by every
+   * project of the workspace, see `lib/mail-plans.ts`), not per-project caps.
+   */
   limits: { maxDomains: number; maxPending: number; pendingTtlDays: number }
+  /** The workspace's mail tier, limits and current usage. */
+  usage: MailUsage
   providerConfigured: boolean
   missingEnvVars: string[]
   domains: SendingDomainView[]
@@ -88,8 +95,6 @@ export interface SendingStatusResponse {
   authorization: ProjectSenderVerdict
 }
 
-export const MAX_DOMAINS_PER_PROJECT = 10
-export const MAX_PENDING_PER_PROJECT = 3
 export const PENDING_TTL_DAYS = 7
 /** A suspended claim that nobody repairs is released after this long (design §5.3). */
 export const SUSPENDED_TTL_DAYS = 30
@@ -338,7 +343,7 @@ export function relativeRecordHost(fqdn: string, zone: string): string {
 
 export type OwnershipCheckResult = 'valid' | 'invalid' | 'unknown'
 
-/** The slice of a `support_sending_domain` row `applyProviderResult` reads. */
+/** The slice of a `project_mail_domain` row `applyProviderResult` reads. */
 export interface SendingDomainTransitionRow {
   status: string
   createdAt?: Date | null

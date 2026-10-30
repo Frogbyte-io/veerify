@@ -64,6 +64,8 @@ const {
   capabilitiesForRole,
   requireConversationAccess,
   resolveInboxByAddress,
+  resolveInboxForRecipients,
+  inboundAddressLookupOrder,
 } = await import('~/server/utils/support-access')
 
 async function expectStatus(promise: Promise<unknown>, statusCode: number) {
@@ -353,10 +355,109 @@ describe('resolveInboxByAddress', () => {
     await expect(resolveInboxByAddress('nobody@acme.com')).resolves.toBeNull()
   })
 
+  it('falls back to the domain catch-all when no exact address matches', async () => {
+    queueResult([]) // exact lookup: nothing
+    queueResult([{ address: { id: 'catch', inboxId: 'i2', address: '*@acme.com', behaviour: 'mail' } }])
+    queueResult([{ id: 'i2', projectId: 't1' }])
+
+    await expect(resolveInboxByAddress('Anything@Acme.com')).resolves.toMatchObject({
+      inbox: { id: 'i2' },
+      address: { id: 'catch', behaviour: 'mail' },
+      matchedBy: 'catch_all',
+      recipient: 'anything@acme.com',
+    })
+  })
+
   it('returns null when the address exists but its inbox is gone', async () => {
     queueResult([{ id: 'addr1', inboxId: 'i1', address: 'support@acme.com', projectId: null }])
     queueResult([])
 
     await expect(resolveInboxByAddress('support@acme.com')).resolves.toBeNull()
+  })
+})
+
+describe('inboundAddressLookupOrder', () => {
+  it('tries every exact address, in recipient order, before any catch-all', () => {
+    expect(inboundAddressLookupOrder(['Hello@A.com', 'sales@b.com'])).toEqual([
+      { address: 'hello@a.com', matchedBy: 'exact', recipient: 'hello@a.com' },
+      { address: 'sales@b.com', matchedBy: 'exact', recipient: 'sales@b.com' },
+      { address: '*@a.com', matchedBy: 'catch_all', recipient: 'hello@a.com' },
+      { address: '*@b.com', matchedBy: 'catch_all', recipient: 'sales@b.com' },
+    ])
+  })
+
+  it('uses the exact domain only: a subdomain recipient never reaches the parent catch-all', () => {
+    const order = inboundAddressLookupOrder(['x@mail.acme.com'])
+    expect(order.map((lookup) => lookup.address)).toEqual(['x@mail.acme.com', '*@mail.acme.com'])
+    expect(order.map((lookup) => lookup.address)).not.toContain('*@acme.com')
+  })
+
+  it('de-duplicates catch-alls of recipients on one domain, keeping the first recipient', () => {
+    expect(inboundAddressLookupOrder(['a@acme.com', 'b@acme.com']).filter((l) => l.matchedBy === 'catch_all')).toEqual([
+      { address: '*@acme.com', matchedBy: 'catch_all', recipient: 'a@acme.com' },
+    ])
+  })
+
+  it('treats a literal *@domain recipient as a catch-all lookup only, after every exact address', () => {
+    expect(inboundAddressLookupOrder(['*@a.com', 'hello@b.com'])).toEqual([
+      { address: 'hello@b.com', matchedBy: 'exact', recipient: 'hello@b.com' },
+      { address: '*@a.com', matchedBy: 'catch_all', recipient: '*@a.com' },
+      { address: '*@b.com', matchedBy: 'catch_all', recipient: 'hello@b.com' },
+    ])
+  })
+
+  it('skips values that are not addresses', () => {
+    expect(inboundAddressLookupOrder(['', 'nobody', '@acme.com', 'x@'])).toEqual([])
+  })
+})
+
+describe('resolveInboxForRecipients', () => {
+  it("an exact address of a later recipient beats an earlier recipient's catch-all", async () => {
+    // One exact query for all recipients: only the second recipient has an exact row.
+    queueResult([{ id: 'exact-b', inboxId: 'i-b', address: 'sales@b.com', behaviour: 'helpdesk' }])
+    queueResult([{ id: 'i-b', projectId: 't1' }])
+
+    await expect(resolveInboxForRecipients(['hello@a.com', 'sales@b.com'])).resolves.toMatchObject({
+      inbox: { id: 'i-b' },
+      address: { id: 'exact-b' },
+      matchedBy: 'exact',
+      recipient: 'sales@b.com',
+    })
+    // The catch-all query never ran: every queued result was consumed by the two reads above.
+    expect(queued).toHaveLength(0)
+  })
+
+  it('among exact matches, the earliest recipient wins', async () => {
+    queueResult([
+      { id: 'exact-b', inboxId: 'i-b', address: 'sales@b.com' },
+      { id: 'exact-a', inboxId: 'i-a', address: 'hello@a.com' },
+    ])
+    queueResult([{ id: 'i-a', projectId: 't1' }])
+
+    await expect(resolveInboxForRecipients(['hello@a.com', 'sales@b.com'])).resolves.toMatchObject({
+      address: { id: 'exact-a' },
+    })
+  })
+
+  it('among catch-alls, the earliest recipient wins', async () => {
+    queueResult([])
+    queueResult([
+      { address: { id: 'catch-b', inboxId: 'i-b', address: '*@b.com' } },
+      { address: { id: 'catch-a', inboxId: 'i-a', address: '*@a.com' } },
+    ])
+    queueResult([{ id: 'i-a', projectId: 't1' }])
+
+    await expect(resolveInboxForRecipients(['hello@a.com', 'sales@b.com'])).resolves.toMatchObject({
+      address: { id: 'catch-a' },
+      matchedBy: 'catch_all',
+      recipient: 'hello@a.com',
+    })
+  })
+
+  it('returns null when neither an exact address nor a live catch-all matches', async () => {
+    queueResult([])
+    // Catch-all rows on a deleting domain, or not on a domain of their own project, are filtered by the query.
+    queueResult([])
+    await expect(resolveInboxForRecipients(['x@nowhere.com'])).resolves.toBeNull()
   })
 })

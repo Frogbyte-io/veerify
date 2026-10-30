@@ -12,7 +12,7 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
 async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const headers = withAuthHeaders(sessionCookie, '/support')
+  const headers = withAuthHeaders(sessionCookie, '/inbox')
   const [projectResponse, sessionResponse] = await Promise.all([
     request.get('/api/projects/active', { headers }),
     request.get('/api/auth/session', { headers }),
@@ -84,7 +84,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     )
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto(`/support?inboxId=${inboxId}&view=all`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`/inbox?inboxId=${inboxId}&view=all`, { waitUntil: 'domcontentloaded' })
 
     const firstRow = page.getByTestId(`support-conversation-${conversationIds[0]}`)
     const secondRow = page.getByTestId(`support-conversation-${conversationIds[1]}`)

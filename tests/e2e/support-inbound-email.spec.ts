@@ -11,7 +11,7 @@ import {
   conversationMessage,
   supportEmailEvent,
   supportInbox,
-  supportInboxAddress,
+  projectMailAddress,
 } from '../../server/database/schema/support'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
@@ -144,7 +144,7 @@ test.describe.serial('inbound email', () => {
           updatedAt: now,
         }))
       )
-      await db.insert(supportInboxAddress).values(
+      await db.insert(projectMailAddress).values(
         inboxIds.map((inboxId, index) => ({
           id: `thread-address-${index + 1}-${suffix}`,
           inboxId,

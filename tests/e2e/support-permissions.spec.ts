@@ -21,7 +21,7 @@ test.describe.serial('support permission-aware navigation', () => {
   })
 
   async function openAs(browser: Browser, role: SupportPermissionRole, path?: string) {
-    path ||= `/support/settings?inboxId=${fixture.primaryInboxId}`
+    path ||= `/inbox/settings?inboxId=${fixture.primaryInboxId}`
     const baseURL = getPlaywrightBaseURL()
     const context = await browser.newContext({
       baseURL,
@@ -36,7 +36,7 @@ test.describe.serial('support permission-aware navigation', () => {
     }
     const cookies = await context.cookies()
     const activeProjectResponse = await page.request.post('/api/projects/active', {
-      headers: withOriginHeaders('/support'),
+      headers: withOriginHeaders('/inbox'),
       data: { projectId: fixture.projectId },
     })
     if (!activeProjectResponse.ok()) {
@@ -120,10 +120,10 @@ test.describe.serial('support permission-aware navigation', () => {
   })
 
   test('supervisor manages tags and receives descriptive role choices', async ({ browser }) => {
-    const page = await openAs(browser, 'supervisor', '/support')
+    const page = await openAs(browser, 'supervisor', '/inbox')
 
     await expect(page.getByRole('button', { name: 'Create tag' })).toBeVisible()
-    await page.goto('/support/settings', { waitUntil: 'domcontentloaded' })
+    await page.goto('/inbox/settings', { waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId('support-add-inbox-member')).toHaveCount(0)
   })
 
@@ -140,7 +140,7 @@ test.describe.serial('support permission-aware navigation', () => {
     // The isolated role fixture and Neon-backed navigation can consume most of
     // the default 60-second test budget before the claim dialog is exercised.
     test.setTimeout(120_000)
-    const page = await openAs(browser, 'agent', '/support')
+    const page = await openAs(browser, 'agent', '/inbox')
     const conversationId = 'claim-ui-conversation'
     const contactId = 'claim-ui-contact'
     let assigneeUserId: string | null = null
@@ -236,7 +236,7 @@ test.describe.serial('support permission-aware navigation', () => {
   test('tag creation 403 recovers the inbox without throwing from an unrelated conversation snapshot', async ({
     browser,
   }) => {
-    const page = await openAs(browser, 'supervisor', '/support')
+    const page = await openAs(browser, 'supervisor', '/inbox')
     let tagCreateCalls = 0
     await page.route('**/api/support/tags', async (route) => {
       if (route.request().method() !== 'POST') {
@@ -291,13 +291,11 @@ test.describe.serial('support permission-aware navigation', () => {
     await page.getByPlaceholder('New tag').fill('Blocked tag')
     await page.getByRole('button', { name: 'Create tag' }).click()
     await expect.poll(() => tagCreateCalls).toBe(1)
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
   })
 
   test('delayed contact-panel 403 cannot recover a newly selected conversation', async ({ browser }) => {
-    const page = await openAs(browser, 'agent', '/support')
+    const page = await openAs(browser, 'agent', '/inbox')
     const oldConversationId = 'delayed-contact-old-conversation'
     const newConversationId = 'delayed-contact-new-conversation'
     const oldContactId = 'delayed-contact-old-contact'
@@ -478,7 +476,7 @@ test.describe.serial('support permission-aware navigation', () => {
   })
 
   test('unassigned member gets an intentional empty state without inbox names', async ({ browser }) => {
-    const page = await openAs(browser, 'unassigned', '/support')
+    const page = await openAs(browser, 'unassigned', '/inbox')
 
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
     await expect(page.getByTestId('support-filter-status')).toHaveCount(0)
@@ -489,11 +487,9 @@ test.describe.serial('support permission-aware navigation', () => {
   })
 
   test('settings deep link recovers from an inaccessible inbox without revealing its name', async ({ browser }) => {
-    const page = await openAs(browser, 'agent', `/support/settings?inboxId=${fixture.forbiddenInboxId}`)
+    const page = await openAs(browser, 'agent', `/inbox/settings?inboxId=${fixture.forbiddenInboxId}`)
 
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
     await expect(page).toHaveURL(new RegExp(`inboxId=${fixture.primaryInboxId}`))
   })
@@ -514,20 +510,18 @@ test.describe.serial('support permission-aware navigation', () => {
       await route.fulfill({
         status: 403,
         contentType: 'application/json',
-        body: JSON.stringify({ success: false, error: { message: 'You do not have access to this support inbox' } }),
+        body: JSON.stringify({ success: false, error: { message: 'You do not have access to this inbox' } }),
       })
     })
 
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
     await expect(page.getByText(fixture.primaryInboxName)).toHaveCount(0)
   })
 
   test('index ignores an old project inbox response after switching projects', async ({ browser }) => {
-    const page = await openAs(browser, 'agent', '/support')
+    const page = await openAs(browser, 'agent', '/inbox')
     const newInboxId = 'delayed-new-project-inbox'
     const oldInboxName = `Old delayed inbox ${Date.now()}`
     const newInboxName = `New delayed inbox ${Date.now()}`
@@ -644,9 +638,7 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     })
     await page.getByTestId('support-project-policy-toggle').click()
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId('support-project-policy')).toHaveCount(0)
   })
 
@@ -692,7 +684,7 @@ test.describe.serial('support permission-aware navigation', () => {
   })
 
   test('recovery discards a fallback inbox when status access is revoked', async ({ browser }) => {
-    const page = await openAs(browser, 'agent', `/support/settings?inboxId=${fixture.forbiddenInboxId}`)
+    const page = await openAs(browser, 'agent', `/inbox/settings?inboxId=${fixture.forbiddenInboxId}`)
     await page.route('**/api/support/channel-status?*', async (route) => {
       await route.fulfill({
         status: 403,
@@ -701,9 +693,7 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     })
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
   })
 
@@ -833,12 +823,10 @@ test.describe.serial('support permission-aware navigation', () => {
     const page = await openAs(
       browser,
       'agent',
-      `/support?inboxId=${fixture.forbiddenInboxId}&conversationId=${fixture.forbiddenConversationId}`
+      `/inbox?inboxId=${fixture.forbiddenInboxId}&conversationId=${fixture.forbiddenConversationId}`
     )
 
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
     await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
   })

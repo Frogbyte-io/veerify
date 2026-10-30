@@ -1,6 +1,6 @@
 <template>
   <PageContainer>
-    <PageHeader title="Contacts" description="Customers who have contacted support">
+    <PageHeader title="Contacts" description="People who have written to your inbox">
       <template #actions>
         <div class="relative w-full sm:w-72">
           <Icon
@@ -17,11 +17,11 @@
       <Skeleton v-for="i in 6" :key="i" class="h-16 w-full" />
     </div>
 
-    <!-- Support switched off for this project -->
+    <!-- Inbox switched off for this project -->
     <Card v-else-if="supportDisabled" data-testid="support-disabled">
       <CardContent class="text-center py-10 space-y-3">
         <Icon name="lucide:life-buoy" class="w-8 h-8 text-muted-foreground mx-auto" />
-        <p class="font-medium">Support is switched off for this project</p>
+        <p class="font-medium">Inbox is switched off for this project</p>
         <template v-if="projectRole === 'admin'">
           <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
           <Button as-child variant="outline">
@@ -30,7 +30,7 @@
         </template>
         <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
           <Icon name="lucide:lock" class="w-3.5 h-3.5" />
-          Project admins can switch Support on.
+          Project admins can switch Inbox on.
         </p>
       </CardContent>
     </Card>
@@ -58,7 +58,7 @@
         </div>
         <p class="font-medium text-lg mb-1">{{ search ? 'No contacts match your search' : 'No contacts yet' }}</p>
         <p class="text-sm text-muted-foreground max-w-sm mx-auto">
-          Contacts appear here once someone reaches out to your project through support.
+          Contacts appear here once someone reaches out to your project through your inbox.
         </p>
       </CardContent>
     </Card>
@@ -69,7 +69,7 @@
         <NuxtLink
           v-for="item in contacts"
           :key="item.id"
-          :to="`/support/contacts/${item.id}`"
+          :to="`/inbox/contacts/${item.id}`"
           prefetch-on="interaction"
           class="flex items-center justify-between rounded-lg border bg-card p-4 cursor-pointer hover:bg-accent/50 transition-colors"
         >

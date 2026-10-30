@@ -60,6 +60,8 @@ async function readSourceCounts(
       where c.project_id = ${input.projectId}
         and c.created_at >= ${bounds.start}
         and c.created_at < ${bounds.end}
+        -- Spam is not volume. Trashed conversations were real ones and still count.
+        and c.spam_at is null
       group by c.inbox_id
     ),
     status_counts as (

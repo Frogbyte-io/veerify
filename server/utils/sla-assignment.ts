@@ -2,8 +2,13 @@ import { asc, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { businessHours, slaPolicy, slaTarget } from '~/server/database/schema/support'
 import { buildSlaAssignment, selectSlaPolicy, type SlaPolicyCandidate } from './sla'
+import { helpdeskAppliesTo, type ConversationBehaviourState } from './conversation-behaviour'
 
-/** Resolve the current policy and compute deadlines for one conversation state. */
+/**
+ * Resolve the current policy and compute deadlines for one conversation state.
+ * Null (no SLA) for a conversation started on a `mail` address or sitting in
+ * Spam or Trash, when the caller passes `conversation`.
+ */
 export async function resolveSlaAssignment(
   input: {
     projectId: string
@@ -13,9 +18,13 @@ export async function resolveSlaAssignment(
     tagIds: string[]
     start: Date
     includeNextResponse?: boolean
+    /** Behaviour and folder of the conversation; SLAs only apply to helpdesk conversations outside Spam/Trash. */
+    conversation: ConversationBehaviourState
   },
   executor: Pick<typeof db, 'select'> = db
 ) {
+  if (!helpdeskAppliesTo(input.conversation)) return null
+
   const policyRows = await executor
     .select({ policy: slaPolicy, hours: businessHours })
     .from(slaPolicy)

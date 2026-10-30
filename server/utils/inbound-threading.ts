@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, or } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNull, or } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
 import { conversation, conversationMessage } from '~/server/database/schema/support'
 
@@ -141,9 +141,10 @@ export async function resolveThread(
     }
   }
 
-  // 3. Subject heuristic. The risky one, so it is fenced in four ways: same
-  //    inbox, **same contact**, still open or pending, and inside a bounded
-  //    window. Without the contact scope, two customers mailing "Invoice
+  // 3. Subject heuristic. The risky one, so it is fenced in five ways: same
+  //    inbox, **same contact**, still open or pending, not in Spam or Trash
+  //    (a guess must not file new mail into Spam, or restore a deleted
+  //    conversation), and inside a bounded window. Without the contact scope, two customers mailing "Invoice
   //    question" would land in one conversation and each would see the other's
   //    correspondence.
   const normalized = normalizeSubject(message.subject)
@@ -159,6 +160,8 @@ export async function resolveThread(
         eq(conversation.inboxId, inbox.id),
         eq(conversation.contactId, contactId),
         inArray(conversation.status, REOPENABLE_STATUSES),
+        isNull(conversation.spamAt),
+        isNull(conversation.deletedAt),
         gte(conversation.lastActivityAt, cutoff)
       )
     )

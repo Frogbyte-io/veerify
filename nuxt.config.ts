@@ -16,7 +16,7 @@ const deploymentMode =
 // Dashboard pages get their layout from route meta, so the layout (sidebar, header) stays mounted
 // across navigation instead of being re-created inside every page. Options API pages cannot call
 // definePageMeta, hence this hook. Matched against the page file path relative to pages/.
-const DASHBOARD_PAGE = /^(dashboard|feedback|reports|help|submissions|settings|workspace|project|marketing|support)\//
+const DASHBOARD_PAGE = /^(dashboard|feedback|reports|help|submissions|settings|workspace|project|marketing|inbox)\//
 const NOT_DASHBOARD_PAGE = /^feedback\/\[id\]\/edit\.vue$/
 
 type ExtendablePage = { file?: string; meta?: Record<string, unknown>; children?: ExtendablePage[] }
@@ -86,6 +86,7 @@ export default defineNuxtConfig({
       '*/10 * * * *': ['marketing:competitors-check', 'domains:status-refresh'],
       '*/15 * * * *': ['example:ping', 'device-login:cleanup'],
       '0 * * * *': ['marketing:visibility-schedule'],
+      '45 * * * *': ['support:trash-purge'],
       '5 * * * *': ['marketing:audit-schedule'],
       '20 * * * *': ['marketing:search-sync'],
       '0 7-11 * * *': ['marketing:mentions-digest'],

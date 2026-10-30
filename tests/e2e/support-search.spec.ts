@@ -21,7 +21,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
   request,
 }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const headers = withAuthHeaders(sessionCookie, '/support')
+  const headers = withAuthHeaders(sessionCookie, '/inbox')
   const projectResponse = await request.get('/api/projects/active', { headers })
   expect(projectResponse.ok()).toBeTruthy()
   const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
@@ -178,7 +178,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
     })
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto(`/support?inboxId=${inboxId}&search=${encodeURIComponent(customerEmail)}`, {
+    await page.goto(`/inbox?inboxId=${inboxId}&search=${encodeURIComponent(customerEmail)}`, {
       waitUntil: 'domcontentloaded',
     })
 

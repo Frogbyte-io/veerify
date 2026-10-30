@@ -140,6 +140,23 @@ function headersToRecord(headers: PostmarkHeader[] | undefined): Record<string, 
   return normalizeHeaders(raw)
 }
 
+/**
+ * Postmark runs SpamAssassin on inbound mail and adds `X-Spam-Status: Yes|No`
+ * (plus `X-Spam-Score`) to the Headers array. Any `X-Spam-Status` starting with
+ * `Yes` counts: a sender adding their own header can only send their own mail
+ * to Spam, and a forged `No` cannot hide Postmark's `Yes`.
+ */
+export function isPostmarkSpam(headers: PostmarkHeader[] | undefined): boolean {
+  if (!Array.isArray(headers)) return false
+  return headers.some(
+    (header) =>
+      typeof header?.Name === 'string' &&
+      header.Name.trim().toLowerCase() === 'x-spam-status' &&
+      typeof header.Value === 'string' &&
+      /^\s*yes\b/i.test(header.Value)
+  )
+}
+
 function toAttachments(values: PostmarkAttachment[] | undefined): InboundAttachment[] {
   if (!Array.isArray(values)) return []
 
@@ -309,6 +326,7 @@ export class PostmarkChannelDriver implements ChannelDriver {
       // message row; fall back to arrival time.
       receivedAt: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : new Date(),
       rawHeaders: headers,
+      isSpam: isPostmarkSpam(typed.Headers),
     }
   }
 

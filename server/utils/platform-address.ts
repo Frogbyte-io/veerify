@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportInbox, supportInboxAddress } from '~/server/database/schema/support'
+import { supportInbox, projectMailAddress } from '~/server/database/schema/support'
 
 /**
  * Platform forwarding addresses (design §9.1).
@@ -20,7 +20,7 @@ const SUFFIX_LENGTH = 6
 const MAX_LOCAL_PART_LENGTH = 64
 const MAX_INSERT_ATTEMPTS = 5
 
-export type PlatformAddressRow = typeof supportInboxAddress.$inferSelect
+export type PlatformAddressRow = typeof projectMailAddress.$inferSelect
 
 /** The normalized platform receiving domain, or null when the feature is off. */
 export function getPlatformMailDomain(): string | null {
@@ -67,8 +67,8 @@ export async function findPlatformAddress(
 ): Promise<PlatformAddressRow | null> {
   const [row] = await executor
     .select()
-    .from(supportInboxAddress)
-    .where(and(eq(supportInboxAddress.inboxId, inboxId), eq(supportInboxAddress.kind, 'platform')))
+    .from(projectMailAddress)
+    .where(and(eq(projectMailAddress.inboxId, inboxId), eq(projectMailAddress.kind, 'platform')))
     .limit(1)
   return row ?? null
 }
@@ -103,14 +103,14 @@ export async function ensurePlatformAddress(
   } else {
     replaced = (await findPlatformAddress(inbox.id, executor))?.address ?? null
     await executor
-      .delete(supportInboxAddress)
-      .where(and(eq(supportInboxAddress.inboxId, inbox.id), eq(supportInboxAddress.kind, 'platform')))
+      .delete(projectMailAddress)
+      .where(and(eq(projectMailAddress.inboxId, inbox.id), eq(projectMailAddress.kind, 'platform')))
   }
 
   for (let attempt = 0; attempt < MAX_INSERT_ATTEMPTS; attempt += 1) {
     const address = buildPlatformAddress({ projectSlug, inboxSlug: inbox.slug, domain }, options.random)
     const [created] = await executor
-      .insert(supportInboxAddress)
+      .insert(projectMailAddress)
       .values({
         id: randomUUID(),
         inboxId: inbox.id,

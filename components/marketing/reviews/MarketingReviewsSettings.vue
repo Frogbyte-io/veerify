@@ -122,8 +122,8 @@
           <div class="space-y-3 rounded-md border p-3">
             <div class="flex items-center justify-between gap-4">
               <div>
-                <Label for="reviews-csat">After a good support rating</Label>
-                <p class="text-xs text-muted-foreground">When a customer rates a support conversation highly.</p>
+                <Label for="reviews-csat">After a good helpdesk rating</Label>
+                <p class="text-xs text-muted-foreground">When a customer rates a helpdesk conversation highly.</p>
               </div>
               <Switch
                 id="reviews-csat"

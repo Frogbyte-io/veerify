@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { db } from '../../server/database/drizzle'
 import { organization } from '../../server/database/schema/auth'
 import { project } from '../../server/database/schema/feedback'
-import { supportInbox, supportInboxAddress, supportSendingDomain } from '../../server/database/schema/support'
+import { supportInbox, projectMailAddress, projectMailDomain } from '../../server/database/schema/support'
 import {
   assertReceivingAddressAllowed,
   assertSenderAddressAllowedForInbox,
@@ -32,10 +32,10 @@ async function addClaim(
   projectId: string,
   domain: string,
   status: string,
-  overrides: Partial<typeof supportSendingDomain.$inferInsert> = {}
+  overrides: Partial<typeof projectMailDomain.$inferInsert> = {}
 ) {
   const id = randomUUID()
-  await db.insert(supportSendingDomain).values({
+  await db.insert(projectMailDomain).values({
     id,
     projectId,
     domain,
@@ -173,10 +173,10 @@ describe('resolveProjectSenderAuthorization', () => {
     const id = await addClaim(ids.projectA, domain, 'verified')
     expect((await verdict(ids.projectA, `s@${domain}`)).status).toBe('authorized')
 
-    await db.update(supportSendingDomain).set({ status: 'suspended' }).where(eq(supportSendingDomain.id, id))
+    await db.update(projectMailDomain).set({ status: 'suspended' }).where(eq(projectMailDomain.id, id))
     expect(await verdict(ids.projectA, `s@${domain}`)).toMatchObject({ status: 'unauthorized', reason: 'suspended' })
 
-    await db.update(supportSendingDomain).set({ status: 'verified' }).where(eq(supportSendingDomain.id, id))
+    await db.update(projectMailDomain).set({ status: 'verified' }).where(eq(projectMailDomain.id, id))
     expect((await verdict(ids.projectA, `s@${domain}`)).status).toBe('authorized')
   })
 
@@ -202,7 +202,7 @@ describe('resolveProjectSenderAuthorization', () => {
 
   it('authorizes only the project own platform addresses', async () => {
     const address = `project-a-inbox-${run}@veerifymail.example`
-    await db.insert(supportInboxAddress).values({
+    await db.insert(projectMailAddress).values({
       id: randomUUID(),
       inboxId: ids.inboxA,
       projectId: ids.projectA,
@@ -217,7 +217,7 @@ describe('resolveProjectSenderAuthorization', () => {
 
   it('a custom address row is not a platform address', async () => {
     const address = `custom-${run}@forward.example.org`
-    await db.insert(supportInboxAddress).values({
+    await db.insert(projectMailAddress).values({
       id: randomUUID(),
       inboxId: ids.inboxA,
       projectId: ids.projectA,

@@ -8,6 +8,7 @@ import { resolvePostAuthRedirectTarget } from '~/lib/auth-redirect'
 import {
   isProtectedRoute as isProtectedPath,
   legacyChangelogRedirect,
+  legacySupportRedirect,
   legacyRoadmapRedirect,
   resolvePublicHostRedirect,
 } from '~/lib/route-guard'
@@ -35,6 +36,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const legacyChangelog = legacyChangelogRedirect(to.path, to.fullPath.slice(to.path.length))
   if (legacyChangelog) {
     return navigateTo(legacyChangelog, { replace: true })
+  }
+
+  // The Inbox used to live under /support
+  const legacySupport = legacySupportRedirect(to.path, to.fullPath.slice(to.path.length))
+  if (legacySupport) {
+    return navigateTo(legacySupport, { replace: true })
   }
 
   // Bare /roadmap is only public on workspace/custom domains (handled above)

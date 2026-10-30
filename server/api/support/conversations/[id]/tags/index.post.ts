@@ -86,6 +86,7 @@ export default defineEventHandler(async (event) => {
           tagIds: tags.map((row) => row.tagId),
           start: new Date(),
           includeNextResponse: Boolean(existing.firstResponseAt),
+          conversation: existing,
         },
         tx
       )
@@ -126,6 +127,9 @@ export default defineEventHandler(async (event) => {
           contactId: conversation.contactId,
           priority: conversation.priority,
           firstResponseAt: conversation.firstResponseAt,
+          behaviour: conversation.behaviour,
+          spamAt: conversation.spamAt,
+          deletedAt: conversation.deletedAt,
         })
         .from(conversation)
         .where(eq(conversation.id, conversationId))
@@ -149,6 +153,7 @@ export default defineEventHandler(async (event) => {
           tagIds: tags.map((row) => row.tagId),
           start: new Date(),
           includeNextResponse: Boolean(current.firstResponseAt),
+          conversation: current,
         },
         tx
       )

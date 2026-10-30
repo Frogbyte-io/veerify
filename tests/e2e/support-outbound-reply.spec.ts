@@ -146,11 +146,24 @@ test.describe.serial('outbound reply round trip', () => {
       expect(afterInbound).toHaveLength(1)
       conversationId = afterInbound[0].id
 
+      // Replies go out from the receiving address when it sits on a verified
+      // project domain. A conversation not tied to one (as one an agent
+      // started) needs the inbox's own sending address, and there is none yet.
+      const [received] = await db
+        .select({ mailAddressId: conversation.mailAddressId })
+        .from(conversation)
+        .where(eq(conversation.id, conversationId))
+      expect(received.mailAddressId).toBeTruthy()
+      await db.update(conversation).set({ mailAddressId: null }).where(eq(conversation.id, conversationId))
       const rejectedReply = await request.post(`/api/support/conversations/${conversationId}/messages`, {
         headers,
         data: { kind: 'outgoing', body: 'Looking into this now.' },
       })
       expect(rejectedReply.status()).toBe(409)
+      await db
+        .update(conversation)
+        .set({ mailAddressId: received.mailAddressId })
+        .where(eq(conversation.id, conversationId))
 
       // --- 1. Give the inbox a sending address, then reply -------------------
       const inboxUpdate = await request.put(`/api/support/inboxes/${inboxId}`, {
@@ -258,6 +271,12 @@ test.describe.serial('outbound reply round trip', () => {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
       expect(['pending', 'sent', 'failed']).toContain(finalStatus)
+      // Sent as the address the customer wrote to, not the inbox's sending address.
+      const [replyDelivery] = await db
+        .select({ payload: supportOutboundDelivery.payload })
+        .from(supportOutboundDelivery)
+        .where(eq(supportOutboundDelivery.messageId, replyMessage.id as string))
+      expect(replyDelivery.payload.from.address).toBe(inboxAddress)
       if (finalStatus === 'pending') {
         const [delivery] = await db
           .select()
@@ -594,7 +613,7 @@ test.describe.serial('outbound attachment contract', () => {
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
       const browserSession = await page.request.get('/api/auth/session')
       expect(browserSession.ok()).toBeTruthy()
-      await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/inbox?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
       const composer = page.locator('[data-testid="support-composer-reply"]')
       await expect(composer).toBeVisible({ timeout: 30_000 })
       const input = page.locator('[data-testid="support-composer-file-input"]')

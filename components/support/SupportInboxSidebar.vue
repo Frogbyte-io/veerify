@@ -3,11 +3,11 @@
     <div class="flex items-center justify-between gap-2 border-b px-3 py-2">
       <h2 class="text-sm font-semibold text-foreground">Inboxes</h2>
       <NuxtLink
-        to="/support/settings"
+        to="/inbox/settings"
         data-testid="support-sidebar-settings-link"
         class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-        aria-label="Support settings"
-        title="Support settings"
+        aria-label="Inbox settings"
+        title="Inbox settings"
       >
         <Icon name="lucide:settings" class="h-4 w-4" />
       </NuxtLink>
@@ -32,7 +32,7 @@
         data-testid="support-no-assignment"
         class="px-1 py-3 text-xs leading-relaxed text-muted-foreground"
       >
-        No support inboxes are assigned to you.
+        No inboxes are assigned to you.
       </p>
 
       <button
@@ -83,6 +83,45 @@
         </Badge>
       </button>
 
+      <h3 class="pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Folders</h3>
+      <button
+        v-for="view in folderViews"
+        :key="view.value"
+        type="button"
+        :data-testid="`support-view-${view.value}`"
+        class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm transition-colors"
+        :class="
+          view.value === activeView ? 'bg-primary/10 text-primary font-medium' : 'text-foreground hover:bg-accent'
+        "
+        :aria-pressed="String(view.value === activeView)"
+        @click="$emit('select-view', view.value)"
+      >
+        <Icon :name="view.icon" class="h-4 w-4 shrink-0" />
+        <span class="min-w-0 flex-1 truncate">{{ view.label }}</span>
+      </button>
+
+      <div v-if="addresses.length > 0" class="space-y-2 pt-2" data-testid="support-address-filter">
+        <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Addresses</h3>
+        <button
+          v-for="address in addresses"
+          :key="address.id"
+          type="button"
+          :data-testid="`support-address-${address.id}`"
+          class="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm transition-colors"
+          :class="
+            address.id === activeAddressId
+              ? 'bg-primary/10 text-primary font-medium'
+              : 'text-foreground hover:bg-accent'
+          "
+          :aria-pressed="String(address.id === activeAddressId)"
+          :title="address.address"
+          @click="$emit('select-address', address.id)"
+        >
+          <Icon name="lucide:at-sign" class="h-4 w-4 shrink-0" />
+          <span class="min-w-0 flex-1 truncate">{{ address.address }}</span>
+        </button>
+      </div>
+
       <div v-if="canManageTagVocabulary" class="space-y-2 border-t pt-3" data-testid="support-tag-management">
         <Label for="support-new-tag" class="text-xs text-muted-foreground">Shared tag list</Label>
         <div class="flex gap-1.5">
@@ -119,13 +158,15 @@ export default {
     error: { type: String, default: null },
     capabilities: { type: Object, default: () => ({}) },
     activeView: { type: String, default: 'unassigned' },
+    addresses: { type: Array, default: () => [] },
+    activeAddressId: { type: String, default: null },
     unreadCounts: {
       type: Object,
       default: () => ({ unassigned: 0, assignedToMe: 0 }),
     },
   },
 
-  emits: ['select-inbox', 'select-view', 'retry', 'create-tag'],
+  emits: ['select-inbox', 'select-view', 'select-address', 'retry', 'create-tag'],
 
   data() {
     return { newTagName: '' }
@@ -143,6 +184,14 @@ export default {
         { value: 'resolved', label: 'Resolved', icon: 'lucide:check-circle-2' },
         { value: 'breaching-soon', label: 'Breaching soon', icon: 'lucide:alarm-clock' },
         { value: 'all', label: 'All', icon: 'lucide:layers-3' },
+      ]
+    },
+
+    folderViews() {
+      return [
+        { value: 'archived', label: 'Archived', icon: 'lucide:archive' },
+        { value: 'spam', label: 'Spam', icon: 'lucide:shield-alert' },
+        { value: 'trash', label: 'Trash', icon: 'lucide:trash-2' },
       ]
     },
   },

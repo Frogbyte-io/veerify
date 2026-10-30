@@ -10,7 +10,7 @@ import {
   contact,
   conversation,
   supportInbox,
-  supportInboxAddress,
+  projectMailAddress,
   supportInboxMember,
 } from '../../../server/database/schema/support'
 
@@ -216,12 +216,12 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
     // that a deep-link 403 recovers without leaking the rejected inbox name.
     const adminCookie = await signInAndGetSessionCookie(request, createdUsers.projectAdmin)
     const activeProjectResponse = await request.post('/api/projects/active', {
-      headers: withAuthHeaders(adminCookie, '/support'),
+      headers: withAuthHeaders(adminCookie, '/inbox'),
       data: { projectId: SEEDED_PROJECT_ID },
     })
     if (!activeProjectResponse.ok())
       throw new Error(`Could not activate the fixed project: ${await activeProjectResponse.text()}`)
-    const headers = withAuthHeaders(adminCookie, '/support')
+    const headers = withAuthHeaders(adminCookie, '/inbox')
     const contactResponse = await request.post('/api/support/contacts', {
       headers,
       data: {
@@ -258,7 +258,7 @@ export async function cleanupSupportPermissionFixture(fixture: SupportPermission
     await db.delete(conversation).where(inArray(conversation.id, fixture.conversationIds))
   if (fixture.contactIds.length) await db.delete(contact).where(inArray(contact.id, fixture.contactIds))
   if (fixture.inboxIds.length) {
-    await db.delete(supportInboxAddress).where(inArray(supportInboxAddress.inboxId, fixture.inboxIds))
+    await db.delete(projectMailAddress).where(inArray(projectMailAddress.inboxId, fixture.inboxIds))
     await db.delete(supportInboxMember).where(inArray(supportInboxMember.id, fixture.inboxMemberIds))
     await db.delete(supportInbox).where(inArray(supportInbox.id, fixture.inboxIds))
   }

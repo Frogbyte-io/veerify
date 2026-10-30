@@ -1,7 +1,7 @@
 <template>
   <div class="contents">
     <PageContainer>
-      <PageHeader title="Contact" back-to="/support/contacts" back-label="Contacts" />
+      <PageHeader title="Contact" back-to="/inbox/contacts" back-label="Contacts" />
 
       <!-- Loading: shaped like the header card and the timeline card -->
       <template v-if="isLoading">

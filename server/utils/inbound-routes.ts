@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportInboxAddress, supportSendingDomain } from '~/server/database/schema/support'
+import { projectMailAddress, projectMailDomain } from '~/server/database/schema/support'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isSendingDomainsEnabled } from '~/server/utils/sending-domains'
 import { emailDomain } from '~/server/services/support-channels/types'
@@ -43,16 +43,16 @@ export async function createDirectRouteForAddress(input: {
   if (!domain) return null
 
   const [claim] = await db
-    .select({ id: supportSendingDomain.id })
-    .from(supportSendingDomain)
+    .select({ id: projectMailDomain.id })
+    .from(projectMailDomain)
     .where(
       and(
-        eq(supportSendingDomain.projectId, input.projectId),
-        eq(supportSendingDomain.domain, domain),
-        eq(supportSendingDomain.status, 'verified'),
-        eq(supportSendingDomain.receivesViaProvider, true),
-        eq(supportSendingDomain.provider, provider.name),
-        eq(supportSendingDomain.providerAccountKey, provider.accountKey)
+        eq(projectMailDomain.projectId, input.projectId),
+        eq(projectMailDomain.domain, domain),
+        eq(projectMailDomain.status, 'verified'),
+        eq(projectMailDomain.receivesViaProvider, true),
+        eq(projectMailDomain.provider, provider.name),
+        eq(projectMailDomain.providerAccountKey, provider.accountKey)
       )
     )
     .limit(1)
@@ -75,9 +75,9 @@ export async function createDirectRouteForAddress(input: {
 
   const status = routeId ? 'active' : 'failed'
   await db
-    .update(supportInboxAddress)
+    .update(projectMailAddress)
     .set({ providerRouteId: routeId, providerRouteStatus: status })
-    .where(eq(supportInboxAddress.id, input.address.id))
+    .where(eq(projectMailAddress.id, input.address.id))
   return status
 }
 

@@ -1,4 +1,4 @@
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, ne } from 'drizzle-orm'
 // Imported explicitly rather than relying on Nuxt's auto-import, so this module
 // can be unit tested outside the Nitro runtime.
 import { createError } from 'h3'
@@ -8,13 +8,15 @@ import {
   supportCompany,
   supportInbox,
   supportInboxMember,
-  supportInboxAddress,
+  projectMailAddress,
+  projectMailDomain,
   conversation,
 } from '~/server/database/schema/support'
 import { member } from '~/server/database/schema/auth'
 import { project, projectMember } from '~/server/database/schema/feedback'
 import { requireProjectAccess, requireProjectRole, resolveProjectRole } from './project-access'
 import { createErrorResponse, ErrorCode } from './response'
+import { CATCH_ALL_LOCAL_PART, catchAllAddressFor, splitMailAddress } from '~/lib/mail-address'
 
 export type SupportInboxRole = 'agent' | 'supervisor' | 'admin'
 
@@ -277,38 +279,107 @@ export async function requireConversationAccess(
   return row
 }
 
+export type InboundAddressLookup = {
+  /** The `projectMailAddress.address` to look up. */
+  address: string
+  matchedBy: 'exact' | 'catch_all'
+  /** The recipient (lowercased) the lookup was made for. */
+  recipient: string
+}
+
+/**
+ * The address rows to look up for an inbound message, in the order they win.
+ * Pure, so the precedence is unit tested without a database.
+ *
+ * Every recipient's exact address comes first, in the recipients' order. Only
+ * when none matches is each recipient's catch-all (`*@<its domain>`) tried, in
+ * the same order. A catch-all covers exactly its own domain: `x@sub.acme.com`
+ * looks up `*@sub.acme.com`, never `*@acme.com`. A recipient that is literally
+ * `*@domain` takes part as a catch-all lookup only, so it cannot outrank another
+ * recipient's exact address.
+ */
+export function inboundAddressLookupOrder(recipients: string[]): InboundAddressLookup[] {
+  const exact: InboundAddressLookup[] = []
+  const catchAll: InboundAddressLookup[] = []
+  const seen = new Set<string>()
+  const add = (list: InboundAddressLookup[], lookup: InboundAddressLookup) => {
+    if (seen.has(lookup.address)) return
+    seen.add(lookup.address)
+    list.push(lookup)
+  }
+  for (const raw of recipients) {
+    const recipient = raw.trim().toLowerCase()
+    const parts = splitMailAddress(recipient)
+    if (!parts) continue
+    if (parts.localPart !== CATCH_ALL_LOCAL_PART) add(exact, { address: recipient, matchedBy: 'exact', recipient })
+    add(catchAll, { address: catchAllAddressFor(parts.domain), matchedBy: 'catch_all', recipient })
+  }
+  return [...exact, ...catchAll]
+}
+
+export type ResolvedInboundInbox = {
+  inbox: typeof supportInbox.$inferSelect
+  /** The address row that matched; its id and behaviour are recorded on a new conversation. */
+  address: typeof projectMailAddress.$inferSelect
+  matchedBy: 'exact' | 'catch_all'
+  /** The recipient (lowercased) the match was made for. */
+  recipient: string
+}
+
 /**
  * Resolve the inbox (and matched receiving address) an inbound email should
- * land in, by exact match against `supportInboxAddress.address` (delta D-27).
+ * land in, from its routing recipients in order (see `inboundRoutingRecipients`).
  *
- * Returns `null` rather than throwing on no match — Stage 03 records the
+ * Exact `projectMailAddress.address` matches for every recipient are tried
+ * before any catch-all (`inboundAddressLookupOrder`). A catch-all row only
+ * counts while it sits on a mail domain of its own project that is not being
+ * deleted, so a stale `*@domain` row can never capture mail.
+ *
+ * Returns `null` rather than throwing on no match: the endpoint records the
  * event as an error and returns 200 rather than 404ing, since the sender is a
  * mail provider that would otherwise retry forever. Not an authorization
- * check, so it takes no `userId`.
- *
- * Addresses are matched case-insensitively; callers do not need to normalize
- * `emailAddress` first.
+ * check, so it takes no `userId`. Addresses are matched case-insensitively.
  */
+export async function resolveInboxForRecipients(recipients: string[]): Promise<ResolvedInboundInbox | null> {
+  const order = inboundAddressLookupOrder(recipients)
+  const exactAddresses = order.filter((lookup) => lookup.matchedBy === 'exact').map((lookup) => lookup.address)
+  const catchAllAddresses = order.filter((lookup) => lookup.matchedBy === 'catch_all').map((lookup) => lookup.address)
+
+  const rows: (typeof projectMailAddress.$inferSelect)[] = []
+  if (exactAddresses.length > 0) {
+    rows.push(
+      ...(await db.select().from(projectMailAddress).where(inArray(projectMailAddress.address, exactAddresses)))
+    )
+  }
+  // Catch-alls are only read when no exact address matched.
+  if (rows.length === 0 && catchAllAddresses.length > 0) {
+    const catchAlls = await db
+      .select({ address: projectMailAddress })
+      .from(projectMailAddress)
+      .innerJoin(
+        projectMailDomain,
+        and(
+          eq(projectMailDomain.id, projectMailAddress.domainId),
+          eq(projectMailDomain.projectId, projectMailAddress.projectId)
+        )
+      )
+      .where(and(inArray(projectMailAddress.address, catchAllAddresses), ne(projectMailDomain.status, 'deleting')))
+    rows.push(...catchAlls.map((row) => row.address))
+  }
+
+  for (const lookup of order) {
+    const address = rows.find((row) => row.address === lookup.address)
+    if (!address) continue
+    const [inbox] = await db.select().from(supportInbox).where(eq(supportInbox.id, address.inboxId)).limit(1)
+    if (!inbox) continue
+    return { inbox, address, matchedBy: lookup.matchedBy, recipient: lookup.recipient }
+  }
+  return null
+}
+
+/** `resolveInboxForRecipients` for a single address. */
 export async function resolveInboxByAddress(emailAddress: string) {
-  const normalized = emailAddress.trim().toLowerCase()
-
-  const [address] = await db
-    .select()
-    .from(supportInboxAddress)
-    .where(eq(supportInboxAddress.address, normalized))
-    .limit(1)
-
-  if (!address) {
-    return null
-  }
-
-  const [inbox] = await db.select().from(supportInbox).where(eq(supportInbox.id, address.inboxId)).limit(1)
-
-  if (!inbox) {
-    return null
-  }
-
-  return { inbox, address }
+  return resolveInboxForRecipients([emailAddress])
 }
 
 /**

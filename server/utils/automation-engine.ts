@@ -20,6 +20,7 @@ import { executeAutomationActions, type AutomationActionRegistry } from '~/serve
 import { evaluateAutomationConditions, type AutomationConversationContext } from '~/server/utils/automation-conditions'
 import { applyConversationStatusTransition } from '~/server/utils/conversation-activity'
 import { postWebhookJson } from '~/server/utils/webhook-url'
+import { helpdeskAppliesTo, helpdeskConversationFilter } from '~/server/utils/conversation-behaviour'
 
 export const DEFAULT_AUTOMATION_CASCADE_DEPTH = 3
 
@@ -61,6 +62,9 @@ type ConversationAutomationState = {
   assigneeUserId: string | null
   companyId: string | null
   lastActivityAt: Date | null
+  behaviour: string
+  spamAt: Date | null
+  deletedAt: Date | null
   tagIds: string[]
   latestBody: string | null
 }
@@ -94,6 +98,9 @@ async function loadConversationState(conversationId: string): Promise<Conversati
       assigneeUserId: conversation.assigneeUserId,
       companyId: contact.companyId,
       lastActivityAt: conversation.lastActivityAt,
+      behaviour: conversation.behaviour,
+      spamAt: conversation.spamAt,
+      deletedAt: conversation.deletedAt,
     })
     .from(conversation)
     .innerJoin(contact, eq(contact.id, conversation.contactId))
@@ -286,7 +293,10 @@ export async function runAutomationRules(input: AutomationRunInput): Promise<Aut
     dryRun,
     evaluations: [],
   }
-  if (!state) return result
+  // Automation rules are helpdesk machinery: conversations started on a mail
+  // address, and conversations in Spam or Trash, are never touched (dry runs
+  // report the same empty plan).
+  if (!state || !helpdeskAppliesTo(state)) return result
 
   const rules = await db
     .select()
@@ -477,7 +487,8 @@ export async function runTimeBasedAutomationSweep(): Promise<{
         and(
           eq(conversation.projectId, rule.projectId),
           rule.inboxId ? eq(conversation.inboxId, rule.inboxId) : undefined,
-          inArray(conversation.status, ['open', 'pending', 'snoozed'])
+          inArray(conversation.status, ['open', 'pending', 'snoozed']),
+          helpdeskConversationFilter()
         )
       )
     for (const row of rows) conversationIds.add(row.id)

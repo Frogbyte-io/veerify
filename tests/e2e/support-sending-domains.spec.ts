@@ -16,7 +16,7 @@ import {
   conversation,
   supportInbox,
   supportInboxMember,
-  supportSendingDomain,
+  projectMailDomain,
 } from '../../server/database/schema/support'
 
 /**
@@ -119,8 +119,7 @@ test.describe('support sending domains', () => {
   test.afterAll(async () => {
     await Promise.all(contexts.map((context) => context.close()))
     const projectIds = [projectB.id, fixture?.projectId].filter(Boolean) as string[]
-    if (projectIds.length)
-      await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.projectId, projectIds))
+    if (projectIds.length) await db.delete(projectMailDomain).where(inArray(projectMailDomain.projectId, projectIds))
     await db.delete(supportInboxMember).where(eq(supportInboxMember.id, projectB.inboxMemberId))
     await db.delete(supportInbox).where(eq(supportInbox.id, projectB.inboxId))
     await db.delete(projectMember).where(eq(projectMember.id, projectB.memberId))
@@ -150,7 +149,7 @@ test.describe('support sending domains', () => {
     const page = await context.newPage()
     await loginViaProgrammaticPage(page, credentials)
     const activate = await page.request.post('/api/projects/active', {
-      headers: withOriginHeaders('/support'),
+      headers: withOriginHeaders('/inbox'),
       data: { projectId },
     })
     if (!activate.ok()) throw new Error(`Could not activate project ${projectId}: ${await activate.text()}`)
@@ -159,7 +158,9 @@ test.describe('support sending domains', () => {
     return page
   }
 
-  const settingsPath = () => `/support/settings?inboxId=${fixture.primaryInboxId}`
+  const settingsPath = () => `/inbox/settings?inboxId=${fixture.primaryInboxId}`
+  // Domains live in Project settings -> Email; the From address picker stays in inbox settings.
+  const domainsPath = () => '/project/settings?tab=email'
   const asRole = (role: SupportPermissionRole) => fixture.users[role]
 
   async function addDomainViaUi(page: Page, domain: string) {
@@ -179,7 +180,7 @@ test.describe('support sending domains', () => {
 
     test('admin adds a domain, copies the ownership record, verifies it and sends from it', async ({ browser }) => {
       domainA = `acme${suffix}.verify-ok.test`
-      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath(), {
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, domainsPath(), {
         clipboard: true,
       })
       await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
@@ -217,7 +218,8 @@ test.describe('support sending domains', () => {
       domainAClaimId = list.domains.find((d: { domain: string }) => d.domain === domainA).id
       expect(domainAClaimId).toBeTruthy()
 
-      await page.reload({ waitUntil: 'domcontentloaded' })
+      // The From address picker lives in inbox settings.
+      await page.goto(settingsPath(), { waitUntil: 'domcontentloaded' })
       const picker = page.getByTestId('support-from-picker')
       await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
       await picker.getByTestId('support-from-picker-local').fill('support')
@@ -232,7 +234,7 @@ test.describe('support sending domains', () => {
     })
 
     test('provider refusals show inline and a flaky registration recovers on retry', async ({ browser }) => {
-      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath())
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, domainsPath())
       await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
 
       await addDomainViaUi(page, `x${suffix}.owned-elsewhere.test`)
@@ -252,7 +254,7 @@ test.describe('support sending domains', () => {
     })
 
     test('a project member sees the card read-only and the API refuses their writes', async ({ browser }) => {
-      const page = await openPageAs(browser, asRole('agent'), fixture.projectId, settingsPath())
+      const page = await openPageAs(browser, asRole('agent'), fixture.projectId, domainsPath())
       const card = page.getByTestId('support-sending-domains')
       await expect(card).toBeVisible({ timeout: 20_000 })
       await expect(rowFor(page, domainA)).toBeVisible()
@@ -260,7 +262,7 @@ test.describe('support sending domains', () => {
       await expect(page.getByTestId('support-sending-domain-verify')).toHaveCount(0)
       await expect(page.getByTestId('support-sending-domain-delete')).toHaveCount(0)
 
-      const headers = withOriginHeaders('/support/settings')
+      const headers = withOriginHeaders('/inbox/settings')
       const create = await page.request.post(SENDING_DOMAINS_PATH(fixture.projectId), {
         headers,
         data: { domain: `member${suffix}.verify-ok.test` },
@@ -275,8 +277,8 @@ test.describe('support sending domains', () => {
     })
 
     test('another project cannot read, claim under, or send from a project’s domain', async ({ browser }) => {
-      const page = await openPageAs(browser, projectB.credentials!, projectB.id, '/support/settings')
-      const headers = withOriginHeaders('/support/settings')
+      const page = await openPageAs(browser, projectB.credentials!, projectB.id, '/inbox/settings')
+      const headers = withOriginHeaders('/inbox/settings')
 
       const detail = await page.request.get(`${SENDING_DOMAINS_PATH(projectB.id)}/${domainAClaimId}`, { headers })
       expect(detail.status()).toBe(404)
@@ -305,7 +307,7 @@ test.describe('support sending domains', () => {
     })
 
     test('deleting a domain an inbox uses asks first, then blocks that inbox from sending', async ({ browser }) => {
-      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath())
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, domainsPath())
       const row = rowFor(page, domainA)
       await expect(row).toBeVisible({ timeout: 20_000 })
 
@@ -374,7 +376,13 @@ test.describe('support sending domains', () => {
       provider: 'mailgun',
       capabilities: { register: true, verifyNow: true, remove: true, inboundRoutes: true, authorizesSubdomains: true },
       canManage: true,
-      limits: { maxDomains: 10, maxPending: 3, pendingTtlDays: 7 },
+      // Workspace mail limits (standard tier), shared by every project of the workspace.
+      limits: { maxDomains: 3, maxPending: 3, pendingTtlDays: 7 },
+      usage: {
+        tier: 'standard',
+        limits: { domains: 3, pendingDomains: 3, addresses: 20, forwardsPerMonth: 5000 },
+        used: { domains: 1, pendingDomains: 0, addresses: 1, forwardsThisMonth: null },
+      },
       providerConfigured: true,
       missingEnvVars: [],
       domains: [domainRow()],
@@ -390,7 +398,8 @@ test.describe('support sending domains', () => {
     async function openStubbed(
       browser: Browser,
       // eslint-disable-next-line no-unused-vars
-      handlers: { list?: () => unknown; status?: () => unknown; onItem?: (httpMethod: string) => unknown }
+      handlers: { list?: () => unknown; status?: () => unknown; onItem?: (httpMethod: string) => unknown },
+      path: string = settingsPath()
     ) {
       const baseURL = getPlaywrightBaseURL()
       const context = await browser.newContext({ baseURL })
@@ -398,7 +407,7 @@ test.describe('support sending domains', () => {
       const page = await context.newPage()
       await loginViaProgrammaticPage(page, asRole('projectAdmin'))
       const activate = await page.request.post('/api/projects/active', {
-        headers: withOriginHeaders('/support'),
+        headers: withOriginHeaders('/inbox'),
         data: { projectId: fixture.projectId },
       })
       if (!activate.ok()) throw new Error(`Could not activate the fixed project: ${await activate.text()}`)
@@ -415,28 +424,32 @@ test.describe('support sending domains', () => {
         })
       }
       if (handlers.status) await page.route(STATUS_URL, (route) => route.fulfill(handlers.status!() as never))
-      await page.goto(settingsPath(), { waitUntil: 'domcontentloaded' })
+      await page.goto(path, { waitUntil: 'domcontentloaded' })
       return page
     }
 
     test('suspended, removing and failed rows render their labels and reasons', async ({ browser }) => {
-      const page = await openStubbed(browser, {
-        list: () =>
-          ok(
-            listPayload({
-              domains: [
-                domainRow({ id: 'd-s', domain: 'suspended.example.com', status: 'suspended' }),
-                domainRow({ id: 'd-r', domain: 'removing.example.com', status: 'deleting' }),
-                domainRow({
-                  id: 'd-f',
-                  domain: 'failed.example.com',
-                  status: 'failed',
-                  lastError: 'Provider is unavailable',
-                }),
-              ],
-            })
-          ),
-      })
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                domains: [
+                  domainRow({ id: 'd-s', domain: 'suspended.example.com', status: 'suspended' }),
+                  domainRow({ id: 'd-r', domain: 'removing.example.com', status: 'deleting' }),
+                  domainRow({
+                    id: 'd-f',
+                    domain: 'failed.example.com',
+                    status: 'failed',
+                    lastError: 'Provider is unavailable',
+                  }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
       const suspended = rowFor(page, 'suspended.example.com')
       await expect(suspended.getByTestId('support-sending-domain-status')).toContainText('Suspended', {
         timeout: 20_000,
@@ -456,14 +469,18 @@ test.describe('support sending domains', () => {
 
     test('receiving_enabled deletion explains the operator step', async ({ browser }) => {
       let deleted = false
-      const page = await openStubbed(browser, {
-        list: () => ok(listPayload({ domains: deleted ? [] : [domainRow({ status: 'verified' })] })),
-        onItem: (method) => {
-          if (method !== 'DELETE') return null
-          deleted = true
-          return ok({ deleted: true, operatorCleanupRequired: true })
+      const page = await openStubbed(
+        browser,
+        {
+          list: () => ok(listPayload({ domains: deleted ? [] : [domainRow({ status: 'verified' })] })),
+          onItem: (method) => {
+            if (method !== 'DELETE') return null
+            deleted = true
+            return ok({ deleted: true, operatorCleanupRequired: true })
+          },
         },
-      })
+        domainsPath()
+      )
       const row = rowFor(page, 'stub.example.com')
       await expect(row).toBeVisible({ timeout: 20_000 })
       await row.getByTestId('support-sending-domain-delete').click()
@@ -473,29 +490,33 @@ test.describe('support sending domains', () => {
     })
 
     test('the in-use dialog lists inboxes from a 409 DOMAIN_IN_USE', async ({ browser }) => {
-      const page = await openStubbed(browser, {
-        list: () => ok(listPayload({ domains: [domainRow({ status: 'verified' })] })),
-        onItem: (method) =>
-          method === 'DELETE'
-            ? {
-                status: 409,
-                contentType: 'application/json',
-                // The H3 error body: our createErrorResponse() envelope sits under `data`.
-                body: JSON.stringify({
-                  statusCode: 409,
-                  statusMessage: 'Conflict',
-                  data: {
-                    success: false,
-                    error: {
-                      code: 'DOMAIN_IN_USE',
-                      message: 'In use',
-                      details: { inboxes: [{ id: 'i1', name: 'Billing', emailAddress: 'billing@stub.example.com' }] },
+      const page = await openStubbed(
+        browser,
+        {
+          list: () => ok(listPayload({ domains: [domainRow({ status: 'verified' })] })),
+          onItem: (method) =>
+            method === 'DELETE'
+              ? {
+                  status: 409,
+                  contentType: 'application/json',
+                  // The H3 error body: our createErrorResponse() envelope sits under `data`.
+                  body: JSON.stringify({
+                    statusCode: 409,
+                    statusMessage: 'Conflict',
+                    data: {
+                      success: false,
+                      error: {
+                        code: 'DOMAIN_IN_USE',
+                        message: 'In use',
+                        details: { inboxes: [{ id: 'i1', name: 'Billing', emailAddress: 'billing@stub.example.com' }] },
+                      },
                     },
-                  },
-                }),
-              }
-            : null,
-      })
+                  }),
+                }
+              : null,
+        },
+        domainsPath()
+      )
       await rowFor(page, 'stub.example.com').getByTestId('support-sending-domain-delete').click()
       await page.getByTestId('support-sending-domain-delete-confirm').click()
       await expect(page.getByTestId('support-sending-domain-in-use-inbox')).toContainText('Billing')
@@ -504,53 +525,67 @@ test.describe('support sending domains', () => {
 
     test('the card shows an error with retry, and hides itself when the feature is off', async ({ browser }) => {
       let failing = true
-      const page = await openStubbed(browser, {
-        list: () =>
-          failing
-            ? {
-                status: 500,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                  statusCode: 500,
-                  statusMessage: 'Internal Server Error',
-                  data: { success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } },
-                }),
-              }
-            : ok(listPayload({ enabled: false, policy: 'legacy', domains: [] })),
-      })
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            failing
+              ? {
+                  status: 500,
+                  contentType: 'application/json',
+                  body: JSON.stringify({
+                    statusCode: 500,
+                    statusMessage: 'Internal Server Error',
+                    data: { success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } },
+                  }),
+                }
+              : ok(listPayload({ enabled: false, policy: 'legacy', domains: [] })),
+        },
+        domainsPath()
+      )
       await expect(page.getByTestId('support-sending-domains-error')).toBeVisible({ timeout: 20_000 })
       failing = false
       await page.getByTestId('support-sending-domains-error').getByRole('button', { name: 'Retry' }).click()
       await expect(page.getByTestId('support-sending-domains')).toHaveCount(0)
-      // Feature off: the From field falls back to the free-text input.
+      // Feature off: the From field in inbox settings falls back to the free-text input.
+      await page.goto(settingsPath(), { waitUntil: 'domcontentloaded' })
       await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'legacy')
       await expect(page.getByTestId('support-from-picker-input')).toBeVisible()
     })
 
     test('list-only providers show the operator note instead of provider records', async ({ browser }) => {
-      const page = await openStubbed(browser, {
-        list: () =>
-          ok(
-            listPayload({
-              provider: 'postmark',
-              capabilities: {
-                register: false,
-                verifyNow: false,
-                remove: false,
-                inboundRoutes: false,
-                authorizesSubdomains: false,
-              },
-              domains: [
-                domainRow({
-                  records: [
-                    record(),
-                    record({ purpose: 'sending', type: 'CNAME', name: 'dkim._domainkey.stub.example.com', value: 'x' }),
-                  ],
-                }),
-              ],
-            })
-          ),
-      })
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                provider: 'postmark',
+                capabilities: {
+                  register: false,
+                  verifyNow: false,
+                  remove: false,
+                  inboundRoutes: false,
+                  authorizesSubdomains: false,
+                },
+                domains: [
+                  domainRow({
+                    records: [
+                      record(),
+                      record({
+                        purpose: 'sending',
+                        type: 'CNAME',
+                        name: 'dkim._domainkey.stub.example.com',
+                        value: 'x',
+                      }),
+                    ],
+                  }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
       const row = rowFor(page, 'stub.example.com')
       await row.getByTestId('support-sending-domain-expand').click({ timeout: 20_000 })
       await expect(row.getByTestId('support-dns-operator-managed')).toBeVisible()
@@ -672,21 +707,25 @@ test.describe('support sending domains', () => {
     }
 
     test('a subdomain claim shows hosts relative to the registrable domain and the full name', async ({ browser }) => {
-      const page = await openStubbed(browser, {
-        list: () =>
-          ok(
-            listPayload({
-              domains: [
-                domainRow({
-                  id: 'd-sub',
-                  domain: 'mail.stub.example.com',
-                  registrableDomain: 'stub.example.com',
-                  records: [record({ name: '_veerify-mail.mail.stub.example.com' })],
-                }),
-              ],
-            })
-          ),
-      })
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                domains: [
+                  domainRow({
+                    id: 'd-sub',
+                    domain: 'mail.stub.example.com',
+                    registrableDomain: 'stub.example.com',
+                    records: [record({ name: '_veerify-mail.mail.stub.example.com' })],
+                  }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
       const row = rowFor(page, 'mail.stub.example.com')
       await row.getByTestId('support-sending-domain-expand').click({ timeout: 20_000 })
       await expect(row.getByTestId('support-dns-zone-note')).toContainText('stub.example.com')
@@ -695,17 +734,21 @@ test.describe('support sending domains', () => {
     })
 
     test('a response without registrableDomain falls back to the claimed domain as the zone', async ({ browser }) => {
-      const page = await openStubbed(browser, { list: () => ok(listPayload()) })
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) }, domainsPath())
       const row = rowFor(page, 'stub.example.com')
       await row.getByTestId('support-sending-domain-expand').click({ timeout: 20_000 })
       await expect(row.getByTestId('support-dns-record-host')).toHaveText('_veerify-mail')
     })
 
     test('a 202 delete answer says the removal is in progress', async ({ browser }) => {
-      const page = await openStubbed(browser, {
-        list: () => ok(listPayload({ domains: [domainRow({ status: 'verified' })] })),
-        onItem: (method) => (method === 'DELETE' ? ok({ deleted: false }, 202) : null),
-      })
+      const page = await openStubbed(
+        browser,
+        {
+          list: () => ok(listPayload({ domains: [domainRow({ status: 'verified' })] })),
+          onItem: (method) => (method === 'DELETE' ? ok({ deleted: false }, 202) : null),
+        },
+        domainsPath()
+      )
       await rowFor(page, 'stub.example.com').getByTestId('support-sending-domain-delete').click({ timeout: 20_000 })
       await page.getByTestId('support-sending-domain-delete-confirm').click()
       await expect(page.getByText('Removal in progress')).toBeVisible()
@@ -719,7 +762,6 @@ test.describe('support sending domains', () => {
       })
       await stubChannelStatus(page, { platformForwardingEnabled: true, platformAddress: null })
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await expect(page.getByTestId('support-sending-domains')).toHaveCount(0)
       await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'project', {
         timeout: 20_000,
       })
@@ -732,8 +774,7 @@ test.describe('support sending domains', () => {
       const page = await openStubbed(browser, { list: () => ok(listPayload()) })
       await stubChannelStatus(page, { platformForwardingEnabled: false, platformAddress: null })
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByTestId('support-settings-channel-webhook')).toBeVisible()
+      await expect(page.getByTestId('support-settings-channel-webhook')).toBeVisible({ timeout: 20_000 })
       await expect(page.getByTestId('support-settings-platform-create')).toHaveCount(0)
     })
 
@@ -778,12 +819,11 @@ test.describe('support sending domains', () => {
         )
       })
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await expect(page.getByRole('button', { name: 'Remove receiving address help@stub.example.com' })).toBeVisible({
-        timeout: 20_000,
-      })
-      await expect(
-        page.getByRole('button', { name: 'Remove receiving address acme-support-k3m9qz@veerifymail.test' })
-      ).toHaveCount(0)
+      // Inbox settings lists addresses read-only; they are managed in Project settings -> Email.
+      const addressList = page.getByTestId('support-settings-addresses')
+      await expect(addressList).toContainText('help@stub.example.com', { timeout: 20_000 })
+      await expect(addressList).toContainText('acme-support-k3m9qz@veerifymail.test')
+      await expect(page.getByRole('button', { name: /^Remove receiving address/ })).toHaveCount(0)
 
       await page.getByTestId('support-settings-platform-regenerate').click()
       await expect(page.getByRole('dialog', { name: 'Regenerate forwarding address' })).toContainText(
@@ -841,7 +881,7 @@ test.describe('support sending domains', () => {
       let conversationId = ''
       try {
         const post = (url: string, data: unknown) =>
-          page.request.post(url, { headers: withOriginHeaders('/support'), data })
+          page.request.post(url, { headers: withOriginHeaders('/inbox'), data })
         const contactResponse = await post('/api/support/contacts', {
           projectId: fixture.projectId,
           name: 'Blocked Sender Customer',
@@ -897,14 +937,17 @@ test.describe('support sending domains', () => {
           await dialog.dismiss()
         })
 
-        await page.goto(`/support?inboxId=${fixture.primaryInboxId}&conversationId=${conversationId}`, {
+        await page.goto(`/inbox?inboxId=${fixture.primaryInboxId}&conversationId=${conversationId}`, {
           waitUntil: 'domcontentloaded',
         })
         const notice = page.getByTestId('support-message-sender-blocked')
-        await expect(notice).toContainText("this inbox's From address isn't verified for your project", {
+        await expect(notice).toContainText("the From address isn't verified for your project", {
           timeout: 30_000,
         })
-        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute('href', '/support/settings')
+        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute(
+          'href',
+          '/project/settings?tab=email'
+        )
         await page.getByTestId('support-message-retry').click()
         await expect.poll(() => retries).toBe(1)
         expect(dialogs).toBe(0)

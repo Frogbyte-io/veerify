@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { MailgunSendingDomainProvider, escapeRouteAddress } from '../server/services/sending-domains/providers/mailgun'
+import {
+  CATCH_ALL_ROUTE_PRIORITY,
+  EXACT_ROUTE_PRIORITY,
+  MailgunSendingDomainProvider,
+  escapeRouteAddress,
+  inboundRouteDefinition,
+} from '../server/services/sending-domains/providers/mailgun'
 import type { FetchImpl } from '../server/services/support-channels/types'
 import { SendingDomainProviderError } from '../server/services/sending-domains/types'
 
@@ -353,6 +359,47 @@ describe('inbound routes', () => {
     expect(() => escapeRouteAddress('a+b@acme.com')).toThrow(SendingDomainProviderError)
     expect(() => escapeRouteAddress('a(b)@acme.com')).toThrow(SendingDomainProviderError)
     expect(escapeRouteAddress('support@acme.com')).toBe('support@acme\\.com')
+  })
+
+  it('posts a catch-all as a domain-wide match_recipient at priority 100, never catch_all()', async () => {
+    const fetchImpl = vi.fn(async () => json({ message: 'Route has been created', route: { id: 'route-2' } }))
+    await make(fetchImpl).createInboundRoute({
+      address: '*@Mail.New-Site.com',
+      forwardUrl: 'https://veerify.test/api/support/inbound/mailgun',
+      description: 'veerify:inbox1:addr2',
+    })
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    const form = new URLSearchParams(init.body as string)
+    expect(form.get('expression')).toBe('match_recipient("^.*@mail\\.new\\-site\\.com$")')
+    expect(form.get('expression')).not.toContain('catch_all')
+    expect(form.get('priority')).toBe('100')
+    expect(form.getAll('action')).toEqual(['forward("https://veerify.test/api/support/inbound/mailgun")', 'stop()'])
+  })
+
+  it('inboundRouteDefinition: exact addresses outrank catch-alls and every dot is escaped', () => {
+    const exact = inboundRouteDefinition('hello@newsite.com')
+    const catchAll = inboundRouteDefinition('*@newsite.com')
+    expect(exact).toEqual({ expression: 'match_recipient("^hello@newsite\\.com$")', priority: EXACT_ROUTE_PRIORITY })
+    expect(catchAll).toEqual({
+      expression: 'match_recipient("^.*@newsite\\.com$")',
+      priority: CATCH_ALL_ROUTE_PRIORITY,
+    })
+    // Mailgun evaluates the lowest priority first.
+    expect(exact.priority).toBeLessThan(catchAll.priority)
+
+    // The escaped pattern is a regex that matches the domain literally and exactly.
+    const pattern = new RegExp(catchAll.expression.slice('match_recipient("'.length, -'")'.length))
+    expect(pattern.test('anything@newsite.com')).toBe(true)
+    expect(pattern.test('anything@newsiteXcom')).toBe(false)
+    expect(pattern.test('anything@sub.newsite.com')).toBe(false)
+    expect(pattern.test('anything@newsite.com.evil.test')).toBe(false)
+  })
+
+  it('inboundRouteDefinition refuses catch-all domains that are not plain host names', () => {
+    for (const bad of ['*@', '*@*.acme.com', '*@acme', '*@acme.com)', '*@acme..com', '*@-acme.com', '*@a|b.com']) {
+      expect(() => inboundRouteDefinition(bad), bad).toThrow(SendingDomainProviderError)
+    }
+    expect(() => inboundRouteDefinition('a*@acme.com')).toThrow(SendingDomainProviderError)
   })
 
   it('deletes a route and treats a missing route as success', async () => {

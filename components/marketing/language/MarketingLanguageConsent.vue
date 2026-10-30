@@ -15,9 +15,9 @@
       <ul class="space-y-1 text-sm text-muted-foreground" data-testid="language-consent-details">
         <li>
           <span class="font-medium text-foreground">What:</span>
-          feedback titles, descriptions and public comments, and the text of incoming customer support messages for this
-          product. Hidden feedback, internal notes and agent replies are never used. Feedback created from a support
-          conversation counts as support text. Titles of feedback linked to changelog entries are also included in
+          feedback titles, descriptions and public comments, and the text of incoming customer inbox messages for this
+          product. Hidden feedback, internal notes and agent replies are never used. Feedback created from an inbox
+          conversation counts as inbox text. Titles of feedback linked to changelog entries are also included in
           announcement drafts when feedback text is on.
         </li>
         <li>
@@ -51,8 +51,8 @@
         </div>
         <div class="flex items-center justify-between gap-4 rounded-md border p-3">
           <div>
-            <Label for="language-consent-support" class="font-medium">Support text</Label>
-            <p class="text-xs text-muted-foreground">Incoming customer messages in your support inbox</p>
+            <Label for="language-consent-support" class="font-medium">Inbox text</Label>
+            <p class="text-xs text-muted-foreground">Incoming customer messages in your inbox</p>
           </div>
           <Switch
             id="language-consent-support"

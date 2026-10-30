@@ -40,7 +40,7 @@
         </div>
       </div>
 
-      <!-- Notices (load error, Support off, no inbox) use the standard page frame -->
+      <!-- Notices (load error, Inbox off, no inbox) use the standard page frame -->
       <PageContainer v-else-if="showNotice" data-testid="support-inbox-notice">
         <PageHeader title="Inbox" description="Conversations with your customers" />
 
@@ -57,13 +57,13 @@
           </CardContent>
         </Card>
 
-        <!-- Support switched off for this project -->
+        <!-- Inbox switched off for this project -->
         <Card v-else-if="supportDisabled" data-testid="support-disabled">
           <CardContent class="text-center py-10 space-y-3">
             <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Icon name="lucide:life-buoy" class="w-6 h-6 text-muted-foreground" />
             </div>
-            <p class="font-medium">Support is switched off for this project</p>
+            <p class="font-medium">Inbox is switched off for this project</p>
             <template v-if="activeProject?.role === 'admin'">
               <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
               <Button as-child variant="outline">
@@ -75,7 +75,7 @@
             </template>
             <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
               <Icon name="lucide:lock" class="w-3.5 h-3.5" />
-              Project admins can switch Support on.
+              Project admins can switch Inbox on.
             </p>
           </CardContent>
         </Card>
@@ -92,15 +92,15 @@
               {{ inboxAccessError }}
             </div>
             <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-            <p class="font-medium mb-2" data-testid="support-no-assignment">No support inboxes are assigned to you.</p>
+            <p class="font-medium mb-2" data-testid="support-no-assignment">No inboxes are assigned to you.</p>
             <p class="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-              Admins can create an inbox and set up domains, addresses and agents in support settings. Otherwise, ask a
-              support administrator to add you to an inbox.
+              Admins can create an inbox and set up domains, addresses and agents in inbox settings. Otherwise, ask an
+              inbox administrator to add you to an inbox.
             </p>
             <Button as-child>
-              <NuxtLink to="/support/settings" data-testid="support-inbox-empty-settings">
+              <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
                 <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
-                Open support settings
+                Open inbox settings
               </NuxtLink>
             </Button>
           </CardContent>
@@ -123,10 +123,10 @@
             <Icon name="lucide:panel-left" class="w-4 h-4" />
           </Button>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium">{{ activeInbox?.name || 'Support' }}</p>
+            <p class="truncate text-sm font-medium">{{ activeInbox?.name || 'Inbox' }}</p>
           </div>
           <Button variant="ghost" size="sm" as-child>
-            <NuxtLink to="/support/settings" aria-label="Support settings" data-testid="support-settings-link">
+            <NuxtLink to="/inbox/settings" aria-label="Inbox settings" data-testid="support-settings-link">
               <Icon name="lucide:settings" class="w-4 h-4" />
             </NuxtLink>
           </Button>
@@ -151,8 +151,11 @@
               :capabilities="activeInbox?.capabilities"
               :active-view="activeView"
               :unread-counts="unreadCounts"
+              :addresses="addresses"
+              :active-address-id="activeAddressId"
               @select-inbox="selectInbox"
               @select-view="selectView"
+              @select-address="selectAddress"
               @retry="loadInboxes"
               @create-tag="createTag"
             />
@@ -174,6 +177,7 @@
               :csat-filter="csatFilter"
               :csat-summary="csatSummary"
               :active-inbox-id="activeInboxId"
+              :active-view="activeView"
               :unread-counts="unreadCounts"
               @select="selectConversation"
               @search="handleConversationSearch"
@@ -240,8 +244,11 @@
           :capabilities="activeInbox?.capabilities"
           :active-view="activeView"
           :unread-counts="unreadCounts"
+          :addresses="addresses"
+          :active-address-id="activeAddressId"
           @select-inbox="(id) => closeInboxSheetAfter(selectInbox(id))"
           @select-view="(view) => closeInboxSheetAfter(selectView(view))"
+          @select-address="(id) => closeInboxSheetAfter(selectAddress(id))"
           @retry="loadInboxes"
           @create-tag="createTag"
         />
@@ -295,6 +302,10 @@
           <span>Claim conversation</span>
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">e</kbd>
           <span>Resolve conversation</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">#</kbd>
+          <span>Delete conversation (move to Trash)</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">!</kbd>
+          <span>Mark conversation as spam</span>
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">/</kbd>
           <span>Focus conversation search</span>
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">?</kbd>
@@ -346,7 +357,7 @@ import {
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 const SUPPORT_DRAFT_STATE_CHANGED_EVENT = 'veerify:support-draft-state-changed'
-const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all']
+const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'archived', 'spam', 'trash', 'all']
 const CSAT_FILTERS = ['all', 'rated', 'unrated']
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
 const DRAFT_MODES = ['reply', 'note']
@@ -355,7 +366,7 @@ export default {
   name: 'SupportInboxPage',
 
   created() {
-    useHead({ title: 'Support inbox' })
+    useHead({ title: 'Inbox' })
   },
 
   data() {
@@ -380,6 +391,8 @@ export default {
       inboxMembers: [],
 
       activeView: 'unassigned',
+      addresses: [],
+      activeAddressId: null,
 
       conversations: [],
       isLoadingConversations: true,
@@ -533,6 +546,11 @@ export default {
         void this.claimConversation()
       } else if (action === 'resolve') {
         void this.patchConversation({ status: 'resolved' })
+      } else if (action === 'delete') {
+        if (!this.conversationDetail?.deletedAt) void this.patchConversation({ deleted: true })
+      } else if (action === 'spam') {
+        if (!this.conversationDetail?.spamAt && !this.conversationDetail?.deletedAt)
+          void this.patchConversation({ spam: true })
       } else if (action === 'search') {
         this.focusConversationSearch()
       } else if (action === 'help') {
@@ -583,6 +601,8 @@ export default {
       this.currentUserName = ''
       this.activeInboxId = null
       this.inboxMembers = []
+      this.addresses = []
+      this.activeAddressId = null
       this.activeView = 'unassigned'
       this.conversationSearch = ''
       this.csatFilter = 'all'
@@ -685,7 +705,7 @@ export default {
         if (initialInboxId) {
           await this.selectInbox(initialInboxId, { generation, projectId, useRouteView: true })
           // Deep link from a conversation_assigned notification
-          // (`/support?conversationId=…`). Opened after the inbox loads,
+          // (`/inbox?conversationId=…`). Opened after the inbox loads,
           // because selectInbox clears any current selection.
           if (this.isCurrentContext(generation, projectId)) await this.openRequestedConversation()
         }
@@ -695,7 +715,7 @@ export default {
           this.inboxes = []
           this.activeInboxId = null
           this.inboxMembers = []
-          if (!recovering) this.inboxAccessError = 'You do not have access to this support inbox'
+          if (!recovering) this.inboxAccessError = 'You do not have access to this inbox'
           return
         }
         this.inboxesError = 'Failed to load inboxes. Please try again.'
@@ -720,6 +740,9 @@ export default {
       this.activeInboxId = inboxId
       this.inboxAccessError = null
       this.activeView = useRouteView ? this.normalizeSupportView(this.$route.query.view) : 'unassigned'
+      this.addresses = []
+      this.activeAddressId =
+        useRouteView && typeof this.$route.query.address === 'string' ? this.$route.query.address : null
       this.conversationSearch = useRouteView ? this.normalizeConversationSearch(this.$route.query.search) : ''
       this.csatFilter = useRouteView ? this.normalizeCsatFilter(this.$route.query.csat) : 'all'
 
@@ -730,6 +753,7 @@ export default {
               ...this.$route.query,
               inboxId,
               view: this.activeView === 'unassigned' ? undefined : this.activeView,
+              address: this.activeAddressId || undefined,
               search: this.conversationSearch || undefined,
               csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             },
@@ -739,6 +763,7 @@ export default {
 
       await Promise.all([
         this.loadInboxMembers({ generation, projectId, inboxId }),
+        this.loadAddresses({ generation, projectId, inboxId }),
         this.loadConversations(true, { generation, projectId, inboxId }),
         this.loadCsatSummary({ generation, projectId }),
       ])
@@ -766,8 +791,7 @@ export default {
           .catch(() => {})
       }
       await this.loadInboxes({ recovering: true, generation, projectId })
-      if (this.isCurrentContext(generation, projectId))
-        this.inboxAccessError = 'You do not have access to this support inbox'
+      if (this.isCurrentContext(generation, projectId)) this.inboxAccessError = 'You do not have access to this inbox'
     },
 
     async openRequestedConversation() {
@@ -797,6 +821,40 @@ export default {
         this.inboxMembers = []
         if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox({ generation, projectId, inboxId })
       }
+    },
+
+    async loadAddresses({
+      generation = this.contextGeneration,
+      projectId = this.activeProjectId,
+      inboxId = this.activeInboxId,
+    } = {}) {
+      if (!inboxId || !this.isCurrentContext(generation, projectId, inboxId)) return
+      try {
+        const response = await $fetch(`/api/support/inboxes/${inboxId}/addresses`)
+        if (!this.isCurrentContext(generation, projectId, inboxId)) return
+        this.addresses = response?.data?.addresses || []
+        // A stale ?address= from the URL must not filter the list by an address this inbox no longer has.
+        if (this.activeAddressId && !this.addresses.some((address) => address.id === this.activeAddressId)) {
+          this.activeAddressId = null
+          await this.loadConversations(true, { generation, projectId, inboxId })
+        }
+      } catch {
+        // The Addresses group is a convenience filter: without it the inbox still works.
+        if (this.isCurrentContext(generation, projectId, inboxId)) this.addresses = []
+      }
+    },
+
+    async selectAddress(addressId) {
+      const nextId = addressId && addressId !== this.activeAddressId ? addressId : null
+      if (nextId === this.activeAddressId) return
+      this.unselectConversation()
+      this.activeAddressId = nextId
+      if (import.meta.client) {
+        await this.$router
+          .replace({ query: { ...this.$route.query, address: nextId || undefined, conversationId: undefined } })
+          .catch(() => {})
+      }
+      await this.loadConversations(true)
     },
 
     async createTag(name) {
@@ -876,6 +934,7 @@ export default {
           params: {
             inboxId,
             view: this.activeView,
+            mailAddressId: this.activeAddressId || undefined,
             search: this.conversationSearch || undefined,
             csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             limit: 25,
@@ -1255,6 +1314,23 @@ export default {
           response?.data?.conversation
         ) {
           this.conversationDetail = response.data.conversation
+        }
+        // Moving a conversation between folders takes it out of the current
+        // view, so close it rather than leave a thread open that the list no
+        // longer shows.
+        const leavesView =
+          'spam' in patch ||
+          'deleted' in patch ||
+          (patch.status === 'closed' && !['all', 'archived'].includes(this.activeView))
+        if (leavesView && this.isCurrentConversation(generation, projectId, inboxId, conversationId)) {
+          // The `finally` below only resets this while the conversation is still selected.
+          this.isUpdatingConversation = false
+          this.unselectConversation()
+          if (import.meta.client) {
+            this.$router.replace({ query: { ...this.$route.query, conversationId: undefined } }).catch(() => {})
+          }
+          await this.loadConversations(true, { generation, projectId, inboxId })
+          return
         }
         // The PATCH writes an `activity` message server-side describing the
         // change - reload the thread and list so it appears without waiting

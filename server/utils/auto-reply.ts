@@ -25,11 +25,22 @@ import { buildOutgoingReply, type OutgoingReplyInput, type OutgoingReplyResult }
 export const AUTO_REPLY_RATE_LIMIT_MAX = 1
 export const AUTO_REPLY_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
+/**
+ * Guard 2 plus the mail-address rules: never for a conversation started on a
+ * `mail` address, and never for a message the provider flagged as spam
+ * (replying to spam confirms the address to the spammer and can backscatter
+ * to a forged sender).
+ */
 export function shouldSendAutoReply(input: {
   isNewConversation: boolean
   autoReplyEnabled: boolean
   autoReplyTemplate: string | null
+  /** The new conversation's behaviour (from the receiving address). Default `helpdesk`. */
+  behaviour?: string
+  /** The provider's spam verdict for the inbound message. */
+  isSpam?: boolean
 }): boolean {
+  if (input.behaviour === 'mail' || input.isSpam) return false
   return input.isNewConversation && input.autoReplyEnabled && Boolean(input.autoReplyTemplate?.trim())
 }
 

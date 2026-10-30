@@ -1,4 +1,14 @@
-export type SupportShortcutAction = 'next' | 'previous' | 'reply' | 'note' | 'claim' | 'resolve' | 'search' | 'help'
+export type SupportShortcutAction =
+  | 'next'
+  | 'previous'
+  | 'reply'
+  | 'note'
+  | 'claim'
+  | 'resolve'
+  | 'delete'
+  | 'spam'
+  | 'search'
+  | 'help'
 
 const SUPPORT_SHORTCUT_ACTIONS: Record<string, SupportShortcutAction> = {
   j: 'next',
@@ -7,6 +17,8 @@ const SUPPORT_SHORTCUT_ACTIONS: Record<string, SupportShortcutAction> = {
   n: 'note',
   c: 'claim',
   e: 'resolve',
+  '#': 'delete',
+  '!': 'spam',
   '/': 'search',
   '?': 'help',
 }

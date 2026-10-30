@@ -67,6 +67,8 @@ export default defineEventHandler(async (event) => {
     companyId: matchedContact.companyId,
     tagIds: [],
     start: now,
+    // Conversations agents start are helpdesk conversations outside Spam/Trash.
+    conversation: { behaviour: 'helpdesk', spamAt: null, deletedAt: null },
   })
 
   const created = await db.transaction(async (tx) => {

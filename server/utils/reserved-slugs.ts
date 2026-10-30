@@ -6,6 +6,7 @@ export const RESERVED_SLUGS = new Set([
   'docs',
   'help',
   'support',
+  'inbox',
   'status',
   'blog',
   'mail',

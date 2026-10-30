@@ -32,6 +32,18 @@ describe('shouldSendAutoReply', () => {
       false
     )
   })
+
+  it('never fires for a conversation started on a mail address', () => {
+    const base = { isNewConversation: true, autoReplyEnabled: true, autoReplyTemplate: 'Thanks!' }
+    expect(shouldSendAutoReply({ ...base, behaviour: 'mail' })).toBe(false)
+    expect(shouldSendAutoReply({ ...base, behaviour: 'helpdesk' })).toBe(true)
+  })
+
+  it('never fires for a message the provider flagged as spam', () => {
+    const base = { isNewConversation: true, autoReplyEnabled: true, autoReplyTemplate: 'Thanks!' }
+    expect(shouldSendAutoReply({ ...base, behaviour: 'helpdesk', isSpam: true })).toBe(false)
+    expect(shouldSendAutoReply({ ...base, behaviour: 'helpdesk', isSpam: false })).toBe(true)
+  })
 })
 
 describe('buildAutoReply', () => {

@@ -345,7 +345,7 @@ export default {
       this.busyIds = [...this.busyIds, id]
       try {
         const response = await $fetch(`${this.basePath}/${id}/escalate`, { method: 'POST' })
-        toast.success(response.data.alreadyEscalated ? 'Already escalated' : 'Escalated to support')
+        toast.success(response.data.alreadyEscalated ? 'Already escalated' : 'Escalated to inbox')
         await this.reload()
       } catch (err) {
         toast.error(apiErrorMessage(err, 'Failed to escalate mention'))

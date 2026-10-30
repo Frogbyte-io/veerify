@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { db } from '../../server/database/drizzle'
 import { organization } from '../../server/database/schema/auth'
 import { project } from '../../server/database/schema/feedback'
-import { supportInbox, supportInboxAddress, supportSendingDomain } from '../../server/database/schema/support'
+import { supportInbox, projectMailAddress, projectMailDomain } from '../../server/database/schema/support'
 import {
   deleteSendingDomainRow,
   detachForeignAddresses,
@@ -110,11 +110,11 @@ async function addClaim(
   projectId: string,
   domain: string,
   status: string,
-  overrides: Partial<typeof supportSendingDomain.$inferInsert> = {}
+  overrides: Partial<typeof projectMailDomain.$inferInsert> = {}
 ) {
   const id = `sdl_${randomUUID()}`
   claimIds.push(id)
-  await db.insert(supportSendingDomain).values({
+  await db.insert(projectMailDomain).values({
     id,
     projectId,
     domain,
@@ -132,7 +132,7 @@ async function addClaim(
 async function addAddress(
   inboxId: string,
   address: string,
-  overrides: Partial<typeof supportInboxAddress.$inferInsert> = {}
+  overrides: Partial<typeof projectMailAddress.$inferInsert> = {}
 ) {
   const id = `sdl_addr_${randomUUID()}`
   const [owner] = await db
@@ -141,13 +141,13 @@ async function addAddress(
     .where(eq(supportInbox.id, inboxId))
     .limit(1)
   await db
-    .insert(supportInboxAddress)
+    .insert(projectMailAddress)
     .values({ id, inboxId, projectId: owner.projectId, address, kind: 'custom', ...overrides })
   return id
 }
 
 const claimRow = async (id: string) =>
-  (await db.select().from(supportSendingDomain).where(eq(supportSendingDomain.id, id)))[0]
+  (await db.select().from(projectMailDomain).where(eq(projectMailDomain.id, id)))[0]
 
 /** Poll exactly these rows (the shared claim queue also holds other suites' rows). */
 function poll(ids: string[], provider: unknown, deps: Record<string, unknown> = {}) {
@@ -159,7 +159,7 @@ function poll(ids: string[], provider: unknown, deps: Record<string, unknown> = 
     provider: provider as never,
     claim: async () => {
       const batch = batches.shift()
-      return batch ? db.select().from(supportSendingDomain).where(inArray(supportSendingDomain.id, batch)) : []
+      return batch ? db.select().from(projectMailDomain).where(inArray(projectMailDomain.id, batch)) : []
     },
     checkOwnership: async () => 'valid',
     checkDmarcRecord: async () => null,
@@ -209,8 +209,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   stubs.provider = makeProvider()
   stubs.responseStatus = undefined
-  await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.id, claimIds.splice(0)))
-  await db.delete(supportInboxAddress).where(inArray(supportInboxAddress.inboxId, [inboxA, inboxB, inboxB2]))
+  await db.delete(projectMailDomain).where(inArray(projectMailDomain.id, claimIds.splice(0)))
+  await db.delete(projectMailAddress).where(inArray(projectMailAddress.inboxId, [inboxA, inboxB, inboxB2]))
   await db
     .update(supportInbox)
     .set({ emailAddress: null })
@@ -219,7 +219,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   process.env = savedEnv
-  await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.id, claimIds))
+  await db.delete(projectMailDomain).where(inArray(projectMailDomain.id, claimIds))
   await db.delete(project).where(inArray(project.id, [projectA, projectB]))
   await db.delete(organization).where(eq(organization.id, orgId))
 })
@@ -249,9 +249,9 @@ describe('verifying a claim detaches other projects (H2, M1)', () => {
 
     expect(res.data.status).toBe('verified')
     const left = await db
-      .select({ id: supportInboxAddress.id })
-      .from(supportInboxAddress)
-      .where(inArray(supportInboxAddress.id, [foreign, foreignSub, unrelated, own]))
+      .select({ id: projectMailAddress.id })
+      .from(projectMailAddress)
+      .where(inArray(projectMailAddress.id, [foreign, foreignSub, unrelated, own]))
     expect(left.map((r) => r.id).sort()).toEqual([unrelated, own].sort())
     const inboxes = await db
       .select({ id: supportInbox.id, emailAddress: supportInbox.emailAddress })
@@ -273,7 +273,7 @@ describe('verifying a claim detaches other projects (H2, M1)', () => {
     stubs.params = { projectId: projectA, id: claim }
     expect((await verifyRoute({})).data.status).toBe('pending')
 
-    expect(await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, foreign))).toHaveLength(1)
+    expect(await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, foreign))).toHaveLength(1)
     const [inbox] = await db.select().from(supportInbox).where(eq(supportInbox.id, inboxB))
     expect(inbox!.emailAddress).toBe(`support@${domain}`)
   })
@@ -295,7 +295,7 @@ describe('verifying a claim detaches other projects (H2, M1)', () => {
 
     expect(summary.verified).toBe(1)
     expect((await claimRow(claim))!.status).toBe('verified')
-    expect(await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.inboxId, inboxB))).toEqual([])
+    expect(await db.select().from(projectMailAddress).where(eq(projectMailAddress.inboxId, inboxB))).toEqual([])
     expect((await db.select().from(supportInbox).where(eq(supportInbox.id, inboxB)))[0]!.emailAddress).toBeNull()
     expect(metrics.map((m) => m.name)).toContain('support.sending_domain.address_detached')
   })
@@ -453,9 +453,9 @@ describe('guarded deletes (6e)', () => {
       // The row was verified between the claim and the delete.
       deleteRow: async (row: { id: string; status: string }, opts: { expiredBy?: Date }) => {
         await db
-          .update(supportSendingDomain)
+          .update(projectMailDomain)
           .set({ status: 'verified', expiresAt: null, verifiedAt: now() })
-          .where(eq(supportSendingDomain.id, claim))
+          .where(eq(projectMailDomain.id, claim))
         return deleteSendingDomainRow(row as never, opts)
       },
     })
@@ -488,9 +488,9 @@ describe('removal that cannot succeed (§5.3)', () => {
     let passes = 0
     for (; passes < 30; passes++) {
       await db
-        .update(supportSendingDomain)
+        .update(projectMailDomain)
         .set({ nextCheckAt: past(), leaseExpiresAt: null })
-        .where(eq(supportSendingDomain.id, claim))
+        .where(eq(projectMailDomain.id, claim))
       const { summary } = await poll([claim], provider)
       if (summary.deleted) break
       expect(summary.aborted).toBe('provider_misconfigured')
@@ -509,7 +509,7 @@ describe('busy rows (6d)', () => {
     await expect(deleteRoute({})).rejects.toMatchObject({ statusCode: 409, data: { error: { code: 'DOMAIN_BUSY' } } })
     expect((await claimRow(claim))!.status).toBe('provisioning')
 
-    await db.update(supportSendingDomain).set({ leaseExpiresAt: past() }).where(eq(supportSendingDomain.id, claim))
+    await db.update(projectMailDomain).set({ leaseExpiresAt: past() }).where(eq(projectMailDomain.id, claim))
     const res = await deleteRoute({})
     expect(res.data).toMatchObject({ deleted: true })
     expect(await claimRow(claim)).toBeUndefined()
@@ -537,8 +537,8 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
     expect(provider.createInboundRoute).toHaveBeenCalledTimes(2)
     const rows = await db
       .select()
-      .from(supportInboxAddress)
-      .where(inArray(supportInboxAddress.id, [failed, missing, active, subdomain, platform, foreignProject]))
+      .from(projectMailAddress)
+      .where(inArray(projectMailAddress.id, [failed, missing, active, subdomain, platform, foreignProject]))
     const byId = new Map(rows.map((r) => [r.id, r]))
     expect(byId.get(failed)).toMatchObject({ providerRouteStatus: 'active' })
     expect(byId.get(failed)!.providerRouteId).toMatch(/^route_/)
@@ -563,7 +563,7 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
       failed: 1,
       misconfigured: false,
     })
-    expect((await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, addr)))[0]).toMatchObject({
+    expect((await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, addr)))[0]).toMatchObject({
       providerRouteStatus: 'failed',
     })
 
@@ -581,7 +581,7 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
       }
     )
     expect(metrics.map((m) => m.name)).toContain('support.sending_domain.provider_misconfigured')
-    expect((await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, addr)))[0]).toMatchObject({
+    expect((await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, addr)))[0]).toMatchObject({
       providerRouteStatus: 'failed',
     })
   })
@@ -593,7 +593,7 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
     const provider = makeProvider({ get: vi.fn(async (d: string) => activeResult(d, { receivesMail: true })) })
     await poll([claim], provider)
     expect(provider.createInboundRoute).toHaveBeenCalledTimes(1)
-    expect((await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, addr)))[0]).toMatchObject({
+    expect((await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, addr)))[0]).toMatchObject({
       providerRouteStatus: 'active',
     })
   })

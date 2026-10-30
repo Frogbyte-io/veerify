@@ -7,6 +7,7 @@ import {
   type SendingDomainRegistration,
 } from '../types'
 import { normalizeDomainName } from '../util'
+import { inboundRouteDefinition } from './mailgun'
 
 /**
  * In-memory provider for dev and e2e runs (design §6.4). Never used in
@@ -25,7 +26,14 @@ interface FakeDomainState {
 export interface FakeSendingDomainStore {
   domains: Map<string, FakeDomainState>
   flakyFailed: Set<string>
-  routes: Map<string, string>
+  /** Route id -> the route as a Mailgun-compatible provider would store it. */
+  routes: Map<string, FakeInboundRoute>
+}
+
+export interface FakeInboundRoute {
+  address: string
+  expression: string
+  priority: number
 }
 
 function createStore(): FakeSendingDomainStore {
@@ -35,6 +43,11 @@ function createStore(): FakeSendingDomainStore {
 const sharedStore = createStore()
 
 /** Clears the process-wide in-memory state (tests). */
+/** The fake provider's current routes (tests). */
+export function fakeInboundRoutes(): FakeInboundRoute[] {
+  return [...sharedStore.routes.values()]
+}
+
 export function resetFakeSendingDomainState(): void {
   sharedStore.domains.clear()
   sharedStore.flakyFailed.clear()
@@ -115,7 +128,10 @@ export class FakeSendingDomainProvider implements SendingDomainProvider {
     description: string
   }): Promise<{ routeId: string }> {
     const routeId = `fake-route-${this.store.routes.size + 1}-${Date.now().toString(36)}`
-    this.store.routes.set(routeId, input.address)
+    // Same expression and priority as the Mailgun provider, so tests see what a
+    // real provider would get (and invalid addresses fail the same way).
+    const route = inboundRouteDefinition(input.address)
+    this.store.routes.set(routeId, { address: input.address, ...route })
     return { routeId }
   }
 

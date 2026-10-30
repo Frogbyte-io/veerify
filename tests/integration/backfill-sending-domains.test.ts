@@ -18,8 +18,9 @@ vi.hoisted(() => {
 /* eslint-disable import/first -- the env must be set before the database module loads */
 import { db } from '../../server/database/drizzle'
 import { organization, user } from '../../server/database/schema/auth'
+import { mailEntitlement } from '../../server/database/schema/mail'
 import { project, projectMember } from '../../server/database/schema/feedback'
-import { supportInbox, supportInboxAddress, supportSendingDomain } from '../../server/database/schema/support'
+import { supportInbox, projectMailAddress, projectMailDomain } from '../../server/database/schema/support'
 import { FakeSendingDomainProvider } from '../../server/services/sending-domains/providers/fake'
 import { parseArgs, productionDatabaseReason, runBackfill } from '../../scripts/backfill-sending-domains'
 /* eslint-enable import/first */
@@ -54,7 +55,7 @@ async function addInbox(projectId: string, address: string | null, extraAddresse
   })
   for (const extra of extraAddresses) {
     await db
-      .insert(supportInboxAddress)
+      .insert(projectMailAddress)
       .values({ id: `bf_addr_${randomUUID()}`, inboxId: id, projectId, address: extra })
   }
 }
@@ -63,12 +64,14 @@ const scoped = (apply: boolean, ...ids: string[]) => ({ apply, projectIds: ids, 
 const deps = { provider, sleep }
 
 async function claimsFor(projectId: string) {
-  return db.select().from(supportSendingDomain).where(eq(supportSendingDomain.projectId, projectId))
+  return db.select().from(projectMailDomain).where(eq(projectMailDomain.projectId, projectId))
 }
 
 beforeAll(async () => {
   expect(process.env.PGDATABASE).toBe('veerify_backfill')
   await db.insert(organization).values({ id: orgId, name: 'BF org', slug: `bf-${run}`, createdAt: now, updatedAt: now })
+  // Mail limits count per workspace; every scenario here shares one, so lift the domain limit.
+  await db.insert(mailEntitlement).values({ id: `bf_ent_${run}`, organizationId: orgId, tier: 'owner' })
   await db.insert(user).values([
     { id: userA, name: 'A', email: `bf-a-${run}@example.com`, createdAt: now, updatedAt: now },
     { id: userB, name: 'B', email: `bf-b-${run}@example.com`, createdAt: now, updatedAt: now },
@@ -153,7 +156,7 @@ describe('backfill-sending-domains', () => {
     const domain = fresh()
     await activeOnProvider(domain)
     await addInbox(projects.b, `support@${domain}`)
-    await db.insert(supportSendingDomain).values({
+    await db.insert(projectMailDomain).values({
       id: randomUUID(),
       projectId: projects.c,
       domain,
@@ -174,7 +177,7 @@ describe('backfill-sending-domains', () => {
     await activeOnProvider(domain)
     await addInbox(projects.b, `support@${domain}`)
     const id = randomUUID()
-    await db.insert(supportSendingDomain).values({
+    await db.insert(projectMailDomain).values({
       id,
       projectId: projects.b,
       domain,
@@ -252,6 +255,11 @@ describe('backfill-sending-domains', () => {
   })
 
   it('is idempotent: a second apply changes nothing', async () => {
+    // Claims from earlier scenarios are pending, and the workspace allows 3 pending at a time.
+    await db
+      .update(projectMailDomain)
+      .set({ status: 'verified' })
+      .where(inArray(projectMailDomain.projectId, Object.values(projects)))
     const adopt = fresh()
     const missing = fresh()
     await activeOnProvider(adopt)
@@ -274,7 +282,7 @@ describe('backfill-sending-domains', () => {
     const domain = fresh()
     await activeOnProvider(domain)
     await addInbox(projects.c, `support@${domain}`)
-    const rowsBefore = await db.select().from(supportSendingDomain)
+    const rowsBefore = await db.select().from(projectMailDomain)
 
     const report = await runBackfill(scoped(false, projects.c), deps)
 
@@ -282,7 +290,7 @@ describe('backfill-sending-domains', () => {
     expect(report.entries.find((e) => e.domain === domain)?.action).toBe('would_create')
     expect(report.summary.claimsCreated).toBe(0)
     expect(report.summary.claimsWouldCreate).toBeGreaterThanOrEqual(1)
-    expect(await db.select().from(supportSendingDomain)).toEqual(rowsBefore)
+    expect(await db.select().from(projectMailDomain)).toEqual(rowsBefore)
   })
 })
 

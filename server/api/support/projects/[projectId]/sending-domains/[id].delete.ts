@@ -36,7 +36,7 @@ import { and, eq, isNull, lt, or } from 'drizzle-orm'
 import { createError, setResponseStatus } from 'h3'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
-import { supportSendingDomain } from '~/server/database/schema/support'
+import { projectMailDomain } from '~/server/database/schema/support'
 import { createErrorResponse, createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireProjectAdmin } from '~/server/utils/project-access'
@@ -119,7 +119,7 @@ export default defineEventHandler(async (event) => {
   // short lease keeps the poller from racing the inline removal below.
   const now = new Date()
   const [marked] = await db
-    .update(supportSendingDomain)
+    .update(projectMailDomain)
     .set({
       status: 'deleting',
       // The removal retry budget starts here.
@@ -130,11 +130,11 @@ export default defineEventHandler(async (event) => {
     })
     .where(
       and(
-        eq(supportSendingDomain.id, claim.id),
-        eq(supportSendingDomain.projectId, projectId),
+        eq(projectMailDomain.id, claim.id),
+        eq(projectMailDomain.projectId, projectId),
         // Atomic with the lease check above: a register that took the lease since
         // the lookup wins, and the delete is refused.
-        or(isNull(supportSendingDomain.leaseExpiresAt), lt(supportSendingDomain.leaseExpiresAt, now))
+        or(isNull(projectMailDomain.leaseExpiresAt), lt(projectMailDomain.leaseExpiresAt, now))
       )
     )
     .returning()

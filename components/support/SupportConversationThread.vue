@@ -172,7 +172,75 @@
           </select>
 
           <Icon v-if="isUpdating" name="lucide:loader-2" class="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+
+          <!-- Folder actions. Archive is the `closed` status; Spam and Trash
+               are folders that leave the status untouched. -->
+          <div class="ml-auto flex items-center gap-1.5">
+            <Button
+              v-if="isInTrash"
+              variant="outline"
+              size="sm"
+              data-testid="support-thread-restore"
+              :disabled="isUpdating"
+              @click="$emit('update-conversation', { deleted: false })"
+            >
+              <Icon name="lucide:undo-2" class="w-3.5 h-3.5 mr-1.5" />
+              Restore
+            </Button>
+            <template v-else>
+              <Button
+                v-if="isInSpam"
+                variant="outline"
+                size="sm"
+                data-testid="support-thread-not-spam"
+                :disabled="isUpdating"
+                @click="$emit('update-conversation', { spam: false })"
+              >
+                <Icon name="lucide:shield-check" class="w-3.5 h-3.5 mr-1.5" />
+                Not spam
+              </Button>
+              <template v-else>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="support-thread-archive"
+                  :disabled="isUpdating"
+                  @click="$emit('update-conversation', { status: isArchived ? 'open' : 'closed' })"
+                >
+                  <Icon :name="isArchived ? 'lucide:archive-restore' : 'lucide:archive'" class="w-3.5 h-3.5 mr-1.5" />
+                  {{ isArchived ? 'Unarchive' : 'Archive' }}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="support-thread-spam"
+                  :disabled="isUpdating"
+                  @click="$emit('update-conversation', { spam: true })"
+                >
+                  <Icon name="lucide:shield-alert" class="w-3.5 h-3.5 mr-1.5" />
+                  Spam
+                </Button>
+              </template>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="support-thread-delete"
+                :disabled="isUpdating"
+                @click="$emit('update-conversation', { deleted: true })"
+              >
+                <Icon name="lucide:trash-2" class="w-3.5 h-3.5 mr-1.5" />
+                Delete
+              </Button>
+            </template>
+          </div>
         </div>
+        <p
+          v-if="isInTrash"
+          data-testid="support-thread-trash-note"
+          class="mt-3 rounded-md border bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground"
+        >
+          This conversation is in Trash and is deleted permanently 30 days after it was deleted.
+        </p>
       </div>
 
       <!-- Messages -->
@@ -266,6 +334,18 @@ export default {
   },
 
   computed: {
+    isInTrash() {
+      return Boolean(this.conversation?.deletedAt)
+    },
+
+    isInSpam() {
+      return Boolean(this.conversation?.spamAt)
+    },
+
+    isArchived() {
+      return this.conversation?.status === 'closed'
+    },
+
     isHandledByAnotherAgent() {
       return Boolean(this.conversation?.assigneeUserId && this.conversation.assigneeUserId !== this.currentUserId)
     },

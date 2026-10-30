@@ -256,6 +256,7 @@ const inboxUpdate = (await import('~/server/api/support/inboxes/[id].put')).defa
 const inboxDelete = (await import('~/server/api/support/inboxes/[id].delete')).default
 const addressCreate = (await import('~/server/api/support/inboxes/[id]/addresses/index.post')).default
 const addressDelete = (await import('~/server/api/support/inboxes/[id]/addresses/[addressId].delete')).default
+const addressUpdate = (await import('~/server/api/support/inboxes/[id]/addresses/[addressId].patch')).default
 const platformAddressCreate = (await import('~/server/api/support/inboxes/[id]/addresses/platform.post')).default
 const memberCreate = (await import('~/server/api/support/inboxes/[id]/members/index.post')).default
 const memberDelete = (await import('~/server/api/support/inboxes/[id]/members/[memberId].delete')).default
@@ -590,6 +591,13 @@ const executableBoundaryCases: BoundaryCase[] = [
     name: 'inboxes/[id]/addresses/[addressId].delete',
     ...boundary(addressDelete, 'requireInboxRole', ['inbox-1', 'user-1', 'admin'], {
       params: { id: 'inbox-1', addressId: 'address-1' },
+    }),
+  },
+  {
+    name: 'inboxes/[id]/addresses/[addressId].patch',
+    ...boundary(addressUpdate, 'requireInboxRole', ['inbox-1', 'user-1', 'admin'], {
+      params: { id: 'inbox-1', addressId: 'address-1' },
+      body: { behaviour: 'mail' },
     }),
   },
   {
@@ -935,7 +943,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(59)
+    expect(executableBoundaryCases).toHaveLength(60)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}

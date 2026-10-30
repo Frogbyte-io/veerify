@@ -52,6 +52,14 @@ const poller = vi.hoisted(() => ({
 }))
 
 const rateLimit = vi.hoisted(() => ({ requireRateLimit: vi.fn(async () => undefined) }))
+const mailLimits = vi.hoisted(() => ({
+  getOrganizationIdForProject: vi.fn(async () => 'org-1'),
+  getMailUsage: vi.fn(async () => ({
+    tier: 'owner',
+    limits: { domains: 69, pendingDomains: 3, addresses: 420, forwardsPerMonth: 80085 },
+    used: { domains: 2, pendingDomains: 1, addresses: 5, forwardsThisMonth: null },
+  })),
+}))
 const metrics = vi.hoisted(() => ({ recordSupportMetric: vi.fn(() => true) }))
 
 const NOW_ROW = {
@@ -106,6 +114,7 @@ vi.mock('~/server/utils/project-access', () => ({
   requireProjectAdmin: (...args: unknown[]) => (access.requireProjectAdmin as (...a: unknown[]) => unknown)(...args),
 }))
 vi.mock('~/server/utils/rate-limit', () => rateLimit)
+vi.mock('~/server/utils/mail-limits', () => mailLimits)
 vi.mock('~/server/utils/support-observability', () => metrics)
 vi.mock('~/server/database/drizzle', () => {
   const chain = (): Record<string, unknown> => {
@@ -231,6 +240,21 @@ describe('GET sending-domains', () => {
     state.isAdmin = true
     expect((await call(list)).data.canManage).toBe(true)
     expect(claims.listProjectSendingDomains).toHaveBeenLastCalledWith('project-1')
+  })
+
+  it('fills maxDomains / maxPending from the workspace mail limits and adds the usage', async () => {
+    const res = await call(list)
+    expect(mailLimits.getOrganizationIdForProject).toHaveBeenCalledWith('project-1')
+    expect(mailLimits.getMailUsage).toHaveBeenCalledWith('org-1')
+    expect(res.data.limits).toEqual({ maxDomains: 69, maxPending: 3, pendingTtlDays: 7 })
+    expect(res.data.usage).toMatchObject({ tier: 'owner', used: { domains: 2, pendingDomains: 1, addresses: 5 } })
+
+    state.enabled = false
+    expect((await call(list)).data).toMatchObject({
+      enabled: false,
+      limits: { maxDomains: 69 },
+      usage: { tier: 'owner' },
+    })
   })
 
   it('reports enabled:false without reading claims when the feature is off', async () => {

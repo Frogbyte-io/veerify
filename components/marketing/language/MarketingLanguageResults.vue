@@ -124,7 +124,7 @@ export default {
       })).filter((g) => g.phrases.length > 0)
     },
     sourceLabel() {
-      return this.insight.sources.map((s) => (s === 'support' ? 'support messages' : 'feedback')).join(' and ')
+      return this.insight.sources.map((s) => (s === 'support' ? 'inbox messages' : 'feedback')).join(' and ')
     },
     hasSuggestions() {
       return this.insight.suggestedTerms.length > 0 || this.insight.suggestedPrompts.length > 0

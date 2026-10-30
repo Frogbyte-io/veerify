@@ -12,10 +12,8 @@ import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 // can be unit tested outside the Nitro runtime.
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { supportInbox, supportInboxAddress, supportSendingDomain } from '~/server/database/schema/support'
+import { supportInbox, projectMailAddress, projectMailDomain } from '~/server/database/schema/support'
 import {
-  MAX_DOMAINS_PER_PROJECT,
-  MAX_PENDING_PER_PROJECT,
   OWNERSHIP_RECORD_LABEL,
   OWNERSHIP_RECORD_PREFIX,
   PENDING_TTL_DAYS,
@@ -37,6 +35,7 @@ import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isUniqueViolation } from './support-errors'
 import { createErrorResponse } from './response'
 import { createLogger } from './logger'
+import { assertCanAddMailDomain, getOrganizationIdForProject, lockMailUsage } from './mail-limits'
 
 const log = createLogger('sending-domains')
 
@@ -44,7 +43,7 @@ const log = createLogger('sending-domains')
 // lives in lib/ so it can be unit tested without a database.
 export { applyProviderResult }
 
-export type SupportSendingDomainRow = typeof supportSendingDomain.$inferSelect
+export type SupportSendingDomainRow = typeof projectMailDomain.$inferSelect
 
 /** The deployment's sending provider identity, as stored on a claim. */
 export interface SendingProviderIdentity {
@@ -87,11 +86,11 @@ export function resetSenderPolicyCache(): void {
   claimsExistCache = null
 }
 
-/** True when at least one `support_sending_domain` row exists. Cached per process for 30 seconds. */
+/** True when at least one `project_mail_domain` row exists. Cached per process for 30 seconds. */
 export async function anySendingDomainClaimsExist(): Promise<boolean> {
   const now = Date.now()
   if (claimsExistCache && now - claimsExistCache.at < CLAIMS_EXIST_TTL_MS) return claimsExistCache.value
-  const [row] = await db.select({ id: supportSendingDomain.id }).from(supportSendingDomain).limit(1)
+  const [row] = await db.select({ id: projectMailDomain.id }).from(projectMailDomain).limit(1)
   claimsExistCache = { value: Boolean(row), at: now }
   return claimsExistCache.value
 }
@@ -216,22 +215,22 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
 
   try {
     const created = await db.transaction(async (tx) => {
-      // Per-project lock first (then per-domain), so the per-project limits below
-      // cannot be raced by concurrent claims for different domains.
-      await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain_project:${input.projectId}`}, 0))`
-      )
+      // Workspace mail-usage lock first (then per-domain), so the workspace
+      // limits below cannot be raced by concurrent claims in any of the
+      // workspace's projects, for different domains.
+      const organizationId = await getOrganizationIdForProject(input.projectId, tx)
+      await lockMailUsage(organizationId, tx)
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain:${registrableDomain}`}, 0))`
       )
 
       const related = await tx
         .select({
-          domain: supportSendingDomain.domain,
-          projectId: supportSendingDomain.projectId,
+          domain: projectMailDomain.domain,
+          projectId: projectMailDomain.projectId,
         })
-        .from(supportSendingDomain)
-        .where(eq(supportSendingDomain.registrableDomain, registrableDomain))
+        .from(projectMailDomain)
+        .where(eq(projectMailDomain.registrableDomain, registrableDomain))
 
       if (findHierarchyConflict(domain, input.projectId, related)) {
         throw sendingDomainError(
@@ -250,29 +249,9 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
         )
       }
 
-      const own = await tx
-        .select({ status: supportSendingDomain.status })
-        .from(supportSendingDomain)
-        .where(and(eq(supportSendingDomain.projectId, input.projectId), ne(supportSendingDomain.status, 'deleting')))
-      if (own.length >= MAX_DOMAINS_PER_PROJECT) {
-        throw sendingDomainError(
-          409,
-          'Conflict',
-          'DOMAIN_LIMIT_REACHED',
-          `A project can register at most ${MAX_DOMAINS_PER_PROJECT} sending domains.`
-        )
-      }
-      if (
-        own.filter((claim) => UNVERIFIED_STATUSES.includes(claim.status as SupportSendingDomainStatus)).length >=
-        MAX_PENDING_PER_PROJECT
-      ) {
-        throw sendingDomainError(
-          409,
-          'Conflict',
-          'PENDING_LIMIT_REACHED',
-          `A project can have at most ${MAX_PENDING_PER_PROJECT} domains waiting for verification. Verify or delete one first.`
-        )
-      }
+      // 409 MAIL_DOMAIN_LIMIT_REACHED / MAIL_PENDING_LIMIT_REACHED, counted per
+      // workspace (lib/mail-plans.ts), pending domains included.
+      await assertCanAddMailDomain(organizationId, tx)
 
       const ownershipToken = randomBytes(24).toString('base64url')
       const ownershipRecord: SendingDomainDnsRecord = {
@@ -284,7 +263,7 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
       }
 
       const [row] = await tx
-        .insert(supportSendingDomain)
+        .insert(projectMailDomain)
         .values({
           id: randomUUID(),
           projectId: input.projectId,
@@ -329,17 +308,17 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
 export async function listProjectSendingDomains(projectId: string): Promise<SupportSendingDomainRow[]> {
   return db
     .select()
-    .from(supportSendingDomain)
-    .where(eq(supportSendingDomain.projectId, projectId))
-    .orderBy(asc(supportSendingDomain.createdAt), asc(supportSendingDomain.domain))
+    .from(projectMailDomain)
+    .where(eq(projectMailDomain.projectId, projectId))
+    .orderBy(asc(projectMailDomain.createdAt), asc(projectMailDomain.domain))
 }
 
 /** 404 (never 403) across projects, so claim ids stay opaque. */
 export async function getProjectSendingDomain(projectId: string, id: string): Promise<SupportSendingDomainRow> {
   const [row] = await db
     .select()
-    .from(supportSendingDomain)
-    .where(and(eq(supportSendingDomain.id, id), eq(supportSendingDomain.projectId, projectId)))
+    .from(projectMailDomain)
+    .where(and(eq(projectMailDomain.id, id), eq(projectMailDomain.projectId, projectId)))
     .limit(1)
 
   if (!row) {
@@ -394,14 +373,14 @@ export interface ResolveProjectSenderOptions {
 
 function isPlatformAddressOfProject(executor: Pick<typeof db, 'select'>, projectId: string, address: string) {
   return executor
-    .select({ id: supportInboxAddress.id })
-    .from(supportInboxAddress)
-    .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
+    .select({ id: projectMailAddress.id })
+    .from(projectMailAddress)
+    .innerJoin(supportInbox, eq(supportInbox.id, projectMailAddress.inboxId))
     .where(
       and(
         eq(supportInbox.projectId, projectId),
-        eq(supportInboxAddress.kind, 'platform'),
-        eq(supportInboxAddress.address, address)
+        eq(projectMailAddress.kind, 'platform'),
+        eq(projectMailAddress.address, address)
       )
     )
     .limit(1)
@@ -421,9 +400,9 @@ export async function isDomainClaimedByOtherProject(
   const names = domainAndAncestors(domain.trim().toLowerCase())
   if (names.length === 0) return false
   const [other] = await executor
-    .select({ id: supportSendingDomain.id })
-    .from(supportSendingDomain)
-    .where(and(inArray(supportSendingDomain.domain, names), ne(supportSendingDomain.projectId, projectId)))
+    .select({ id: projectMailDomain.id })
+    .from(projectMailDomain)
+    .where(and(inArray(projectMailDomain.domain, names), ne(projectMailDomain.projectId, projectId)))
     .limit(1)
   return Boolean(other)
 }
@@ -455,14 +434,14 @@ export async function resolveProjectSenderAuthorization(
 
   const claims = await executor
     .select({
-      id: supportSendingDomain.id,
-      domain: supportSendingDomain.domain,
-      status: supportSendingDomain.status,
-      provider: supportSendingDomain.provider,
-      providerAccountKey: supportSendingDomain.providerAccountKey,
+      id: projectMailDomain.id,
+      domain: projectMailDomain.domain,
+      status: projectMailDomain.status,
+      provider: projectMailDomain.provider,
+      providerAccountKey: projectMailDomain.providerAccountKey,
     })
-    .from(supportSendingDomain)
-    .where(eq(supportSendingDomain.projectId, projectId))
+    .from(projectMailDomain)
+    .where(eq(projectMailDomain.projectId, projectId))
 
   const sameProvider = (c: (typeof claims)[number]) =>
     c.provider === provider.name && c.providerAccountKey === provider.accountKey
@@ -551,9 +530,9 @@ export async function assertSenderAddressAllowedForInbox(projectId: string, addr
 
   const provider = currentSendingProviderIdentity()
   const claims = await db
-    .select({ domain: supportSendingDomain.domain })
-    .from(supportSendingDomain)
-    .where(and(eq(supportSendingDomain.projectId, projectId), ne(supportSendingDomain.status, 'deleting')))
+    .select({ domain: projectMailDomain.domain })
+    .from(projectMailDomain)
+    .where(and(eq(projectMailDomain.projectId, projectId), ne(projectMailDomain.status, 'deleting')))
 
   const owned = matchVerifiedDomain(
     domain,
@@ -605,13 +584,10 @@ export async function assertReceivingAddressAllowed(projectId: string, address: 
   }
 
   const [other] = await db
-    .select({ id: supportSendingDomain.id })
-    .from(supportSendingDomain)
+    .select({ id: projectMailDomain.id })
+    .from(projectMailDomain)
     .where(
-      and(
-        inArray(supportSendingDomain.domain, domainAndAncestors(domain)),
-        ne(supportSendingDomain.projectId, projectId)
-      )
+      and(inArray(projectMailDomain.domain, domainAndAncestors(domain)), ne(projectMailDomain.projectId, projectId))
     )
     .limit(1)
 
@@ -627,14 +603,14 @@ export async function assertReceivingAddressAllowed(projectId: string, address: 
   if (providerRoutesInboundByHeader()) {
     const provider = currentSendingProviderIdentity()
     const own = await db
-      .select({ domain: supportSendingDomain.domain })
-      .from(supportSendingDomain)
+      .select({ domain: projectMailDomain.domain })
+      .from(projectMailDomain)
       .where(
         and(
-          eq(supportSendingDomain.projectId, projectId),
-          eq(supportSendingDomain.status, 'verified'),
-          eq(supportSendingDomain.provider, provider.name),
-          eq(supportSendingDomain.providerAccountKey, provider.accountKey)
+          eq(projectMailDomain.projectId, projectId),
+          eq(projectMailDomain.status, 'verified'),
+          eq(projectMailDomain.provider, provider.name),
+          eq(projectMailDomain.providerAccountKey, provider.accountKey)
         )
       )
     if (!own.some((claim) => isSameOrSubdomain(domain, claim.domain))) {

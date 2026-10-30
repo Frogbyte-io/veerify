@@ -154,6 +154,62 @@ function headersToRecord(value: MailgunInboundPayload['message-headers']): Recor
   return normalizeHeaders(raw)
 }
 
+function isYes(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'yes'
+}
+
+/**
+ * The provider's spam verdict for an inbound callback:
+ *
+ * - `X-Mailgun-Sflag: Yes`, as a form field or in `message-headers`. Frogmail
+ *   sets it to `Yes` only when SES says spam `FAIL` (never for `GRAY`).
+ * - Frogmail's `frogmail-verdicts` JSON with `spam` or `virus` = `FAIL`. `GRAY`
+ *   and `PROCESSING_FAILED` are not spam.
+ *
+ * Only a positive verdict counts, from any of those places. A sender can write
+ * these as their own headers, but that can only send their own mail to Spam;
+ * a forged `No` cannot clear a provider `Yes`, because any `Yes` wins (Frogmail
+ * also reserves the field names so a sender cannot set the form fields).
+ */
+export function isMailgunSpam(payload: Record<string, unknown> | null | undefined): boolean {
+  if (!payload || typeof payload !== 'object') return false
+
+  for (const [name, value] of Object.entries(payload)) {
+    if (name.toLowerCase() === 'x-mailgun-sflag' && isYes(value)) return true
+  }
+
+  const rawHeaders = payload['message-headers']
+  let entries: unknown = rawHeaders
+  if (typeof rawHeaders === 'string') {
+    try {
+      entries = JSON.parse(rawHeaders)
+    } catch {
+      entries = []
+    }
+  }
+  if (Array.isArray(entries)) {
+    for (const entry of entries) {
+      if (Array.isArray(entry) && String(entry[0]).toLowerCase() === 'x-mailgun-sflag' && isYes(entry[1])) return true
+    }
+  }
+
+  const verdicts = payload['frogmail-verdicts']
+  let parsed: unknown = verdicts
+  if (typeof verdicts === 'string') {
+    try {
+      parsed = JSON.parse(verdicts)
+    } catch {
+      parsed = null
+    }
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>
+    const fail = (key: string) => typeof record[key] === 'string' && (record[key] as string).toUpperCase() === 'FAIL'
+    if (fail('spam') || fail('virus')) return true
+  }
+  return false
+}
+
 function toAttachments(value: MailgunInboundPayload['attachments']): InboundAttachment[] {
   let list: MailgunAttachment[] = []
 
@@ -473,6 +529,7 @@ export class MailgunChannelDriver implements ChannelDriver {
       attachments: [...toAttachments(typed.attachments), ...multipartAttachments(typed)],
       receivedAt,
       rawHeaders: headers,
+      isSpam: isMailgunSpam(typed as unknown as Record<string, unknown>),
     }
   }
 
