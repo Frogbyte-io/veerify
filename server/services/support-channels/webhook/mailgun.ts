@@ -7,6 +7,7 @@ import {
   type ChannelConfiguration,
   type DeliveryEvent,
   type FetchImpl,
+  type FrogmailForwardOutcome,
   type SendingAuthorization,
   type ChannelDriver,
   type InboundAddress,
@@ -67,6 +68,8 @@ interface MailgunInboundPayload {
   timestamp?: string | number
   token?: string
   attachments?: MailgunAttachment[] | string
+  'frogmail-forwards'?: string
+  'frogmail-attachments-removed'?: string | boolean
   'content-id-map'?: string | Record<string, string>
   'attachment-count'?: string | number
   [key: `attachment-${number}`]: MailgunMultipartFile | undefined
@@ -210,6 +213,47 @@ export function isMailgunSpam(payload: Record<string, unknown> | null | undefine
   return false
 }
 
+const MAX_FROGMAIL_FORWARDS = 20
+
+function boundedString(value: unknown, max: number): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null
+}
+
+/**
+ * Frogmail's `frogmail-forwards` form field: a JSON list of what each email forward did with the message.
+ * Invalid JSON or entries are dropped, the list is capped, and only known keys survive.
+ */
+export function parseFrogmailForwards(value: unknown): FrogmailForwardOutcome[] {
+  let parsed: unknown = value
+  if (typeof value === 'string') {
+    if (value.length > 20_000) return []
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(parsed)) return []
+
+  const forwards: FrogmailForwardOutcome[] = []
+  for (const entry of parsed) {
+    if (forwards.length >= MAX_FROGMAIL_FORWARDS) break
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    const destination = boundedString(record.destination, 320)
+    const status = boundedString(record.status, 32)
+    if (!destination || !status) continue
+    forwards.push({
+      destination,
+      destination_id: boundedString(record.destination_id, 64),
+      status,
+      reason: boundedString(record.reason, 64),
+      forward_id: boundedString(record.forward_id, 64),
+    })
+  }
+  return forwards
+}
+
 function toAttachments(value: MailgunInboundPayload['attachments']): InboundAttachment[] {
   let list: MailgunAttachment[] = []
 
@@ -308,6 +352,7 @@ interface MailgunEventPayload {
     reason?: string
     timestamp?: number | string
     domain?: { name?: string } | string
+    tags?: string[]
     'user-variables'?: Record<string, string>
     'delivery-status'?: { description?: string; message?: string }
     message?: { headers?: { 'message-id'?: string } }
@@ -530,6 +575,17 @@ export class MailgunChannelDriver implements ChannelDriver {
       receivedAt,
       rawHeaders: headers,
       isSpam: isMailgunSpam(typed as unknown as Record<string, unknown>),
+      // Top-level form fields only (Frogmail reserves these names); never `message-headers`.
+      ...(() => {
+        const forwards = parseFrogmailForwards(typed['frogmail-forwards'])
+        const removed = typed['frogmail-attachments-removed']
+        return {
+          ...(forwards.length > 0 ? { frogmailForwards: forwards } : {}),
+          ...(removed === true || (typeof removed === 'string' && removed.trim().toLowerCase() === 'true')
+            ? { attachmentsRemoved: true }
+            : {}),
+        }
+      })(),
     }
   }
 
@@ -577,6 +633,12 @@ export class MailgunChannelDriver implements ChannelDriver {
       error: recordType === 'bounced' ? description?.trim() || null : null,
       bounceType: recordType === 'bounced' ? (data.severity === 'temporary' ? 'soft' : 'hard') : null,
       description: description?.trim() || null,
+      ...(Array.isArray(data.tags) && data.tags.includes('frogmail-forward')
+        ? {
+            isForward: true,
+            forwardDestinationId: data['user-variables']?.['frogmail-forward-destination-id']?.trim() || null,
+          }
+        : {}),
     }
   }
 }

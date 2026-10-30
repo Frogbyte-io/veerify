@@ -56,6 +56,16 @@
         <SupportMessageHtml v-if="renderableHtml" :html="renderableHtml" />
         <p v-else class="text-sm whitespace-pre-wrap break-words">{{ messageBody }}</p>
         <div
+          v-if="deliveryNotices.length > 0"
+          class="mt-2 space-y-0.5 border-t border-current/15 pt-2 text-xs opacity-90"
+          data-testid="support-message-notices"
+        >
+          <p v-for="notice in deliveryNotices" :key="notice" class="flex items-start gap-1.5">
+            <Icon name="lucide:info" class="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+            <span>{{ notice }}</span>
+          </p>
+        </div>
+        <div
           v-if="message.attachments && message.attachments.length > 0"
           class="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-current/15"
           data-testid="support-message-attachments"
@@ -132,6 +142,27 @@ import { toast } from 'vue-sonner'
 
 const SENDER_DOMAIN_NOT_AUTHORIZED = 'SENDER_DOMAIN_NOT_AUTHORIZED'
 
+// Frogmail `skip_reason` values (Frogmail design §6.2).
+const FORWARD_REASONS = {
+  no_verdicts: 'the message did not arrive through Frogmail receiving',
+  virus: 'flagged as a virus',
+  spam: 'flagged as spam',
+  dmarc: 'the sender failed DMARC',
+  paused: 'the monthly forward limit was reached',
+  unverified: 'the recipient has not confirmed yet',
+  revoked: 'forwarding to it was stopped',
+  suspended: 'the address bounced',
+  loop: 'it would loop back',
+  too_large: 'the message is too large',
+  cap_address: 'the daily forward limit for this address was reached',
+  cap_domain: 'the daily forward limit for this domain was reached',
+}
+
+function forwardReason(reason) {
+  if (typeof reason !== 'string' || !reason) return ''
+  return FORWARD_REASONS[reason] || reason.replace(/_/g, ' ')
+}
+
 export default {
   name: 'SupportMessageItem',
 
@@ -191,6 +222,21 @@ export default {
         this.message.senderBlocked === true ||
         this.message.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED
       )
+    },
+
+    /** Notes from Frogmail about forwarding and attachment removal on inbound mail. */
+    deliveryNotices() {
+      const metadata = this.message.mailNotes
+      if (!metadata || typeof metadata !== 'object') return []
+      const notices = []
+      const forwards = Array.isArray(metadata.frogmailForwards) ? metadata.frogmailForwards : []
+      for (const forward of forwards) {
+        if (forward?.status !== 'skipped' && forward?.status !== 'failed') continue
+        const reason = forwardReason(forward.reason)
+        notices.push(`Not forwarded to ${forward.destination}${reason ? `: ${reason}` : ''}`)
+      }
+      if (metadata.attachmentsRemoved === true) notices.push('Attachments removed: flagged as a virus')
+      return notices
     },
 
     messageBody() {

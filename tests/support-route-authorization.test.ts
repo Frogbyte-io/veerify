@@ -985,6 +985,8 @@ describe('executable support route authorization inventory', () => {
       'channel-status.get',
       'inbound/[provider].post',
       'delivery/[provider].post',
+      // Native Frogmail webhook: HMAC-signed, no session; see tests/frogmail-webhook.test.ts.
+      'frogmail/events.post',
       'attachments/upload/[token].put',
       // Canned-response CRUD has a dedicated route test suite because its
       // tenant boundary is resolved from the request body or existing row.

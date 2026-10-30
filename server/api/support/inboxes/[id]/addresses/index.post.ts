@@ -32,7 +32,9 @@
  *       on one of the project's verified sending domains that receives mail
  *       through the provider, a provider inbound route is created best-effort
  *       (a catch-all gets a domain-wide route that exact addresses take
- *       precedence over).
+ *       precedence over). With `forwardTo`, the route also forwards through
+ *       Frogmail; each mailbox must confirm once per domain before mail is
+ *       forwarded (the response lists `forwards` with their status).
  *     operationId: createSupportInboxAddress
  *     parameters:
  *       - in: path
@@ -51,6 +53,8 @@
  *               isPrimary: { type: boolean, default: false }
  *               behaviour: { type: string, enum: [mail, helpdesk], default: helpdesk }
  *               productId: { type: string, nullable: true, description: "A product of the inbox's project" }
+ *               deliverToInbox: { type: boolean, default: true, description: "False for a forward-only address; needs at least one forward" }
+ *               forwardTo: { type: array, maxItems: 5, items: { type: string }, description: "External mailboxes to forward to (lowercased, deduplicated). Needs forwarding on the deployment and a verified, receiving domain of the project; a mailbox on the address's own domain is refused" }
  *     responses:
  *       200:
  *         description: Address created
@@ -83,6 +87,13 @@ import { db } from '~/server/database/drizzle'
 import { projectMailAddress } from '~/server/database/schema/support'
 import { assertReceivingAddressAllowed } from '~/server/utils/sending-domains'
 import { createDirectRouteForAddress } from '~/server/utils/inbound-routes'
+import {
+  assertDeliveryTargets,
+  assertForwardsAllowed,
+  loadAddressForwards,
+  mapForwardProviderError,
+  normalizeForwardTo,
+} from '~/server/utils/mail-forwards'
 import { assertCanAddMailAddress, getOrganizationIdForProject, lockMailUsage } from '~/server/utils/mail-limits'
 import {
   addressError,
@@ -101,6 +112,8 @@ const bodySchema = z.object({
   isPrimary: z.boolean().optional().default(false),
   behaviour: z.enum(['mail', 'helpdesk']).optional().default(DEFAULT_MAIL_ADDRESS_BEHAVIOUR),
   productId: z.string().min(1).nullable().optional(),
+  deliverToInbox: z.boolean().optional().default(true),
+  forwardTo: z.array(z.string()).max(20).optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -125,6 +138,19 @@ export default defineEventHandler(async (event) => {
   await assertReceivingAddressAllowed(inbox.projectId, parsed.address)
 
   if (body.productId) await assertProductInProject(inbox.projectId, body.productId)
+
+  const forwards = normalizeForwardTo(body.forwardTo ?? [])
+  if (!forwards.ok) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Validation failed',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, forwards.message),
+    })
+  }
+  assertDeliveryTargets(body.deliverToInbox, forwards.emails)
+  if (forwards.emails.length > 0) {
+    await assertForwardsAllowed({ projectId: inbox.projectId, address: parsed.address, forwardTo: forwards.emails })
+  }
 
   let created: typeof projectMailAddress.$inferSelect
   try {
@@ -157,6 +183,7 @@ export default defineEventHandler(async (event) => {
           domainId,
           productId: body.productId ?? null,
           behaviour: body.behaviour,
+          deliverToInbox: body.deliverToInbox,
           createdAt: new Date(),
         })
         .returning()
@@ -171,14 +198,36 @@ export default defineEventHandler(async (event) => {
   }
 
   // Direct receiving (design §9.2): after commit, best-effort, never fails the
-  // request. The response reflects the stored route state.
-  const routeStatus = await createDirectRouteForAddress({
-    projectId: inbox.projectId,
-    inboxId,
-    address: created,
-  }).catch(() => null)
+  // request. The response reflects the stored route state. A forward the
+  // provider does not accept is different: the address is useless as asked, so
+  // it is removed again and the error returned.
+  const wantsForward = forwards.emails.length > 0
+  let routeStatus: 'active' | 'failed' | null = null
+  try {
+    routeStatus = await createDirectRouteForAddress({
+      projectId: inbox.projectId,
+      inboxId,
+      address: created,
+      deliverToInbox: body.deliverToInbox,
+      forwardTo: forwards.emails,
+      strict: wantsForward,
+    })
+    if (wantsForward && routeStatus !== 'active') {
+      throw addressError(
+        503,
+        'FORWARD_ROUTE_FAILED',
+        'The mail provider could not set up forwarding. Try again in a moment.'
+      )
+    }
+  } catch (error) {
+    if (wantsForward) {
+      await db.delete(projectMailAddress).where(eq(projectMailAddress.id, created.id))
+      throw mapForwardProviderError(error)
+    }
+    routeStatus = null
+  }
 
-  return createSuccessResponse({
-    address: toInboxAddressResponse(routeStatus ? { ...created, providerRouteStatus: routeStatus } : created),
-  })
+  const stored = routeStatus ? { ...created, providerRouteStatus: routeStatus } : created
+  const forwardList = (await loadAddressForwards([created.id])).get(created.id) ?? []
+  return createSuccessResponse({ address: { ...toInboxAddressResponse(stored), forwards: forwardList } })
 })

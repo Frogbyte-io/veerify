@@ -76,6 +76,7 @@ describe('configuration', () => {
       remove: true,
       inboundRoutes: true,
       authorizesSubdomains: true,
+      forwarding: false,
     })
   })
 })
@@ -335,7 +336,7 @@ describe('inbound routes', () => {
       description: 'veerify:inbox1:addr1',
     })
 
-    expect(result).toEqual({ routeId: 'route-1' })
+    expect(result).toEqual({ routeId: 'route-1', forwardDestinations: [] })
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('https://frogmail.test/v3/routes')
     expect(init.method).toBe('POST')

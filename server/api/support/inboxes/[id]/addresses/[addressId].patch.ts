@@ -35,6 +35,8 @@
  *               productId: { type: string, nullable: true }
  *               isPrimary: { type: boolean }
  *               inboxId: { type: string, description: Another inbox of the same project to move the address to }
+ *               deliverToInbox: { type: boolean, description: "False for a forward-only address; needs at least one forward" }
+ *               forwardTo: { type: array, maxItems: 5, items: { type: string }, description: "Replaces the address's forwards (lowercased, deduplicated); [] removes them. Needs forwarding on the deployment and a verified, receiving domain of the project; a mailbox on the address's own domain is refused" }
  *     responses:
  *       200:
  *         description: Address updated
@@ -51,17 +53,26 @@
  *       400: { description: Validation failed }
  *       403: { description: Not an admin of this inbox, or of the target inbox }
  *       404: { description: Inbox, target inbox or address not found }
- *       409: { description: "Platform forwarding addresses cannot be moved (PLATFORM_ADDRESS_IMMOVABLE)" }
+ *       409: { description: "Platform forwarding addresses cannot be moved (PLATFORM_ADDRESS_IMMOVABLE); forwarding is unavailable or the domain cannot receive yet (FORWARDING_UNAVAILABLE, FORWARD_RECEIVING_UNAVAILABLE)" }
  *       422: { description: "productId is not a product of the project (PRODUCT_NOT_IN_PROJECT), or the target inbox belongs to another project (INBOX_NOT_IN_PROJECT)" }
  */
 import { z } from 'zod'
+import { createError } from 'h3'
 import { and, eq, ne } from 'drizzle-orm'
-import { createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxRole } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { projectMailAddress } from '~/server/database/schema/support'
+import { syncAddressRoute } from '~/server/utils/inbound-routes'
+import {
+  assertDeliveryTargets,
+  assertForwardsAllowed,
+  loadAddressForwards,
+  mapForwardProviderError,
+  normalizeForwardTo,
+} from '~/server/utils/mail-forwards'
 import {
   addressError,
   assertProductInProject,
@@ -74,6 +85,8 @@ const bodySchema = z.object({
   productId: z.string().min(1).nullable().optional(),
   isPrimary: z.boolean().optional(),
   inboxId: z.string().min(1).optional(),
+  deliverToInbox: z.boolean().optional(),
+  forwardTo: z.array(z.string()).max(20).optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -109,17 +122,60 @@ export default defineEventHandler(async (event) => {
 
   if (body.productId) await assertProductInProject(inbox.projectId, body.productId)
 
+  // Delivery: inbox, forwards, or both. `forwardTo` replaces the stored forwards.
+  let forwardTo: string[] | undefined
+  if (body.forwardTo !== undefined) {
+    const forwards = normalizeForwardTo(body.forwardTo)
+    if (!forwards.ok) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Validation failed',
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, forwards.message),
+      })
+    }
+    forwardTo = forwards.emails
+  }
+  const touchesDelivery = body.deliverToInbox !== undefined || forwardTo !== undefined
+  if (touchesDelivery && existing.kind === 'platform') {
+    throw addressError(409, 'FORWARDING_UNAVAILABLE', 'Platform forwarding addresses always deliver to their inbox.')
+  }
+  if (touchesDelivery) {
+    const effectiveForwards =
+      forwardTo ?? (await loadAddressForwards([addressId])).get(addressId)?.map((f) => f.email) ?? []
+    assertDeliveryTargets(body.deliverToInbox ?? existing.deliverToInbox, effectiveForwards)
+    if (forwardTo && forwardTo.length > 0) {
+      await assertForwardsAllowed({ projectId: inbox.projectId, address: existing.address, forwardTo })
+    }
+  }
+
   const targetInboxId = moving ? (body.inboxId as string) : inboxId
   const patch: Partial<typeof projectMailAddress.$inferInsert> = {}
   if (body.behaviour !== undefined) patch.behaviour = body.behaviour
   if (body.productId !== undefined) patch.productId = body.productId
+  if (body.deliverToInbox !== undefined) patch.deliverToInbox = body.deliverToInbox
   if (moving) patch.inboxId = targetInboxId
   // A moved address must not become a second primary on the target inbox.
   if (body.isPrimary !== undefined) patch.isPrimary = body.isPrimary
   else if (moving) patch.isPrimary = false
 
-  if (Object.keys(patch).length === 0) {
-    return createSuccessResponse({ address: toInboxAddressResponse(existing) })
+  if (Object.keys(patch).length === 0 && forwardTo === undefined) {
+    const forwards = (await loadAddressForwards([addressId])).get(addressId) ?? []
+    return createSuccessResponse({ address: { ...toInboxAddressResponse(existing), forwards } })
+  }
+
+  // The provider route first: if it refuses the forwards nothing is saved.
+  let routeStatus: 'active' | 'failed' | null = null
+  if (touchesDelivery) {
+    try {
+      const synced = await syncAddressRoute(addressId, {
+        deliverToInbox: body.deliverToInbox,
+        forwardTo,
+        strict: true,
+      })
+      routeStatus = synced.status
+    } catch (error) {
+      throw mapForwardProviderError(error)
+    }
   }
 
   const updated = await db.transaction(async (tx) => {
@@ -130,6 +186,8 @@ export default defineEventHandler(async (event) => {
         .set({ isPrimary: false })
         .where(and(eq(projectMailAddress.inboxId, targetInboxId), ne(projectMailAddress.id, addressId)))
     }
+    // Only forwards changed: the row itself stays as it is.
+    if (Object.keys(patch).length === 0) return existing
     const [row] = await tx
       .update(projectMailAddress)
       .set(patch)
@@ -140,5 +198,11 @@ export default defineEventHandler(async (event) => {
     return row
   })
 
-  return createSuccessResponse({ address: toInboxAddressResponse(updated) })
+  const forwards = (await loadAddressForwards([addressId])).get(addressId) ?? []
+  return createSuccessResponse({
+    address: {
+      ...toInboxAddressResponse(routeStatus ? { ...updated, providerRouteStatus: routeStatus } : updated),
+      forwards,
+    },
+  })
 })

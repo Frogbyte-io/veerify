@@ -204,7 +204,7 @@ destination list/create/resend/delete, and `getDomainUsage`. Native calls use Be
 - `POST /api/projects/{slug}/mail/destinations/{id}/resend` and `DELETE …/{id}` (project admins) wrap resend and
   revoke. 429 keeps `Retry-After`.
 - `GET /api/projects/{slug}/mail/addresses` adds `deliverToInbox`, `forwards: [{id, email, status, statusReason,
-  verificationSentAt}]` per address, and `domains: [{id, domain, receivingStatus, forwardingPaused}]`;
+verificationSentAt}]` per address, and `domains: [{id, domain, receivingStatus, forwardingPaused}]`;
   `usage.used.forwardsThisMonth` is filled in.
 
 **Webhooks.**

@@ -70,6 +70,7 @@ export default defineEventHandler(async (event) => {
       inReplyTo: conversationMessage.inReplyTo,
       deliveryStatus: conversationMessage.deliveryStatus,
       deliveryError: conversationMessage.deliveryError,
+      metadata: conversationMessage.metadata,
       createdAt: conversationMessage.createdAt,
     })
     .from(conversationMessage)
@@ -107,8 +108,13 @@ export default defineEventHandler(async (event) => {
         .where(and(inArray(supportOutboundDelivery.messageId, messageIds), eq(supportOutboundDelivery.kind, 'email')))
     : []
   const hasEmailDelivery = new Set(emailDeliveries.map((delivery) => delivery.messageId))
-  const enrichedItems = items.map((item) => ({
+  const enrichedItems = items.map(({ metadata, ...item }) => ({
     ...item,
+    // Only the mail-forwarding notes; the message metadata itself stays internal.
+    mailNotes: {
+      ...(Array.isArray(metadata?.frogmailForwards) ? { frogmailForwards: metadata.frogmailForwards } : {}),
+      ...(metadata?.attachmentsRemoved === true ? { attachmentsRemoved: true } : {}),
+    },
     senderBlocked: item.deliveryStatus === 'failed' && item.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED,
     retryable: item.kind === 'outgoing' && item.deliveryStatus === 'failed' && hasEmailDelivery.has(item.id),
     attachments: (attachmentsByMessage.get(item.id) ?? []).map((attachment) => ({
