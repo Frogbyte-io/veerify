@@ -32,6 +32,17 @@ export type SendingDomainErrorCode =
   | 'unauthorized'
   | 'missing_scope'
   | 'provider_unavailable'
+  // Frogmail SES receiving and forwarding (Frogmail design §10).
+  | 'receiving_unavailable'
+  | 'domain_receives_elsewhere'
+  | 'receiving_provider_conflict'
+  | 'domain_not_receiving'
+  | 'forward_destination_invalid'
+  | 'forward_would_loop'
+  | 'forward_requires_ses'
+  | 'forward_requires_domain'
+  | 'verification_throttled'
+  | 'conflict'
   | 'unknown'
 
 export class SendingDomainProviderError extends Error {
@@ -48,6 +59,53 @@ export class SendingDomainProviderError extends Error {
 
 export interface SendingDomainRegistration extends ProviderDomainResult {
   ownership: 'created' | 'adopted'
+}
+
+/** Frogmail `GET /api/v1/domains/{d}/receiving` `status`. */
+export type ReceivingStatus = 'disabled' | 'pending_verification' | 'pending_mx' | 'active'
+
+export interface ProviderReceivingState {
+  status: ReceivingStatus
+  forwardingPaused: boolean
+  /** The SES MX record, purpose `receiving`. */
+  records: SendingDomainDnsRecord[]
+  lastReceivedAt: Date | null
+}
+
+export type ForwardDestinationStatus = 'pending' | 'verified' | 'revoked' | 'suspended'
+
+export interface ProviderForwardDestination {
+  id: string
+  email: string
+  status: ForwardDestinationStatus
+  /** unsubscribed, api, bounced, complained, expired, domain_disabled. Null on route responses. */
+  statusReason: string | null
+  /** Null while the domain is not active yet, or while a rate limit holds the email back. */
+  verificationSentAt: Date | null
+  verifiedAt: Date | null
+}
+
+/** An inbound route: inbox delivery (`forwardUrl`), email forwards, or both. */
+export interface InboundRouteInput {
+  address: string
+  /** Null for a forward-only address. */
+  forwardUrl: string | null
+  /** External mailboxes, at most `MAX_ROUTE_FORWARDS`. */
+  forwardTo?: string[]
+  description: string
+}
+
+export interface InboundRouteResult {
+  routeId: string
+  forwardDestinations: ProviderForwardDestination[]
+}
+
+/** Frogmail `domain-usage` totals over a range. Counts are per destination (one message to two forwards is 2). */
+export interface ProviderDomainUsageTotals {
+  received: number
+  forwarded: number
+  forwardSkipped: number
+  blocked: number
 }
 
 export interface SendingDomainProvider {
@@ -70,6 +128,28 @@ export interface SendingDomainProvider {
    * of exactly that domain, evaluated after every exact route). See
    * `inboundRouteDefinition` in `providers/mailgun.ts`.
    */
-  createInboundRoute?(input: { address: string; forwardUrl: string; description: string }): Promise<{ routeId: string }>
+  createInboundRoute?(input: InboundRouteInput): Promise<InboundRouteResult>
+  /** Replaces the route's actions (and expression); same input as create. */
+  updateInboundRoute?(routeId: string, input: InboundRouteInput): Promise<InboundRouteResult>
   deleteInboundRoute?(routeId: string): Promise<void>
+
+  /**
+   * SES receiving and email forwarding (Frogmail only; `capabilities.forwarding`).
+   * See docs/plans/2026-10-28-email-addresses/design.md → Frogmail contract.
+   */
+  enableReceiving?(domain: string): Promise<ProviderReceivingState>
+  /** `null` when the provider does not know the domain. */
+  getReceiving?(domain: string): Promise<ProviderReceivingState | null>
+  setForwardingPaused?(domain: string, paused: boolean): Promise<ProviderReceivingState>
+  disableReceiving?(domain: string): Promise<void>
+  listForwardDestinations?(domain: string): Promise<ProviderForwardDestination[]>
+  createForwardDestination?(domain: string, email: string): Promise<ProviderForwardDestination>
+  resendForwardDestination?(id: string): Promise<ProviderForwardDestination>
+  deleteForwardDestination?(id: string): Promise<ProviderForwardDestination | null>
+  /**
+   * Totals over `domains`, `from`/`to` inclusive (UTC dates, at most 92 days apart). One request:
+   * Frogmail's `totals` covers the whole range even when `data` paginates. History survives
+   * disabling receiving, so a workspace cannot reset its count.
+   */
+  getDomainUsage?(input: { domains: string[]; from: string; to: string }): Promise<ProviderDomainUsageTotals>
 }

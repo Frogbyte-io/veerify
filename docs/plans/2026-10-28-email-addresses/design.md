@@ -1,7 +1,8 @@
 # Project email addresses — Design
 
 **Created:** October 28, 2026
-**Status:** E1 and E2 implemented (branch `t3/brainstorm-frogmail-domain-inboxes`). E3 waits for the Frogmail contract.
+**Status:** E1 and E2 merged (PR #106). E3 in progress on `t3/mail-forwarding-e3`, against Frogmail `main` 19c761b
+(Frogbyte-io/frogmail PR #56). See [E3 build](#e3-build).
 **Sketches:** [sketches.html](sketches.html)
 **Builds on:** [custom sending domains](../2026-10-22-custom-sending-domains/design.md),
 [projects and products](../2026-10-23-projects-products/design.md), [support platform](../2026-08-11-support-platform/design.md)
@@ -157,6 +158,74 @@ Source: Frogmail `docs/plans/2026-10-28-ses-inbound-forwarding.md` §10. How Vee
 - **Monthly forward limit:** read from `GET /api/v1/domain-usage`. At the limit, forwarding is paused per domain
   (requested from Frogmail as a receiving-domain flag).
 - **Removing a domain:** `DELETE /v3/domains/{d}` disables receiving first and revokes its destinations.
+
+## E3 build
+
+Built against the final contract: Frogmail design §10 and the pinned responses in Frogmail
+`tests/Fixtures/Contract/veerify/`. Changes since review: another project's domain is a generic 404 `not_found`;
+`PUT …/receiving` returns 409 `domain_receives_elsewhere` while another project's pending reservation exists (retry
+after the domain verifies); route responses carry `verification_sent_at` (null = not sent yet); resending to a verified
+destination is 409 `conflict`; `PATCH …/receiving` on a non-SES domain is 409 `domain_not_receiving`.
+
+**Switch.** `MAIL_FORWARDING_ENABLED=true` (Frogmail with SES receiving) sets the provider's `capabilities.forwarding`.
+Off, everything behaves as E2: no receiving calls, no forwards, the address editor hides Forward. The fake provider
+always forwards.
+
+**Schema (0069).**
+
+- `project_mail_domain`: `receiving_status` (null until enabled, then Frogmail's status) and `forwarding_paused_at`.
+- `project_mail_address.deliver_to_inbox` (default true). A forward-only address keeps its `inboxId` (permissions,
+  the address list) but its route has no inbox action. This replaces the nullable `inboxId` sketched above, so the
+  Inbox tool must be on for forward-only addresses too (follow-up if that matters).
+- `mail_forward_destination` and `project_mail_address_forward` as in the data model.
+
+**Provider** (`server/services/sending-domains`): `enableReceiving`, `getReceiving`, `setForwardingPaused`,
+`disableReceiving`, `create/update/deleteInboundRoute` with `forwardUrl | null` and `forwardTo[]` (at most 5), forward
+destination list/create/resend/delete, and `getDomainUsage`. Native calls use Bearer auth; native `code` and
+`X-Frogmail-Error` map to `SendingDomainErrorCode`.
+
+**Domain lifecycle.**
+
+- When forwarding is on, the poller calls `enableReceiving` for every claim once the provider has registered it
+  (allowed while pending), and stores `receiving_status`. `receiving_provider_conflict` (Cloudflare receiving) leaves
+  the claim on the E2 path. `domain_receives_elsewhere` is retried on later passes.
+- Each check pass on a receiving claim refreshes `receiving_status` and the MX record (it is in
+  `receiving_dns_records`), then reconciles destinations from `listForwardDestinations`.
+- Removing a claim stays `DELETE /v3/domains/{d}`; Frogmail disables receiving first. Local destination rows cascade.
+
+**Addresses and routes.**
+
+- `POST`/`PATCH /api/support/inboxes/{id}/addresses[/{addressId}]` accept `deliverToInbox` and `forwardTo` (emails,
+  at most 5, deduplicated). Forwards need a claim with forwarding on and a verified domain; a catch-all may forward.
+  At least one of inbox delivery or a forward.
+- A change rebuilds the route with `updateInboundRoute` (create when there is none) and upserts destinations from
+  `frogmail_forward_destinations`. Removing the last address that uses a destination does not revoke it: consent
+  stays with the domain, as in Frogmail.
+- `POST /api/projects/{slug}/mail/destinations/{id}/resend` and `DELETE …/{id}` (project admins) wrap resend and
+  revoke. 429 keeps `Retry-After`.
+- `GET /api/projects/{slug}/mail/addresses` adds `deliverToInbox`, `forwards: [{id, email, status, statusReason,
+  verificationSentAt}]` per address, and `domains: [{id, domain, receivingStatus, forwardingPaused}]`;
+  `usage.used.forwardsThisMonth` is filled in.
+
+**Webhooks.**
+
+- `POST /api/support/frogmail/events`: native Frogmail webhooks, verified with `FROGMAIL_WEBHOOK_SECRET`
+  (`Frogmail-Signature: t=…,v1=<hex HMAC-SHA256 of "t.body">`, 300 s window, replay guard). Handles
+  `forward_destination.verified|revoked|suspended` by Frogmail id. The poller's reconcile covers a missed webhook.
+- Forward delivery events (tag `frogmail-forward`) arriving on the Mailgun delivery webhook are acknowledged and only
+  stamp `last_event_at`; they are not support deliveries. Suspension and revocation come from the lifecycle webhook.
+- Inbound callback: `frogmail-forwards` and `frogmail-attachments-removed` are kept on the message metadata
+  (`frogmailForwards`, `attachmentsRemoved`) and shown on the message. Spam already uses `frogmail-verdicts` (E1).
+
+**Usage and pause.** Cron `mail:forward-usage` (hourly) sums `forwarded` from `getDomainUsage` for the calendar
+month (UTC) over each workspace's receiving domains. At or over the tier limit it pauses forwarding on every one of
+them (`setForwardingPaused(true)`, `forwarding_paused_at`); in a new month, or below the limit after a tier change,
+it resumes the domains it paused. The count is cached per workspace for the Email tab.
+
+**UI.** Address editor: Delivery (Inbox / Forward / Inbox + forward) and up to 5 forward addresses, each with its
+status (Waiting for confirmation, Confirmed, Bounced, Stopped) and Resend. Email tab: receiving status and the MX
+record per domain, the forwards usage line, and a paused banner. Message view: skipped forwards and removed
+attachments.
 
 ## Open questions
 
