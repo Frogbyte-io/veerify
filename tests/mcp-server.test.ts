@@ -90,7 +90,7 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 }
 
 describe('createVeerifyMcpServer', () => {
-  it('lists the universal and import tools with annotations', async () => {
+  it('lists the universal, import and mail tools with annotations', async () => {
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
@@ -107,6 +107,17 @@ describe('createVeerifyMcpServer', () => {
         'import_commit',
         'import_status',
         'import_cancel',
+        'mail_list_domains',
+        'mail_add_domain',
+        'mail_verify_domain',
+        'mail_remove_domain',
+        'mail_list_addresses',
+        'mail_list_inboxes',
+        'mail_create_address',
+        'mail_update_address',
+        'mail_delete_address',
+        'mail_resend_forward_confirmation',
+        'mail_stop_forwarding',
       ].sort()
     )
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]))

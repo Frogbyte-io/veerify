@@ -54,6 +54,7 @@ request, send these headers (on the MCP connection or on direct API calls):
 | `search_api`      | Find API operations by keyword or tag, or fetch one by `operationId` |
 | `call_api`        | Call an operation: `method`, `path`, optional `query` and `body`     |
 | `import_*`        | Move feedback from another tool into a project (see section 6)       |
+| `mail_*`          | Email domains, addresses and forwarding for a project (see below)    |
 
 ### What `call_api` refuses, and why
 
@@ -107,6 +108,34 @@ full request shape.
    equal the project's current custom domain). The result lists the DNS records the domain needs.
 5. Create those records in your DNS provider with your own DNS tool; Veerify cannot create them for you. Then repeat
    step 4 until the domain verifies.
+
+### "Give my new site an email address that forwards to me"
+
+The `mail_*` tools wrap Project settings → Email. Domains and forwards need a project admin.
+
+| Tool                               | What it does                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------- |
+| `mail_list_domains`                | Domains with status, receiving status and every DNS record to publish            |
+| `mail_add_domain`                  | Connect a domain or subdomain; returns the DNS records                           |
+| `mail_verify_domain`               | Check a domain's DNS now                                                         |
+| `mail_remove_domain`               | Remove a domain (409 `DOMAIN_IN_USE` while addresses use it)                     |
+| `mail_list_addresses`              | Addresses, delivery, forwards with confirmation status, `forwarding`, usage      |
+| `mail_list_inboxes`                | Inbox ids for `mail_create_address`                                              |
+| `mail_create_address`              | `inboxId`, `address` (or `*@domain`), `deliverToInbox`, `forwardTo` (max 5), …   |
+| `mail_update_address`              | Change delivery, forwards (`forwardTo` replaces them), behaviour, product, inbox |
+| `mail_delete_address`              | Delete an address                                                                |
+| `mail_resend_forward_confirmation` | Resend a mailbox's confirmation email (429 while Frogmail's rate limit holds it) |
+| `mail_stop_forwarding`             | Stop forwarding to a mailbox for its whole domain                                |
+
+1. `mail_add_domain` with `domain: "newsite.com"` (or a subdomain such as `mail.newsite.com` when the apex already
+   has mail). Show the user the records; they add them at their DNS host.
+2. `mail_verify_domain` until the domain is `verified`. Receiving turns `active` once the MX record resolves.
+3. `mail_list_inboxes`, then `mail_create_address` with `address: "hello@newsite.com"`, the inbox id, and
+   `forwardTo: ["me@example.org"]` (add `deliverToInbox: false` to forward only).
+4. Tell the user to click the confirmation link Frogmail sends to `me@example.org`. `mail_list_addresses` shows
+   the forward as `verified` afterwards.
+
+`forwardTo` needs `forwarding: true` in `mail_list_addresses`; without it, addresses deliver to the Inbox only.
 
 ## 6. Importing feedback from another tool
 
