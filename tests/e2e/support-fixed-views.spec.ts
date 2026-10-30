@@ -136,7 +136,8 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto(`/inbox?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
 
-    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('support-view-inbox')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('support-view-assigned-to-me')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('support-view-resolved')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('support-view-breaching-soon')).toHaveAttribute('aria-pressed', 'false')
@@ -144,10 +145,16 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
     await expect(page.getByTestId('support-filter-status')).toHaveCount(0)
     await expect(page.getByTestId('support-filter-assignee')).toHaveCount(0)
 
+    // Inbox (the default) lists every open conversation, assigned or not.
     await expect(page.getByTestId(`support-conversation-${conversationRows[0].id}`)).toBeVisible()
-    await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toHaveCount(0)
+    await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[2].id}`)).toHaveCount(0)
     await expect(page.getByTestId(`support-conversation-${conversationRows[3].id}`)).toHaveCount(0)
+
+    await page.getByTestId('support-view-unassigned').click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('unassigned')
+    await expect(page.getByTestId(`support-conversation-${conversationRows[0].id}`)).toBeVisible()
+    await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toHaveCount(0)
 
     await page.getByTestId('support-view-assigned-to-me').click()
     await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('assigned-to-me')
@@ -171,8 +178,9 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
     await expect(page.getByTestId(`support-conversation-${conversationRows[0].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toHaveCount(0)
 
+    await page.getByTestId('support-inbox-switcher').click()
     await page.getByTestId(`support-inbox-switch-${secondInboxId}`).click()
-    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('support-view-inbox')).toHaveAttribute('aria-pressed', 'true')
     await expect.poll(() => new URL(page.url()).searchParams.get('inboxId')).toBe(secondInboxId)
     expect(new URL(page.url()).searchParams.get('view')).toBeNull()
     await expect(page.getByTestId(`support-conversation-${conversationRows[4].id}`)).toBeVisible()

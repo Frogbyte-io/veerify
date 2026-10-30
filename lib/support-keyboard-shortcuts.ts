@@ -8,6 +8,7 @@ export type SupportShortcutAction =
   | 'delete'
   | 'spam'
   | 'search'
+  | 'details'
   | 'help'
 
 const SUPPORT_SHORTCUT_ACTIONS: Record<string, SupportShortcutAction> = {
@@ -20,6 +21,7 @@ const SUPPORT_SHORTCUT_ACTIONS: Record<string, SupportShortcutAction> = {
   '#': 'delete',
   '!': 'spam',
   '/': 'search',
+  i: 'details',
   '?': 'help',
 }
 

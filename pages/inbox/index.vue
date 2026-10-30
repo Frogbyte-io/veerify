@@ -2,256 +2,273 @@
   <div class="contents">
     <div
       ref="pageRoot"
-      class="h-[calc(100dvh-7rem)] min-h-[480px]"
+      class="h-full min-h-[420px]"
       data-testid="support-inbox-page"
       :data-active-project-listener-ready="activeProjectListenerReady ? 'true' : 'false'"
     >
       <!-- Loading project context -->
       <div
         v-if="isLoadingProject"
-        class="@container/panes flex h-full overflow-hidden rounded-lg border bg-card"
+        class="@container/panes flex h-full overflow-hidden"
         data-testid="support-inbox-skeleton"
       >
-        <div class="hidden w-[220px] shrink-0 space-y-3 border-r bg-muted/20 p-3 @4xl/panes:block">
-          <Skeleton class="h-9 w-full" />
-          <Skeleton v-for="n in 4" :key="n" class="h-7 w-full" />
+        <div class="hidden w-[232px] shrink-0 space-y-2 border-r bg-sidebar p-3 @4xl/panes:block">
+          <Skeleton class="h-10 w-full" />
+          <Skeleton v-for="n in 6" :key="n" class="h-7 w-full" />
         </div>
         <div
-          class="w-full min-w-0 shrink-0 space-y-3 p-3 @2xl/panes:w-[300px] @2xl/panes:border-r @6xl/panes:w-[340px]"
+          class="w-full min-w-0 shrink-0 space-y-3 p-3 @2xl/panes:w-[320px] @2xl/panes:border-r @6xl/panes:w-[360px]"
         >
+          <Skeleton class="h-6 w-1/3" />
           <Skeleton class="h-9 w-full" />
-          <div v-for="n in 6" :key="n" class="space-y-2">
-            <Skeleton class="h-4 w-2/3" />
-            <Skeleton class="h-3 w-full" />
+          <div v-for="n in 6" :key="n" class="flex gap-3 py-1.5">
+            <Skeleton class="h-8 w-8 shrink-0 rounded-full" />
+            <div class="flex-1 space-y-2">
+              <Skeleton class="h-3.5 w-1/2" />
+              <Skeleton class="h-3.5 w-full" />
+            </div>
           </div>
         </div>
         <div class="hidden min-w-0 flex-1 flex-col @2xl/panes:flex">
           <div class="border-b p-4">
             <Skeleton class="h-5 w-1/2" />
           </div>
-          <div class="flex-1 space-y-4 p-4">
-            <Skeleton class="h-16 w-2/3" />
-            <Skeleton class="ml-auto h-16 w-1/2" />
-            <Skeleton class="h-16 w-3/5" />
+          <div class="mx-auto w-full max-w-3xl flex-1 space-y-4 p-4">
+            <Skeleton class="h-20 w-2/3" />
+            <Skeleton class="h-20 w-3/5" />
           </div>
-          <div class="border-t p-3">
-            <Skeleton class="h-20 w-full" />
+          <div class="mx-auto w-full max-w-3xl p-4">
+            <Skeleton class="h-28 w-full rounded-xl" />
           </div>
         </div>
       </div>
 
-      <!-- Notices (load error, Inbox off, no inbox) use the standard page frame -->
-      <PageContainer v-else-if="showNotice" data-testid="support-inbox-notice">
-        <PageHeader title="Inbox" description="Conversations with your customers" />
+      <!-- Notices (load error, Inbox off, no inbox) use the standard page frame and gutters -->
+      <div
+        v-else-if="showNotice"
+        class="h-full overflow-y-auto px-4 pt-4 pb-10 sm:px-6 lg:px-8"
+        data-testid="support-inbox-notice"
+      >
+        <PageContainer>
+          <PageHeader title="Inbox" description="Conversations with your customers" />
 
-        <!-- Project error -->
-        <Card v-if="projectError">
-          <CardContent class="text-center py-8">
-            <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-            <p class="font-medium mb-2">Failed to load the project</p>
-            <p class="text-sm text-muted-foreground mb-4">{{ projectError }}</p>
-            <Button variant="outline" @click="initProjectContext">
-              <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-              Try again
-            </Button>
-          </CardContent>
-        </Card>
+          <!-- Project error -->
+          <Card v-if="projectError">
+            <CardContent class="py-8 text-center">
+              <Icon name="lucide:alert-circle" class="mx-auto mb-3 h-8 w-8 text-destructive" />
+              <p class="mb-2 font-medium">Failed to load the project</p>
+              <p class="mb-4 text-sm text-muted-foreground">{{ projectError }}</p>
+              <Button variant="outline" @click="initProjectContext">
+                <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+                Try again
+              </Button>
+            </CardContent>
+          </Card>
 
-        <!-- Inbox switched off for this project -->
-        <Card v-else-if="supportDisabled" data-testid="support-disabled">
-          <CardContent class="text-center py-10 space-y-3">
-            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <Icon name="lucide:life-buoy" class="w-6 h-6 text-muted-foreground" />
-            </div>
-            <p class="font-medium">Inbox is switched off for this project</p>
-            <template v-if="activeProject?.role === 'admin'">
-              <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
-              <Button as-child variant="outline">
-                <NuxtLink to="/project/settings?tab=tools">
-                  <Icon name="lucide:layout-grid" class="w-4 h-4 mr-2" />
-                  Project settings: Tools
+          <!-- Inbox switched off for this project -->
+          <Card v-else-if="supportDisabled" data-testid="support-disabled">
+            <CardContent class="space-y-3 py-10 text-center">
+              <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <Icon name="lucide:life-buoy" class="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p class="font-medium">Inbox is switched off for this project</p>
+              <template v-if="activeProject?.role === 'admin'">
+                <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
+                <Button as-child variant="outline">
+                  <NuxtLink to="/project/settings?tab=tools">
+                    <Icon name="lucide:layout-grid" class="mr-2 h-4 w-4" />
+                    Project settings: Tools
+                  </NuxtLink>
+                </Button>
+              </template>
+              <p v-else class="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+                <Icon name="lucide:lock" class="h-3.5 w-3.5" />
+                Project admins can switch Inbox on.
+              </p>
+            </CardContent>
+          </Card>
+
+          <!-- No inbox yet: point to settings, where managers create one -->
+          <Card v-else data-testid="support-inbox-empty">
+            <CardContent class="py-8 text-center">
+              <div
+                v-if="inboxAccessError"
+                data-testid="support-inbox-access-error"
+                class="mb-4 text-sm text-destructive"
+                role="alert"
+              >
+                {{ inboxAccessError }}
+              </div>
+              <Icon name="lucide:inbox" class="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <p class="mb-2 font-medium" data-testid="support-no-assignment">No inboxes are assigned to you.</p>
+              <p class="mx-auto mb-4 max-w-md text-sm text-muted-foreground">
+                Admins can create an inbox and set up domains, addresses and agents in inbox settings. Otherwise, ask an
+                inbox administrator to add you to an inbox.
+              </p>
+              <Button as-child>
+                <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
+                  <Icon name="lucide:settings" class="mr-2 h-4 w-4" />
+                  Open inbox settings
                 </NuxtLink>
               </Button>
+            </CardContent>
+          </Card>
+        </PageContainer>
+      </div>
+
+      <!-- Panes, sized by the container (not the viewport) so they adapt when the
+           app sidebar opens or collapses: narrow = one pane (list or thread),
+           @2xl = list + thread, 898px = inbox column too, 1340px = details inline. -->
+      <div v-else class="@container/panes relative flex h-full overflow-hidden">
+        <div
+          v-if="inboxAccessError"
+          data-testid="support-inbox-access-error"
+          class="absolute top-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm"
+          role="alert"
+        >
+          {{ inboxAccessError }}
+        </div>
+
+        <!-- Inbox switcher, views, addresses, tags -->
+        <aside v-if="!isCompactPanes" class="w-[232px] shrink-0 border-r bg-sidebar">
+          <SupportInboxSidebar v-bind="sidebarProps" v-on="sidebarListeners" />
+        </aside>
+
+        <!-- Conversation list -->
+        <section
+          class="w-full min-w-0 shrink-0 @2xl/panes:block @2xl/panes:w-[320px] @2xl/panes:border-r @6xl/panes:w-[360px]"
+          :class="selectedConversationId ? 'hidden' : 'block'"
+          aria-label="Conversations"
+        >
+          <SupportConversationList
+            :conversations="conversationsEnriched"
+            :selected-conversation-id="selectedConversationId"
+            :is-loading="isLoadingConversations"
+            :is-loading-more="isLoadingMoreConversations"
+            :error="conversationsError"
+            :has-more="hasMoreConversations"
+            :search-query="conversationSearch"
+            :csat-filter="csatFilter"
+            :csat-summary="csatSummary"
+            :active-inbox-id="activeInboxId"
+            :active-view="activeView"
+            :title="activeViewLabel"
+            :active-address="activeAddress"
+            :active-tag="activeTag"
+            :members="inboxMembers"
+            :current-user-id="currentUserId"
+            :current-user-name="currentUserName"
+            :show-drawer-button="isCompactPanes"
+            @select="selectConversation"
+            @search="handleConversationSearch"
+            @clear-search="clearConversationSearch"
+            @csat-filter="handleCsatFilter"
+            @clear-address="selectAddress(null)"
+            @clear-tag="selectTag(null)"
+            @quick-action="handleQuickAction"
+            @open-inboxes="showInboxSheet = true"
+            @go-to-inbox="selectView('inbox')"
+            @retry="() => loadConversations(true)"
+            @load-more="() => loadConversations(false)"
+          />
+        </section>
+
+        <!-- Thread -->
+        <section
+          class="min-w-0 flex-1 @2xl/panes:block"
+          :class="selectedConversationId ? 'block' : 'hidden'"
+          aria-label="Conversation"
+        >
+          <SupportConversationThread
+            :conversation-id="selectedConversationId"
+            :conversation="conversationDetail"
+            :contact="conversationContact"
+            :current-user-id="currentUserId"
+            :members="inboxMembers"
+            :messages="messages"
+            :is-loading-detail="isLoadingDetail"
+            :detail-error="detailError"
+            :is-loading-messages="isLoadingMessages"
+            :messages-error="messagesError"
+            :is-updating="isUpdatingConversation"
+            :details-open="showDetails"
+            :receiving-address="receivingAddress"
+            @retry-detail="loadConversationDetail"
+            @retry-messages="loadMessages"
+            @update-conversation="patchConversation"
+            @claim-conversation="claimConversation"
+            @mark-unread="markConversationUnread"
+            @toggle-details="toggleDetails"
+            @back="closeConversation"
+          >
+            <template #composer>
+              <SupportComposer
+                v-if="selectedConversationId"
+                ref="composer"
+                :conversation-id="selectedConversationId"
+                :project-id="activeProjectId"
+                :contact="conversationContact"
+                :current-user-name="currentUserName"
+                :conversation="conversationDetail"
+                :addresses="addresses"
+                :inbox-sending-address="inboxSendingAddress"
+                @posted="handleMessagePosted"
+                @draft-state-changed="handleDraftStateChanged"
+              />
             </template>
-            <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
-              <Icon name="lucide:lock" class="w-3.5 h-3.5" />
-              Project admins can switch Inbox on.
-            </p>
-          </CardContent>
-        </Card>
+          </SupportConversationThread>
+        </section>
 
-        <!-- No inbox yet: point to settings, where managers create one -->
-        <Card v-else data-testid="support-inbox-empty">
-          <CardContent class="text-center py-8">
-            <div
-              v-if="inboxAccessError"
-              data-testid="support-inbox-access-error"
-              class="text-sm text-destructive mb-4"
-              role="alert"
-            >
-              {{ inboxAccessError }}
-            </div>
-            <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-            <p class="font-medium mb-2" data-testid="support-no-assignment">No inboxes are assigned to you.</p>
-            <p class="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-              Admins can create an inbox and set up domains, addresses and agents in inbox settings. Otherwise, ask an
-              inbox administrator to add you to an inbox.
-            </p>
-            <Button as-child>
-              <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
-                <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
-                Open inbox settings
-              </NuxtLink>
-            </Button>
-          </CardContent>
-        </Card>
-      </PageContainer>
-
-      <!-- Responsive pane layout. Sized by the container (not the viewport)
-         so it adapts when the app sidebar opens or collapses:
-         narrow = one pane (list or thread), @2xl = list + thread,
-         @4xl = inbox sidebar + list + thread. -->
-      <div v-else class="@container/panes relative h-full flex flex-col rounded-lg border overflow-hidden bg-card">
-        <div v-if="isCompactPanes" class="flex h-11 shrink-0 items-center gap-2 border-b px-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="support-open-inboxes"
-            aria-label="Open inboxes and views"
-            @click="showInboxSheet = true"
-          >
-            <Icon name="lucide:panel-left" class="w-4 h-4" />
-          </Button>
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium">{{ activeInbox?.name || 'Inbox' }}</p>
-          </div>
-          <Button variant="ghost" size="sm" as-child>
-            <NuxtLink to="/inbox/settings" aria-label="Inbox settings" data-testid="support-settings-link">
-              <Icon name="lucide:settings" class="w-4 h-4" />
-            </NuxtLink>
-          </Button>
-        </div>
-
-        <div class="flex min-h-0 flex-1">
-          <div
-            v-if="inboxAccessError"
-            data-testid="support-inbox-access-error"
-            class="absolute z-10 left-4 top-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm"
-            role="alert"
-          >
-            {{ inboxAccessError }}
-          </div>
-          <!-- Left: inbox switcher + fixed views -->
-          <div class="hidden w-[220px] shrink-0 border-r bg-muted/20 @4xl/panes:block">
-            <SupportInboxSidebar
-              :inboxes="inboxes"
-              :active-inbox-id="activeInboxId"
-              :is-loading="isLoadingInboxes"
-              :error="inboxesError"
-              :capabilities="activeInbox?.capabilities"
-              :active-view="activeView"
-              :unread-counts="unreadCounts"
-              :addresses="addresses"
-              :active-address-id="activeAddressId"
-              @select-inbox="selectInbox"
-              @select-view="selectView"
-              @select-address="selectAddress"
-              @retry="loadInboxes"
-              @create-tag="createTag"
-            />
-          </div>
-
-          <!-- Middle: conversation list -->
-          <div
-            class="w-full min-w-0 shrink-0 @2xl/panes:block @2xl/panes:w-[300px] @2xl/panes:border-r @6xl/panes:w-[340px]"
-            :class="selectedConversationId ? 'hidden' : 'block'"
-          >
-            <SupportConversationList
-              :conversations="conversationsEnriched"
-              :selected-conversation-id="selectedConversationId"
-              :is-loading="isLoadingConversations"
-              :is-loading-more="isLoadingMoreConversations"
-              :error="conversationsError"
-              :has-more="hasMoreConversations"
-              :search-query="conversationSearch"
-              :csat-filter="csatFilter"
-              :csat-summary="csatSummary"
-              :active-inbox-id="activeInboxId"
-              :active-view="activeView"
-              :unread-counts="unreadCounts"
-              @select="selectConversation"
-              @search="handleConversationSearch"
-              @clear-search="clearConversationSearch"
-              @csat-filter="handleCsatFilter"
-              @retry="() => loadConversations(true)"
-              @load-more="() => loadConversations(false)"
-            />
-          </div>
-
-          <!-- Right: thread -->
-          <div class="flex-1 min-w-0 @2xl/panes:block" :class="selectedConversationId ? 'block' : 'hidden'">
-            <SupportConversationThread
-              :conversation-id="selectedConversationId"
-              :conversation="conversationDetail"
-              :contact="conversationContact"
-              :current-user-id="currentUserId"
-              :members="inboxMembers"
-              :messages="messages"
-              :is-loading-detail="isLoadingDetail"
-              :detail-error="detailError"
-              :is-loading-messages="isLoadingMessages"
-              :messages-error="messagesError"
-              :is-updating="isUpdatingConversation"
-              @retry-detail="loadConversationDetail"
-              @retry-messages="loadMessages"
-              @update-conversation="patchConversation"
-              @claim-conversation="claimConversation"
-              @mark-unread="markConversationUnread"
-              @convert-to-feedback="openFeedbackBridgeDialog"
-              @toggle-contact-panel="showContactPanel = !showContactPanel"
-              @back="unselectConversation"
-            >
-              <template #composer>
-                <SupportComposer
-                  v-if="selectedConversationId"
-                  ref="composer"
-                  :conversation-id="selectedConversationId"
-                  :project-id="activeProjectId"
-                  :contact="conversationContact"
-                  :current-user-name="currentUserName"
-                  @posted="handleMessagePosted"
-                  @draft-state-changed="handleDraftStateChanged"
-                />
-              </template>
-            </SupportConversationThread>
-          </div>
-        </div>
+        <!-- Details inline on wide panes -->
+        <aside
+          v-if="detailsInline && showDetails && selectedConversationId"
+          class="w-[300px] shrink-0 border-l bg-sidebar"
+          aria-label="Conversation details"
+        >
+          <SupportConversationDetails v-bind="detailsProps" v-on="detailsListeners">
+            <SupportContactPanel v-bind="contactPanelProps" v-on="contactPanelListeners" />
+          </SupportConversationDetails>
+        </aside>
       </div>
     </div>
 
-    <!-- Inbox switcher + views as a drawer when the panes are too narrow -->
+    <!-- Inbox column as a drawer when the panes are too narrow -->
     <Sheet v-if="isCompactPanes" :open="showInboxSheet" @update:open="showInboxSheet = $event">
-      <SheetContent side="left" class="w-[85vw] max-w-xs p-0" data-testid="support-inbox-sheet">
+      <SheetContent side="left" class="w-[86vw] max-w-[300px] gap-0 p-0" data-testid="support-inbox-sheet">
         <SheetHeader class="sr-only">
           <SheetTitle>Inboxes</SheetTitle>
-          <SheetDescription>Switch inbox or conversation view</SheetDescription>
+          <SheetDescription>Switch inbox, view, address or tag</SheetDescription>
         </SheetHeader>
         <SupportInboxSidebar
-          :inboxes="inboxes"
-          :active-inbox-id="activeInboxId"
-          :is-loading="isLoadingInboxes"
-          :error="inboxesError"
-          :capabilities="activeInbox?.capabilities"
-          :active-view="activeView"
-          :unread-counts="unreadCounts"
-          :addresses="addresses"
-          :active-address-id="activeAddressId"
+          v-bind="sidebarProps"
           @select-inbox="(id) => closeInboxSheetAfter(selectInbox(id))"
           @select-view="(view) => closeInboxSheetAfter(selectView(view))"
           @select-address="(id) => closeInboxSheetAfter(selectAddress(id))"
+          @select-tag="(id) => closeInboxSheetAfter(selectTag(id))"
           @retry="loadInboxes"
           @create-tag="createTag"
         />
+      </SheetContent>
+    </Sheet>
+
+    <!-- Details as a slide-over when the panes are too narrow to show it inline -->
+    <Sheet
+      v-if="!detailsInline"
+      :open="showDetails && Boolean(selectedConversationId)"
+      @update:open="showDetails = $event"
+    >
+      <SheetContent
+        side="right"
+        class="w-full gap-0 p-0 sm:max-w-sm [&>button]:hidden"
+        data-testid="support-details-sheet"
+      >
+        <SheetHeader class="sr-only">
+          <SheetTitle>Conversation details</SheetTitle>
+          <SheetDescription>Properties, contact and history</SheetDescription>
+        </SheetHeader>
+        <SupportConversationDetails v-bind="detailsProps" v-on="detailsListeners">
+          <SupportContactPanel v-bind="contactPanelProps" v-on="contactPanelListeners" />
+        </SupportConversationDetails>
       </SheetContent>
     </Sheet>
 
@@ -299,7 +316,9 @@
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">r / n</kbd>
           <span>Reply / internal note</span>
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">c</kbd>
-          <span>Claim conversation</span>
+          <span>Assign to me</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">i</kbd>
+          <span>Show or hide details</span>
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">e</kbd>
           <span>Resolve conversation</span>
           <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">#</kbd>
@@ -313,41 +332,11 @@
         </div>
       </div>
     </div>
-
-    <!-- Far right: contact drawer -->
-    <SupportContactPanel
-      :open="showContactPanel"
-      :contact="contactPanelContact"
-      :company="contactPanelCompany"
-      :is-loading="contactPanelLoading"
-      :error="contactPanelError"
-      :linked="timelineLinked"
-      :probable-feedback="timelineProbableFeedback"
-      :linked-loading="timelineLinkedLoading"
-      :probable-loading="timelineProbableLoading"
-      :linked-more-loading="timelineLinkedMoreLoading"
-      :probable-more-loading="timelineProbableMoreLoading"
-      :linked-has-more="timelineLinkedHasMore"
-      :probable-has-more="timelineProbableHasMore"
-      :linked-error="timelineLinkedError"
-      :probable-error="timelineProbableError"
-      :linked-more-error="timelineLinkedMoreError"
-      :probable-more-error="timelineProbableMoreError"
-      :previous-conversations="previousConversations"
-      :previous-conversations-loading="previousConversationsLoading"
-      :linking-id="linkingFeedbackId"
-      @update:open="showContactPanel = $event"
-      @retry="loadContactPanel"
-      @link-feedback="linkFeedback"
-      @unlink-feedback="unlinkFeedback"
-      @load-linked="(reset) => loadTimelineSection('linked', reset)"
-      @load-probable="(reset) => loadTimelineSection('probable', reset)"
-      @select-conversation="selectConversation"
-    />
   </div>
 </template>
 
 <script>
+import { toast } from 'vue-sonner'
 import { loadActiveProject } from '~/lib/active-project'
 import {
   getNextSupportConversationId,
@@ -357,7 +346,37 @@ import {
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 const SUPPORT_DRAFT_STATE_CHANGED_EVENT = 'veerify:support-draft-state-changed'
-const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'archived', 'spam', 'trash', 'all']
+const SUPPORT_VIEWS = [
+  'inbox',
+  'assigned-to-me',
+  'unassigned',
+  'breaching-soon',
+  'snoozed',
+  'resolved',
+  'archived',
+  'spam',
+  'trash',
+  'all',
+]
+const DEFAULT_VIEW = 'inbox'
+const VIEW_LABELS = {
+  inbox: 'Inbox',
+  'assigned-to-me': 'Assigned to me',
+  unassigned: 'Unassigned',
+  'breaching-soon': 'Breaching soon',
+  snoozed: 'Snoozed',
+  resolved: 'Resolved',
+  archived: 'Archived',
+  spam: 'Spam',
+  trash: 'Trash',
+  all: 'All conversations',
+}
+// Views that only show conversations still being worked: resolving one takes it out.
+const WORKING_VIEWS = ['inbox', 'assigned-to-me', 'unassigned', 'breaching-soon']
+const EMPTY_UNREAD_COUNTS = { inbox: 0, unassigned: 0, assignedToMe: 0, breachingSoon: 0, byAddress: {} }
+// Container width from which the details panel sits beside the thread instead of sliding over it.
+const DETAILS_INLINE_MIN_WIDTH = 1340
+const DETAILS_OPEN_STORAGE_KEY = 'veerify:support:details-open'
 const CSAT_FILTERS = ['all', 'rated', 'unrated']
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
 const DRAFT_MODES = ['reply', 'note']
@@ -390,9 +409,15 @@ export default {
 
       inboxMembers: [],
 
-      activeView: 'unassigned',
+      activeView: DEFAULT_VIEW,
       addresses: [],
+      inboxSendingAddress: null,
       activeAddressId: null,
+      tags: [],
+      activeTagId: null,
+      conversationTags: [],
+      conversationTagsBusy: false,
+      showDetails: false,
 
       conversations: [],
       isLoadingConversations: true,
@@ -404,7 +429,7 @@ export default {
       csatFilter: 'all',
       csatSummary: null,
       conversationSearchDebounceTimer: null,
-      unreadCounts: { unassigned: 0, assignedToMe: 0 },
+      unreadCounts: { ...EMPTY_UNREAD_COUNTS },
       conversationDraftIds: [],
       contactCache: {},
 
@@ -421,7 +446,6 @@ export default {
       isLoadingMessages: false,
       messagesError: null,
 
-      showContactPanel: false,
       contactPanelContact: null,
       contactPanelCompany: null,
       contactPanelLoading: false,
@@ -476,6 +500,115 @@ export default {
       return this.inboxes.find((inbox) => inbox.id === this.activeInboxId) || null
     },
 
+    detailsInline() {
+      return this.pageWidth !== null && this.pageWidth >= DETAILS_INLINE_MIN_WIDTH
+    },
+
+    activeViewLabel() {
+      return VIEW_LABELS[this.activeView] || 'Inbox'
+    },
+
+    activeAddress() {
+      return this.addresses.find((address) => address.id === this.activeAddressId) || null
+    },
+
+    activeTag() {
+      return this.tags.find((tag) => tag.id === this.activeTagId) || null
+    },
+
+    receivingAddress() {
+      const id = this.conversationDetail?.mailAddressId
+      return (id && this.addresses.find((address) => address.id === id)?.address) || ''
+    },
+
+    sidebarProps() {
+      return {
+        inboxes: this.inboxes,
+        activeInboxId: this.activeInboxId,
+        isLoading: this.isLoadingInboxes,
+        error: this.inboxesError,
+        capabilities: this.activeInbox?.capabilities,
+        activeView: this.activeView,
+        unreadCounts: this.unreadCounts,
+        addresses: this.addresses,
+        activeAddressId: this.activeAddressId,
+        tags: this.tags,
+        activeTagId: this.activeTagId,
+      }
+    },
+
+    sidebarListeners() {
+      return {
+        'select-inbox': this.selectInbox,
+        'select-view': this.selectView,
+        'select-address': this.selectAddress,
+        'select-tag': this.selectTag,
+        retry: this.loadInboxes,
+        'create-tag': this.createTag,
+      }
+    },
+
+    detailsProps() {
+      return {
+        conversation: this.conversationDetail,
+        currentUserId: this.currentUserId,
+        members: this.inboxMembers,
+        isUpdating: this.isUpdatingConversation,
+        tags: this.tags,
+        conversationTags: this.conversationTags,
+        tagsBusy: this.conversationTagsBusy,
+      }
+    },
+
+    detailsListeners() {
+      return {
+        close: () => this.setDetailsOpen(false),
+        'update-conversation': this.patchConversation,
+        'convert-to-feedback': () => {
+          // Two modals do not stack well: the slide-over closes before the dialog opens.
+          if (!this.detailsInline) this.showDetails = false
+          this.openFeedbackBridgeDialog()
+        },
+        'add-tag': this.addConversationTag,
+        'remove-tag': this.removeConversationTag,
+      }
+    },
+
+    contactPanelProps() {
+      return {
+        contact: this.contactPanelContact,
+        company: this.contactPanelCompany,
+        isLoading: this.contactPanelLoading,
+        error: this.contactPanelError,
+        linked: this.timelineLinked,
+        probableFeedback: this.timelineProbableFeedback,
+        linkedLoading: this.timelineLinkedLoading,
+        probableLoading: this.timelineProbableLoading,
+        linkedMoreLoading: this.timelineLinkedMoreLoading,
+        probableMoreLoading: this.timelineProbableMoreLoading,
+        linkedHasMore: this.timelineLinkedHasMore,
+        probableHasMore: this.timelineProbableHasMore,
+        linkedError: this.timelineLinkedError,
+        probableError: this.timelineProbableError,
+        linkedMoreError: this.timelineLinkedMoreError,
+        probableMoreError: this.timelineProbableMoreError,
+        previousConversations: this.previousConversations,
+        previousConversationsLoading: this.previousConversationsLoading,
+        linkingId: this.linkingFeedbackId,
+      }
+    },
+
+    contactPanelListeners() {
+      return {
+        retry: this.loadContactPanel,
+        'link-feedback': this.linkFeedback,
+        'unlink-feedback': this.unlinkFeedback,
+        'load-linked': (reset) => this.loadTimelineSection('linked', reset),
+        'load-probable': (reset) => this.loadTimelineSection('probable', reset),
+        'select-conversation': this.selectConversation,
+      }
+    },
+
     conversationsEnriched() {
       return this.conversations.map((item) => {
         const cached = this.contactCache[item.contactId]
@@ -490,9 +623,19 @@ export default {
     },
   },
 
+  watch: {
+    // Inline (wide panes) the panel stays open unless the agent closed it; as a slide-over it starts closed.
+    detailsInline: {
+      handler(inline) {
+        this.showDetails = inline ? this.storageGet(DETAILS_OPEN_STORAGE_KEY) !== '0' : false
+      },
+    },
+  },
+
   async mounted() {
     if (import.meta.client) {
       this.pageWidth = this.$refs.pageRoot?.clientWidth ?? null
+      this.showDetails = this.detailsInline && this.storageGet(DETAILS_OPEN_STORAGE_KEY) !== '0'
       if (typeof ResizeObserver !== 'undefined' && this.$refs.pageRoot) {
         this.pageResizeObserver = new ResizeObserver(([entry]) => {
           this.pageWidth = entry.contentRect.width
@@ -553,6 +696,8 @@ export default {
           void this.patchConversation({ spam: true })
       } else if (action === 'search') {
         this.focusConversationSearch()
+      } else if (action === 'details') {
+        if (this.selectedConversationId) this.toggleDetails()
       } else if (action === 'help') {
         this.showShortcutHelp = !this.showShortcutHelp
       }
@@ -603,7 +748,11 @@ export default {
       this.inboxMembers = []
       this.addresses = []
       this.activeAddressId = null
-      this.activeView = 'unassigned'
+      this.activeView = DEFAULT_VIEW
+      this.tags = []
+      this.activeTagId = null
+      this.conversationTags = []
+      this.inboxSendingAddress = null
       this.conversationSearch = ''
       this.csatFilter = 'all'
       this.csatSummary = null
@@ -612,14 +761,13 @@ export default {
         this.conversationSearchDebounceTimer = null
       }
       this.conversations = []
-      this.unreadCounts = { unassigned: 0, assignedToMe: 0 }
+      this.unreadCounts = { ...EMPTY_UNREAD_COUNTS }
       this.conversationDraftIds = []
       this.contactCache = {}
       this.selectedConversationId = null
       this.conversationDetail = null
       this.conversationContact = null
       this.messages = []
-      this.showContactPanel = false
       this.resetContactPanel()
     },
 
@@ -739,8 +887,10 @@ export default {
 
       this.activeInboxId = inboxId
       this.inboxAccessError = null
-      this.activeView = useRouteView ? this.normalizeSupportView(this.$route.query.view) : 'unassigned'
+      this.activeView = useRouteView ? this.normalizeSupportView(this.$route.query.view) : DEFAULT_VIEW
       this.addresses = []
+      this.inboxSendingAddress = null
+      this.activeTagId = useRouteView && typeof this.$route.query.tag === 'string' ? this.$route.query.tag : null
       this.activeAddressId =
         useRouteView && typeof this.$route.query.address === 'string' ? this.$route.query.address : null
       this.conversationSearch = useRouteView ? this.normalizeConversationSearch(this.$route.query.search) : ''
@@ -752,8 +902,9 @@ export default {
             query: {
               ...this.$route.query,
               inboxId,
-              view: this.activeView === 'unassigned' ? undefined : this.activeView,
+              view: this.activeView === DEFAULT_VIEW ? undefined : this.activeView,
               address: this.activeAddressId || undefined,
+              tag: this.activeTagId || undefined,
               search: this.conversationSearch || undefined,
               csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             },
@@ -764,6 +915,7 @@ export default {
       await Promise.all([
         this.loadInboxMembers({ generation, projectId, inboxId }),
         this.loadAddresses({ generation, projectId, inboxId }),
+        this.loadTags({ generation, projectId, inboxId }),
         this.loadConversations(true, { generation, projectId, inboxId }),
         this.loadCsatSummary({ generation, projectId }),
       ])
@@ -833,6 +985,7 @@ export default {
         const response = await $fetch(`/api/support/inboxes/${inboxId}/addresses`)
         if (!this.isCurrentContext(generation, projectId, inboxId)) return
         this.addresses = response?.data?.addresses || []
+        this.inboxSendingAddress = response?.data?.inboxSendingAddress || this.activeInbox?.emailAddress || null
         // A stale ?address= from the URL must not filter the list by an address this inbox no longer has.
         if (this.activeAddressId && !this.addresses.some((address) => address.id === this.activeAddressId)) {
           this.activeAddressId = null
@@ -845,7 +998,7 @@ export default {
     },
 
     async selectAddress(addressId) {
-      const nextId = addressId && addressId !== this.activeAddressId ? addressId : null
+      const nextId = addressId || null
       if (nextId === this.activeAddressId) return
       this.unselectConversation()
       this.activeAddressId = nextId
@@ -855,6 +1008,90 @@ export default {
           .catch(() => {})
       }
       await this.loadConversations(true)
+    },
+
+    async selectTag(tagId) {
+      const nextId = tagId || null
+      if (nextId === this.activeTagId) return
+      this.unselectConversation()
+      this.activeTagId = nextId
+      if (import.meta.client) {
+        await this.$router
+          .replace({ query: { ...this.$route.query, tag: nextId || undefined, conversationId: undefined } })
+          .catch(() => {})
+      }
+      await this.loadConversations(true)
+    },
+
+    async loadTags({
+      generation = this.contextGeneration,
+      projectId = this.activeProjectId,
+      inboxId = this.activeInboxId,
+    } = {}) {
+      if (!projectId || !this.isCurrentContext(generation, projectId, inboxId)) return
+      try {
+        const response = await $fetch('/api/support/tags', { params: { projectId } })
+        if (!this.isCurrentContext(generation, projectId, inboxId)) return
+        this.tags = response?.data?.tags || []
+        if (this.activeTagId && !this.tags.some((tag) => tag.id === this.activeTagId)) {
+          this.activeTagId = null
+          await this.loadConversations(true, { generation, projectId, inboxId })
+        }
+      } catch {
+        // Tags are a filter and a label: the inbox works without them.
+        if (this.isCurrentContext(generation, projectId, inboxId)) this.tags = []
+      }
+    },
+
+    async loadConversationTags({
+      generation = this.contextGeneration,
+      projectId = this.activeProjectId,
+      inboxId = this.activeInboxId,
+      conversationId = this.selectedConversationId,
+    } = {}) {
+      if (!conversationId || !this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
+      try {
+        const response = await $fetch(`/api/support/conversations/${conversationId}/tags`)
+        if (this.isCurrentConversation(generation, projectId, inboxId, conversationId)) {
+          this.conversationTags = response?.data?.tags || []
+        }
+      } catch {
+        if (this.isCurrentConversation(generation, projectId, inboxId, conversationId)) this.conversationTags = []
+      }
+    },
+
+    async addConversationTag(tagId) {
+      await this.changeConversationTag(tagId, 'add')
+    },
+
+    async removeConversationTag(tagId) {
+      await this.changeConversationTag(tagId, 'remove')
+    },
+
+    async changeConversationTag(tagId, change) {
+      const conversationId = this.selectedConversationId
+      if (!conversationId || !tagId || this.conversationTagsBusy) return
+      const context = {
+        generation: this.contextGeneration,
+        projectId: this.activeProjectId,
+        inboxId: this.activeInboxId,
+        conversationId,
+      }
+      this.conversationTagsBusy = true
+      try {
+        if (change === 'add') {
+          await $fetch(`/api/support/conversations/${conversationId}/tags`, { method: 'POST', body: { tagId } })
+        } else {
+          await $fetch(`/api/support/conversations/${conversationId}/tags/${tagId}`, { method: 'DELETE' })
+        }
+        await Promise.all([this.loadConversationTags(context), this.loadMessages(context)])
+      } catch (error) {
+        if (this.isCurrentConversation(context.generation, context.projectId, context.inboxId, conversationId)) {
+          toast.error(error?.data?.error?.message || 'Failed to update tags')
+        }
+      } finally {
+        this.conversationTagsBusy = false
+      }
     },
 
     async createTag(name) {
@@ -868,18 +1105,19 @@ export default {
           method: 'POST',
           body: { projectId, name },
         })
+        await this.loadTags({ generation, projectId, inboxId })
       } catch (error) {
         if (!this.isCurrentContext(generation, projectId, inboxId)) return
         if (this.isForbiddenError(error)) {
           await this.recoverFromForbiddenInbox({ generation, projectId, inboxId })
           return
         }
-        alert(error?.data?.error?.message || 'Failed to create tag')
+        toast.error(error?.data?.error?.message || 'Failed to create tag')
       }
     },
 
     normalizeSupportView(value) {
-      return typeof value === 'string' && SUPPORT_VIEWS.includes(value) ? value : 'unassigned'
+      return typeof value === 'string' && SUPPORT_VIEWS.includes(value) ? value : DEFAULT_VIEW
     },
 
     normalizeConversationSearch(value) {
@@ -903,7 +1141,7 @@ export default {
           .replace({
             query: {
               ...this.$route.query,
-              view: nextView === 'unassigned' ? undefined : nextView,
+              view: nextView === DEFAULT_VIEW ? undefined : nextView,
               conversationId: undefined,
               search: this.conversationSearch || undefined,
               csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
@@ -935,6 +1173,7 @@ export default {
             inboxId,
             view: this.activeView,
             mailAddressId: this.activeAddressId || undefined,
+            tagId: this.activeTagId || undefined,
             search: this.conversationSearch || undefined,
             csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             limit: 25,
@@ -945,7 +1184,7 @@ export default {
         if (!this.isCurrentContext(generation, projectId, inboxId)) return
         const page = response?.data?.conversations || []
         this.conversations = reset ? page : [...this.conversations, ...page]
-        this.unreadCounts = response?.data?.unreadCounts || { unassigned: 0, assignedToMe: 0 }
+        this.unreadCounts = { ...EMPTY_UNREAD_COUNTS, ...(response?.data?.unreadCounts || {}) }
         this.hasMoreConversations = Boolean(response?.data?.hasMore)
         this.conversationsNextCursor = response?.data?.nextCursor || null
         this.syncConversationDraftIndicators()
@@ -1048,6 +1287,15 @@ export default {
       }
     },
 
+    storageSet(key, value) {
+      if (!import.meta.client) return
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        // Private windows and blocked storage: the preference just isn't remembered.
+      }
+    },
+
     conversationHasDraft(conversationId) {
       if (!conversationId) return false
       return DRAFT_MODES.some((mode) => (this.storageGet(this.draftKey(conversationId, mode)) || '').trim().length > 0)
@@ -1133,7 +1381,7 @@ export default {
       this.messages = []
       this.messagesError = null
       this.detailError = null
-      this.showContactPanel = false
+      this.conversationTags = []
       this.resetContactPanel()
     },
 
@@ -1162,6 +1410,7 @@ export default {
       await Promise.all([
         this.loadConversationDetail({ generation, projectId, inboxId, conversationId }),
         this.loadMessages({ generation, projectId, inboxId, conversationId }),
+        this.loadConversationTags({ generation, projectId, inboxId, conversationId }),
         this.loadConversations(true, { generation, projectId, inboxId }),
       ])
     },
@@ -1303,33 +1552,27 @@ export default {
       const conversationId = this.selectedConversationId
       if (!this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
 
+      const before = this.conversationDetail
+      const nextId = this.neighbourConversationId(conversationId)
       this.isUpdatingConversation = true
       try {
         const response = await $fetch(`/api/support/conversations/${conversationId}`, {
           method: 'PATCH',
           body: patch,
         })
-        if (
-          this.isCurrentConversation(generation, projectId, inboxId, conversationId) &&
-          response?.data?.conversation
-        ) {
-          this.conversationDetail = response.data.conversation
+        const updated = response?.data?.conversation || null
+        if (this.isCurrentConversation(generation, projectId, inboxId, conversationId) && updated) {
+          this.conversationDetail = updated
         }
-        // Moving a conversation between folders takes it out of the current
-        // view, so close it rather than leave a thread open that the list no
-        // longer shows.
-        const leavesView =
-          'spam' in patch ||
-          'deleted' in patch ||
-          (patch.status === 'closed' && !['all', 'archived'].includes(this.activeView))
-        if (leavesView && this.isCurrentConversation(generation, projectId, inboxId, conversationId)) {
+        // Resolving, archiving or moving a conversation to a folder takes it out
+        // of the current view: move on to the next one (or back to the list on a
+        // single pane) rather than leave open a thread the list no longer shows.
+        if (this.leavesView(updated || { ...before, ...patch })) {
+          if (!this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
           // The `finally` below only resets this while the conversation is still selected.
           this.isUpdatingConversation = false
-          this.unselectConversation()
-          if (import.meta.client) {
-            this.$router.replace({ query: { ...this.$route.query, conversationId: undefined } }).catch(() => {})
-          }
-          await this.loadConversations(true, { generation, projectId, inboxId })
+          this.offerUndo(before, patch)
+          await this.advanceFrom(conversationId, nextId, { generation, projectId, inboxId })
           return
         }
         // The PATCH writes an `activity` message server-side describing the
@@ -1346,11 +1589,161 @@ export default {
           await this.recoverFromForbiddenInbox({ generation, projectId, inboxId })
           return
         }
-        alert(err?.data?.error?.message || 'Failed to update this conversation')
+        toast.error(err?.data?.error?.message || 'Failed to update this conversation')
       } finally {
         if (this.isCurrentConversation(generation, projectId, inboxId, conversationId))
           this.isUpdatingConversation = false
       }
+    },
+
+    /** True when the current view no longer lists a conversation in this state. */
+    leavesView(state) {
+      if (!state) return false
+      const view = this.activeView
+      if (view === 'trash') return !state.deletedAt
+      if (state.deletedAt) return true
+      if (view === 'spam') return !state.spamAt
+      if (state.spamAt) return true
+      if (view === 'all') return false
+      if (WORKING_VIEWS.includes(view)) return !['open', 'pending'].includes(state.status)
+      const viewStatus = { snoozed: 'snoozed', resolved: 'resolved', archived: 'closed' }[view]
+      return Boolean(viewStatus) && state.status !== viewStatus
+    },
+
+    /** The conversation the list would show next after this one leaves it. */
+    neighbourConversationId(conversationId) {
+      const ids = this.conversations.map((conversation) => conversation.id)
+      const index = ids.indexOf(conversationId)
+      if (index === -1) return null
+      return ids[index + 1] || ids[index - 1] || null
+    },
+
+    /** Below @2xl the list and thread share one pane: after an action, go back to the list. */
+    isSinglePane() {
+      return this.pageWidth !== null && this.pageWidth < 672
+    },
+
+    async advanceFrom(conversationId, nextId, { generation, projectId, inboxId }) {
+      if (!this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
+      this.unselectConversation()
+      if (nextId && !this.isSinglePane()) {
+        await this.selectConversation(nextId)
+        return
+      }
+      if (import.meta.client) {
+        this.$router.replace({ query: { ...this.$route.query, conversationId: undefined } }).catch(() => {})
+      }
+      await this.loadConversations(true, { generation, projectId, inboxId })
+    },
+
+    /** Toast for an action that moved a conversation out of the view, with a one-click undo. */
+    offerUndo(before, patch) {
+      if (!before?.id) return
+      const label = before.behaviour === 'mail' ? 'Mail' : `#${before.displayId}`
+      let message = ''
+      const undo = {}
+      if ('deleted' in patch) {
+        message = patch.deleted ? `Moved ${label} to Trash` : `Restored ${label}`
+        undo.deleted = !patch.deleted
+      } else if ('spam' in patch) {
+        message = patch.spam ? `Marked ${label} as spam` : `Moved ${label} out of Spam`
+        undo.spam = !patch.spam
+      } else if (patch.status) {
+        const verbs = {
+          resolved: 'Resolved',
+          closed: 'Archived',
+          snoozed: 'Snoozed',
+          open: 'Reopened',
+          pending: 'Updated',
+        }
+        message =
+          before.behaviour === 'mail' && patch.status === 'resolved'
+            ? 'Marked done'
+            : `${verbs[patch.status] || 'Updated'} ${label}`
+        undo.status = before.status
+      } else {
+        return
+      }
+      toast(message, {
+        action: { label: 'Undo', onClick: () => void this.patchConversationById(before.id, undo) },
+      })
+    },
+
+    /** PATCH a conversation that may not be the selected one (quick actions, undo). */
+    async patchConversationById(conversationId, patch) {
+      const generation = this.contextGeneration
+      const projectId = this.activeProjectId
+      const inboxId = this.activeInboxId
+      try {
+        await $fetch(`/api/support/conversations/${conversationId}`, { method: 'PATCH', body: patch })
+      } catch (err) {
+        if (!this.isCurrentContext(generation, projectId, inboxId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ generation, projectId, inboxId })
+          return
+        }
+        toast.error(err?.data?.error?.message || 'Failed to update this conversation')
+        return
+      }
+      if (!this.isCurrentContext(generation, projectId, inboxId)) return
+      const reloads = [this.loadConversations(true, { generation, projectId, inboxId })]
+      if (this.selectedConversationId === conversationId) {
+        reloads.push(
+          this.loadConversationDetail({ generation, projectId, inboxId, conversationId }),
+          this.loadMessages({ generation, projectId, inboxId, conversationId })
+        )
+      }
+      await Promise.all(reloads)
+    },
+
+    /** Hover and swipe actions on list rows. */
+    async handleQuickAction({ id, action }) {
+      if (!id) return
+      if (id === this.selectedConversationId) {
+        if (action === 'claim') await this.claimConversation()
+        else if (action === 'resolve') await this.patchConversation({ status: 'resolved' })
+        return
+      }
+      const before = this.conversations.find((conversation) => conversation.id === id)
+      if (action === 'resolve') {
+        await this.patchConversationById(id, { status: 'resolved' })
+        this.offerUndo(before, { status: 'resolved' })
+        return
+      }
+      if (action === 'claim') {
+        const generation = this.contextGeneration
+        const projectId = this.activeProjectId
+        const inboxId = this.activeInboxId
+        try {
+          const response = await $fetch(`/api/support/conversations/${id}/claim`, { method: 'POST' })
+          if (response?.data?.claimed === false) toast('Another agent claimed this conversation first.')
+        } catch (err) {
+          if (this.isCurrentContext(generation, projectId, inboxId)) {
+            toast.error(err?.data?.error?.message || 'Failed to claim this conversation')
+          }
+          return
+        }
+        if (this.isCurrentContext(generation, projectId, inboxId)) {
+          await this.loadConversations(true, { generation, projectId, inboxId })
+        }
+      }
+    },
+
+    closeConversation() {
+      this.unselectConversation()
+      if (import.meta.client) {
+        this.$router.replace({ query: { ...this.$route.query, conversationId: undefined } }).catch(() => {})
+      }
+    },
+
+    toggleDetails() {
+      this.setDetailsOpen(!this.showDetails)
+    },
+
+    setDetailsOpen(open) {
+      this.showDetails = open
+      // Remember the choice where the panel sits inline; as a slide-over it always starts closed.
+      if (this.detailsInline) this.storageSet(DETAILS_OPEN_STORAGE_KEY, open ? '1' : '0')
     },
 
     openFeedbackBridgeDialog() {
@@ -1462,12 +1855,23 @@ export default {
       }
     },
 
-    async handleMessagePosted() {
+    async handleMessagePosted({ resolved = false, behaviour = null } = {}) {
       const generation = this.contextGeneration
       const projectId = this.activeProjectId
       const inboxId = this.activeInboxId
       const conversationId = this.selectedConversationId
       if (!this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
+
+      const before = this.conversationDetail
+      if (behaviour) {
+        toast(behaviour === 'helpdesk' ? `Sent · now support case #${before?.displayId}` : 'Sent · now plain mail')
+      }
+      if (resolved && this.leavesView({ ...before, status: 'resolved' })) {
+        const nextId = this.neighbourConversationId(conversationId)
+        this.offerUndo({ ...before, behaviour: behaviour || before?.behaviour }, { status: 'resolved' })
+        await this.advanceFrom(conversationId, nextId, { generation, projectId, inboxId })
+        return
+      }
 
       // An outgoing reply may have auto-claimed the conversation in the same
       // transaction as the message. Refresh all three views immediately so

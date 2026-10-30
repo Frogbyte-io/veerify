@@ -12,6 +12,7 @@ import { product } from '~/server/database/schema/feedback'
 import type { projectMailAddress } from '~/server/database/schema/support'
 import { projectMailDomain, supportInbox } from '~/server/database/schema/support'
 import { CATCH_ALL_LOCAL_PART, isCatchAllAddress, splitMailAddress } from '~/lib/mail-address'
+import { sendFromRejection } from './conversation-sender'
 import { createErrorResponse } from './response'
 
 type Executor = Pick<typeof db, 'select'>
@@ -126,6 +127,11 @@ export type InboxAddressRow = typeof projectMailAddress.$inferSelect
 /** An address row as the address API returns it. */
 export function toInboxAddressResponse(row: InboxAddressRow) {
   return { ...row, isCatchAll: isCatchAllAddress(row.address) }
+}
+
+/** An address row in the inbox's address list, with whether a reply can be sent from it. */
+export function toInboxAddressListItem(row: InboxAddressRow, verifiedDomains: ReadonlySet<string>) {
+  return { ...toInboxAddressResponse(row), canSendFrom: sendFromRejection(row, row.inboxId, verifiedDomains) === null }
 }
 
 /**

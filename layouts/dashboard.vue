@@ -12,7 +12,7 @@
           <div class="hidden w-(--sidebar-width) shrink-0 md:block" aria-hidden="true" />
         </template>
       </ClientOnly>
-      <SidebarInset class="min-w-0">
+      <SidebarInset class="min-w-0" :class="isFlush ? 'h-svh overflow-hidden' : ''">
         <header
           class="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12"
         >
@@ -24,7 +24,10 @@
             <NotificationBell />
           </div>
         </header>
-        <div class="flex min-w-0 flex-1 flex-col gap-4 px-4 pt-2 pb-10 sm:px-6 lg:px-8">
+        <div
+          class="flex min-w-0 flex-1 flex-col"
+          :class="isFlush ? 'min-h-0 border-t' : 'gap-4 px-4 pt-2 pb-10 sm:px-6 lg:px-8'"
+        >
           <EmailVerificationNudge />
           <slot />
         </div>
@@ -36,5 +39,11 @@
 <script>
 export default {
   name: 'DashboardLayout',
+  computed: {
+    // Set by `pages:extend` in nuxt.config.ts for pages that fill the space under the header.
+    isFlush() {
+      return this.$route.meta.flush === true
+    },
+  },
 }
 </script>

@@ -82,7 +82,11 @@ test.describe.serial('support inbox responsive layout', () => {
 
     await page.getByTestId('support-thread-back').click()
     await expect(page.getByTestId('support-conversation-search')).toBeVisible()
-    await expect(page.getByTestId('support-settings-link')).toHaveAttribute('href', '/inbox/settings')
+    await page.getByTestId('support-open-inboxes').click()
+    await expect(page.getByTestId('support-inbox-sheet').getByTestId('support-sidebar-settings-link')).toHaveAttribute(
+      'href',
+      '/inbox/settings'
+    )
   })
 
   test('tablet shows the list beside the thread', async ({ browser }) => {

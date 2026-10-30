@@ -233,6 +233,8 @@ export interface CommitMessageWithAttachmentsInput {
   }
   existingConversation: typeof conversation.$inferSelect
   outgoing: OutgoingReplyResult | null
+  /** Runs in the commit transaction before the message is inserted; if it throws, nothing is committed. */
+  beforeMessage?: (tx: Tx) => Promise<void>
 }
 
 /** Insert the canonical message graph and consume the reservation atomically. */
@@ -265,6 +267,8 @@ export async function commitMessageWithAttachments(
           unavailableUpload()
         }
       }
+
+      await input.beforeMessage?.(tx)
 
       const [message] = await tx
         .insert(conversationMessage)

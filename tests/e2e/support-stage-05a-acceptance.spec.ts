@@ -1,3 +1,4 @@
+import { withThreadDetails } from './helpers/support-details'
 import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -91,9 +92,12 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
         waitUntil: 'domcontentloaded',
       })
 
-      const assignee = page.getByTestId('support-thread-assignee')
+      const expectAssignee = (value: string) =>
+        withThreadDetails(page, async (details) => {
+          await expect(details.getByTestId('support-thread-assignee')).toHaveValue(value)
+        })
       const composer = page.getByTestId('support-composer-input')
-      await expect(assignee).toHaveValue('')
+      await expectAssignee('')
 
       await page.getByTestId('support-composer-mode-note').click()
       await composer.fill('A private note must not claim this ticket.')
@@ -104,7 +108,7 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
       )
       await page.getByTestId('support-composer-submit').click()
       expect((await noteResponse).ok()).toBeTruthy()
-      await expect(assignee).toHaveValue('')
+      await expectAssignee('')
 
       const [afterNote] = await db
         .select({ assigneeUserId: conversation.assigneeUserId })
@@ -127,7 +131,7 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
       )
       await page.getByTestId('support-composer-submit').click()
       expect((await replyResponse).ok()).toBeTruthy()
-      await expect(assignee).toHaveValue(userId)
+      await expectAssignee(userId)
 
       const [persisted] = await db
         .select({ assigneeUserId: conversation.assigneeUserId })

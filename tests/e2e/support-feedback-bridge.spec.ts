@@ -1,3 +1,4 @@
+import { openThreadDetails } from './helpers/support-details'
 import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -134,8 +135,9 @@ test('converts a support conversation and keeps ticket content private on the pu
     })
     await page.goto(`/inbox?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
 
-    await expect(page.getByTestId('support-thread-convert-feedback')).toBeVisible()
-    await page.getByTestId('support-thread-convert-feedback').click()
+    const details = await openThreadDetails(page)
+    await expect(details.getByTestId('support-thread-convert-feedback')).toBeVisible()
+    await details.getByTestId('support-thread-convert-feedback').click()
     await expect(page.getByTestId('support-feedback-title')).toHaveValue('Please add CSV exports')
     await expect(page.getByTestId('support-feedback-body')).toHaveValue(
       'Private ticket details that must not appear on the public board.'
@@ -150,7 +152,7 @@ test('converts a support conversation and keeps ticket content private on the pu
     )
     await page.getByTestId('support-feedback-submit').click()
     expect((await createResponse).ok()).toBeTruthy()
-    await expect(page.getByTestId('support-thread-linked-feedback')).toBeVisible()
+    await expect((await openThreadDetails(page)).getByTestId('support-thread-linked-feedback')).toBeVisible()
 
     const linkedResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
     expect(linkedResponse.ok()).toBeTruthy()

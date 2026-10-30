@@ -1,3 +1,4 @@
+import { withThreadDetails } from './helpers/support-details'
 import { expect, test, type Browser, type BrowserContext } from '@playwright/test'
 import {
   cleanupSupportPermissionFixture,
@@ -229,8 +230,10 @@ test.describe.serial('support permission-aware navigation', () => {
     })
     await Promise.all([claimButton.click(), dialogHandled])
     expect(claimMethod).toBe('POST')
-    await expect(page.getByTestId('support-thread-assignee')).toHaveValue(fixture.users.supervisor.userId)
     await expect(claimButton).toHaveCount(0)
+    await withThreadDetails(page, async (details) => {
+      await expect(details.getByTestId('support-thread-assignee')).toHaveValue(fixture.users.supervisor.userId)
+    })
   })
 
   test('tag creation 403 recovers the inbox without throwing from an unrelated conversation snapshot', async ({
@@ -296,6 +299,8 @@ test.describe.serial('support permission-aware navigation', () => {
 
   test('delayed contact-panel 403 cannot recover a newly selected conversation', async ({ browser }) => {
     const page = await openAs(browser, 'agent', '/inbox')
+    // Let the first load finish its inbox request before the counters below start.
+    await expect(page.getByTestId('support-inbox-page')).toHaveAttribute('data-active-project-listener-ready', 'true')
     const oldConversationId = 'delayed-contact-old-conversation'
     const newConversationId = 'delayed-contact-new-conversation'
     const oldContactId = 'delayed-contact-old-contact'
@@ -604,7 +609,7 @@ test.describe.serial('support permission-aware navigation', () => {
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId('support-inbox-page')).toHaveAttribute('data-active-project-listener-ready', 'true')
-    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
+    await expect(page.getByTestId('support-active-inbox-name')).toContainText(fixture.primaryInboxName)
     activeProjectTransition = 1
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-project-changed')))
     await oldListReady
@@ -827,7 +832,7 @@ test.describe.serial('support permission-aware navigation', () => {
     )
 
     await expect(page.getByTestId('support-inbox-access-error')).toHaveText('You do not have access to this inbox')
-    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
+    await expect(page.getByTestId('support-active-inbox-name')).toContainText(fixture.primaryInboxName)
     await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
   })
 })
