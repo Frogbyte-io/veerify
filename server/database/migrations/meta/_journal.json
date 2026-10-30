@@ -484,6 +484,13 @@
       "when": 1793310610031,
       "tag": "0068_project_mail_addresses",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1793360311451,
+      "tag": "0069_mail_forwarding",
+      "breakpoints": true
     }
   ]
 }

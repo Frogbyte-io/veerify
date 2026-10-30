@@ -61,7 +61,9 @@ export function addressError(statusCode: number, code: string, message: string) 
         ? 'Not Found'
         : statusCode === 409
           ? 'Conflict'
-          : 'Unprocessable Entity'
+          : statusCode === 503
+            ? 'Service Unavailable'
+            : 'Unprocessable Entity'
   return createError({ statusCode, statusMessage, data: { ...createErrorResponse(code, message), code } })
 }
 

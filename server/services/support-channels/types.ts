@@ -67,6 +67,24 @@ export interface InboundMessage {
    * (SES `GRAY`): only a definite verdict moves mail out of the inbox.
    */
   isSpam: boolean
+  /**
+   * Frogmail's `frogmail-forwards` (what the route's email forwards did with this message), validated.
+   * Only read from the provider's top-level form field, never from sender headers. Absent otherwise.
+   */
+  frogmailForwards?: FrogmailForwardOutcome[]
+  /** Frogmail's `frogmail-attachments-removed: true` (a virus verdict delivered the message without attachments). */
+  attachmentsRemoved?: boolean
+}
+
+/** One entry of `frogmail-forwards`, keys as Frogmail sends them. */
+export interface FrogmailForwardOutcome {
+  destination: string
+  destination_id: string | null
+  /** `queued`, `skipped`, ... kept as sent (bounded length). */
+  status: string
+  /** Why a forward was skipped (`virus`, `spam`, `paused`, ...). */
+  reason: string | null
+  forward_id: string | null
 }
 
 /**
@@ -289,6 +307,12 @@ export interface DeliveryEvent {
   /** Only meaningful when `recordType === 'bounced'`. */
   bounceType: 'hard' | 'soft' | null
   description: string | null
+  /**
+   * Frogmail forward delivery event (tag `frogmail-forward`): not a support delivery. The webhook only
+   * stamps `last_event_at` on the destination named by `forwardDestinationId` and records nothing else.
+   */
+  isForward?: boolean
+  forwardDestinationId?: string | null
 }
 
 /** Strip the angle brackets RFC 5322 wraps message identifiers in. */

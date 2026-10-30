@@ -526,6 +526,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/mail-forward-usage": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Pause email forwarding at the monthly limit, resume after a new month",
+      "operationId": "cronMailForwardUsage",
+      "responses": {
+        "200": {
+          "description": "Usage pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/marketing-competitors-check": {
     "get": {
       "tags": [
@@ -8960,7 +8977,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "List the project's email addresses",
-      "description": "Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the project's domains with their receiving status, whether the deployment forwards mail (`forwarding`) and the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "listProjectMailAddresses",
       "security": [
         {
@@ -8983,7 +9000,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "{ addresses: ProjectMailAddressItem[], usage: MailUsage }"
+          "description": "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }"
         },
         "401": {
           "description": "Not authenticated"
@@ -8993,6 +9010,120 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Project not found in the active workspace"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/mail/destinations/{id}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Revoke a forward destination",
+      "description": "Revokes a forward destination at Frogmail: mail to every address that forwards there stops being forwarded until the recipient confirms again (Resend). The destination stays in the address's forward list with status `revoked`. Project admins only. The provider's rate limit is 429 with a `Retry-After` header. Requires authentication: a session cookie or a personal API key.\n",
+      "operationId": "revokeMailForwardDestination",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Destination id (ProjectMailAddressForward.id)",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ destination: ProjectMailAddressForward }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or destination not found"
+        },
+        "409": {
+          "description": "Forwarding is unavailable"
+        },
+        "429": {
+          "description": "Rate limited; see Retry-After"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/mail/destinations/{id}/resend": {
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Resend a forward destination's confirmation email",
+      "description": "Asks Frogmail to send the confirmation email again to a forward destination that is pending, revoked or suspended, and returns the refreshed destination. Project admins only. A verified destination is 409 (CONFLICT); the provider's rate limit is 429 with a `Retry-After` header. Requires authentication: a session cookie or a personal API key.\n",
+      "operationId": "resendMailForwardDestination",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Destination id (ProjectMailAddressForward.id)",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ destination: ProjectMailAddressForward }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or destination not found"
+        },
+        "409": {
+          "description": "The destination is already confirmed, or forwarding is unavailable"
+        },
+        "429": {
+          "description": "Rate limited; see Retry-After"
         }
       }
     }
@@ -12171,6 +12302,34 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/frogmail/events": {
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Frogmail webhook (forward destination lifecycle)",
+      "description": "Native Frogmail webhooks, verified with `FROGMAIL_WEBHOOK_SECRET` (`Frogmail-Signature` or `Larasend-Signature`: `t=<unix>,v1=<hex>`, HMAC-SHA256 of `<t>.<raw body>`, 300 second window, replays rejected). Handles `forward_destination.verified`, `.revoked` and `.suspended`; anything else is acknowledged and ignored. Subscribe with `POST /api/v1/webhook-endpoints` on the Frogmail side.\n",
+      "operationId": "receiveFrogmailEvent",
+      "security": [],
+      "responses": {
+        "200": {
+          "description": "Accepted",
+          "or deliberately ignored": null
+        },
+        "401": {
+          "description": "Signature missing",
+          "invalid": null,
+          "stale or replayed": null
+        },
+        "404": {
+          "description": "Webhook secret not configured"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
   "/api/support/inbound/{provider}": {
     "post": {
       "tags": [
@@ -12434,7 +12593,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Add a receiving address to an inbox",
-      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction. A catch-all is written `*@domain` (the local part exactly `*`). It takes mail to every address of that exact domain that no other address matches, and is accepted only when the domain is one of the project's email domains in any status except deleting (422 CATCH_ALL_DOMAIN_REQUIRED). `domainId` is set when the address's domain equals one of the project's email domains. `behaviour` decides whether the inbox's auto-reply, SLA, CSAT and automation rules apply to conversations started on the address (`helpdesk`, the default) or not (`mail`). `productId` tags the address with a product of the inbox's project. Custom addresses count toward the workspace's address limit (409 MAIL_ADDRESS_LIMIT_REACHED). Under the project sender policy, an address on a domain (or subdomain of one) claimed by another project is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the project's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the project's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort (a catch-all gets a domain-wide route that exact addresses take precedence over).\n",
+      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction. A catch-all is written `*@domain` (the local part exactly `*`). It takes mail to every address of that exact domain that no other address matches, and is accepted only when the domain is one of the project's email domains in any status except deleting (422 CATCH_ALL_DOMAIN_REQUIRED). `domainId` is set when the address's domain equals one of the project's email domains. `behaviour` decides whether the inbox's auto-reply, SLA, CSAT and automation rules apply to conversations started on the address (`helpdesk`, the default) or not (`mail`). `productId` tags the address with a product of the inbox's project. Custom addresses count toward the workspace's address limit (409 MAIL_ADDRESS_LIMIT_REACHED). Under the project sender policy, an address on a domain (or subdomain of one) claimed by another project is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the project's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the project's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort (a catch-all gets a domain-wide route that exact addresses take precedence over). With `forwardTo`, the route also forwards through Frogmail; each mailbox must confirm once per domain before mail is forwarded (the response lists `forwards` with their status).\n",
       "operationId": "createSupportInboxAddress",
       "parameters": [
         {
@@ -12477,6 +12636,19 @@ export const openapiPaths = {
                   "type": "string",
                   "nullable": true,
                   "description": "A product of the inbox's project"
+                },
+                "deliverToInbox": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "False for a forward-only address; needs at least one forward"
+                },
+                "forwardTo": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "External mailboxes to forward to (lowercased, deduplicated). Needs forwarding on the deployment and a verified, receiving domain of the project; a mailbox on the address's own domain is refused"
                 }
               }
             }
@@ -12615,6 +12787,18 @@ export const openapiPaths = {
                 "inboxId": {
                   "type": "string",
                   "description": "Another inbox of the same project to move the address to"
+                },
+                "deliverToInbox": {
+                  "type": "boolean",
+                  "description": "False for a forward-only address; needs at least one forward"
+                },
+                "forwardTo": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Replaces the address's forwards (lowercased, deduplicated); [] removes them. Needs forwarding on the deployment and a verified, receiving domain of the project; a mailbox on the address's own domain is refused"
                 }
               }
             }
@@ -12657,7 +12841,7 @@ export const openapiPaths = {
           "target inbox or address not found": null
         },
         "409": {
-          "description": "Platform forwarding addresses cannot be moved (PLATFORM_ADDRESS_IMMOVABLE)"
+          "description": "Platform forwarding addresses cannot be moved (PLATFORM_ADDRESS_IMMOVABLE); forwarding is unavailable or the domain cannot receive yet (FORWARDING_UNAVAILABLE, FORWARD_RECEIVING_UNAVAILABLE)"
         },
         "422": {
           "description": "productId is not a product of the project (PRODUCT_NOT_IN_PROJECT), or the target inbox belongs to another project (INBOX_NOT_IN_PROJECT)"

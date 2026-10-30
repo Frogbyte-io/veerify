@@ -60,7 +60,7 @@ describe('fake provider', () => {
     const provider = new FakeSendingDomainProvider()
     await provider.createInboundRoute({ address: 'hello@acme.test', forwardUrl: 'https://x', description: 'd' })
     await provider.createInboundRoute({ address: '*@acme.test', forwardUrl: 'https://x', description: 'd' })
-    expect(fakeInboundRoutes()).toEqual([
+    expect(fakeInboundRoutes()).toMatchObject([
       { address: 'hello@acme.test', expression: 'match_recipient("^hello@acme\\.test$")', priority: 10 },
       { address: '*@acme.test', expression: 'match_recipient("^.*@acme\\.test$")', priority: 100 },
     ])

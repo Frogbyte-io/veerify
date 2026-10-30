@@ -140,7 +140,7 @@ const PURPOSE_ORDER = ['ownership', 'sending', 'receiving', 'recommended']
 const PURPOSE_LABELS = {
   ownership: 'Ownership',
   sending: 'Sending',
-  receiving: 'Receiving',
+  receiving: 'Receiving (MX)',
   recommended: 'DMARC',
 }
 

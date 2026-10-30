@@ -17,6 +17,9 @@
               <span v-if="usageLine" class="whitespace-nowrap" data-testid="mail-addresses-usage">
                 {{ usageLine }}
               </span>
+              <span v-if="forwardsLine" class="whitespace-nowrap" data-testid="mail-forwards-usage">
+                {{ forwardsLine }}
+              </span>
             </CardDescription>
           </div>
           <Button
@@ -69,6 +72,54 @@
         </div>
 
         <template v-else>
+          <div
+            v-if="forwardingPausedDomains.length > 0"
+            class="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+            role="status"
+            data-testid="mail-forwarding-paused"
+          >
+            <Icon name="lucide:pause-circle" class="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              Forwarding is paused until next month: the workspace reached its monthly forward limit. Mail still reaches
+              the inbox.
+            </p>
+          </div>
+
+          <div v-if="receivingDomains.length > 0" class="space-y-2" data-testid="mail-receiving">
+            <h3 class="text-sm font-medium">Receiving</h3>
+            <ul class="divide-y rounded-lg border">
+              <li
+                v-for="domain in receivingDomains"
+                :key="domain.id"
+                class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
+                data-testid="mail-receiving-domain"
+                :data-domain="domain.domain"
+                :data-receiving-status="domain.receivingStatus"
+              >
+                <span class="font-mono text-[13px]">{{ domain.domain }}</span>
+                <span
+                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium"
+                  :class="receivingMeta(domain).classes"
+                  data-testid="mail-receiving-status"
+                >
+                  <Icon :name="receivingMeta(domain).icon" class="h-3 w-3" />
+                  {{ receivingMeta(domain).label }}
+                </span>
+                <span
+                  v-if="mxRecordFor(domain) && domain.receivingStatus !== 'active'"
+                  class="min-w-0 text-xs text-muted-foreground"
+                >
+                  MX record to publish:
+                  <code class="break-all" data-testid="mail-receiving-mx">
+                    {{ mxRecordFor(domain).priority ? `${mxRecordFor(domain).priority} ` : ''
+                    }}{{ mxRecordFor(domain).value }}
+                  </code>
+                  on <code class="break-all">{{ mxRecordFor(domain).name }}</code>
+                </span>
+              </li>
+            </ul>
+          </div>
+
           <p
             v-if="inboxEnabled && !inboxesLoadFailed && inboxes.length === 0 && canAdmin"
             class="rounded-md bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
@@ -106,9 +157,34 @@
                       <Badge v-if="row.isCatchAll" variant="secondary" class="text-xs">Catch-all</Badge>
                     </div>
                   </td>
-                  <td class="whitespace-nowrap px-3 py-2.5">
-                    {{ row.inboxName }}
-                    <span class="text-muted-foreground">· {{ row.behaviour }}</span>
+                  <td class="px-3 py-2.5">
+                    <template v-if="row.deliverToInbox !== false">
+                      {{ row.inboxName }}
+                      <span class="text-muted-foreground">· {{ row.behaviour }}</span>
+                    </template>
+                    <div
+                      v-if="row.forwards && row.forwards.length > 0"
+                      class="space-y-0.5"
+                      data-testid="mail-address-forwards"
+                    >
+                      <div
+                        v-for="forward in row.forwards"
+                        :key="forward.id"
+                        class="flex items-center gap-1.5"
+                        :title="forwardMeta(forward).label"
+                        data-testid="mail-address-forward"
+                        :data-status="forward.status"
+                      >
+                        <span class="text-muted-foreground">→</span>
+                        <span class="break-all font-mono text-xs">{{ forward.email }}</span>
+                        <span
+                          class="inline-block h-2 w-2 shrink-0 rounded-full"
+                          :class="forwardMeta(forward).dot"
+                          aria-hidden="true"
+                        />
+                        <span class="sr-only">{{ forwardMeta(forward).label }}</span>
+                      </div>
+                    </div>
                   </td>
                   <td v-if="showProducts" class="px-3 py-2.5">
                     <span v-if="row.productName">{{ row.productName }}</span>
@@ -167,7 +243,10 @@
       :domains="domains"
       :inboxes="inboxes"
       :products="products"
+      :forwarding="forwarding"
+      :project-slug="project.slug"
       @saved="load({ silent: true })"
+      @saved-forwards="load({ silent: true })"
     />
 
     <!-- Delete confirmation -->
@@ -203,6 +282,32 @@
 import { toast } from 'vue-sonner'
 import { resolveProjectModules } from '~/lib/modules'
 
+const RECEIVING_META = {
+  pending_verification: {
+    label: 'Waiting for verification',
+    icon: 'lucide:clock',
+    classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+  pending_mx: {
+    label: 'Waiting for MX record',
+    icon: 'lucide:clock',
+    classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  },
+  active: {
+    label: 'Receiving',
+    icon: 'lucide:check-circle-2',
+    classes: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  },
+  disabled: { label: 'Off', icon: 'lucide:circle-off', classes: 'bg-muted text-muted-foreground' },
+}
+
+const FORWARD_META = {
+  pending: { label: 'Waiting for confirmation', dot: 'bg-amber-500' },
+  verified: { label: 'Confirmed', dot: 'bg-emerald-500' },
+  suspended: { label: 'Bounced', dot: 'bg-destructive' },
+  revoked: { label: 'Stopped', dot: 'bg-muted-foreground' },
+}
+
 const STATUS_META = {
   active: {
     label: 'Active',
@@ -227,6 +332,8 @@ export default {
     return {
       addresses: [],
       usage: null,
+      mailDomains: [],
+      forwarding: false,
       isLoading: true,
       error: null,
       inboxes: [],
@@ -267,12 +374,28 @@ export default {
       if (typeof used !== 'number' || typeof limit !== 'number') return ''
       return `${used} of ${limit} addresses in this workspace.`
     },
+    forwardsLine() {
+      if (!this.forwarding) return ''
+      const used = this.usage?.used?.forwardsThisMonth
+      const limit = this.usage?.limits?.forwardsPerMonth
+      if (typeof used !== 'number' || typeof limit !== 'number') return ''
+      return `${used} of ${limit} forwards this month.`
+    },
+    receivingDomains() {
+      if (!this.forwarding) return []
+      return this.mailDomains.filter((domain) => domain.receivingStatus)
+    },
+    forwardingPausedDomains() {
+      return this.forwarding ? this.mailDomains.filter((domain) => domain.forwardingPaused) : []
+    },
   },
 
   watch: {
     'project.id'() {
       this.addresses = []
       this.usage = null
+      this.mailDomains = []
+      this.forwarding = false
       this.inboxes = []
       this.domainsInfo = null
       this.load()
@@ -304,6 +427,22 @@ export default {
       return STATUS_META.forwarded
     },
 
+    receivingMeta(domain) {
+      return RECEIVING_META[domain.receivingStatus] || RECEIVING_META.disabled
+    },
+
+    forwardMeta(forward) {
+      return FORWARD_META[forward.status] || FORWARD_META.pending
+    },
+
+    /** The receiving MX record of a domain, from the sending-domain list's DNS records. */
+    mxRecordFor(domain) {
+      const row = (this.domainsInfo?.domains || []).find(
+        (entry) => entry.id === domain.id || entry.domain === domain.domain
+      )
+      return (row?.records || []).find((record) => record.purpose === 'receiving' && record.type === 'MX') || null
+    },
+
     onDomainsLoaded(info, projectId) {
       if (projectId && projectId !== this.project.id) return
       this.domainsInfo = info
@@ -322,6 +461,8 @@ export default {
         const data = response?.data || response
         this.addresses = data?.addresses || []
         this.usage = data?.usage || null
+        this.mailDomains = data?.domains || []
+        this.forwarding = data?.forwarding === true
         this.error = null
       } catch (err) {
         if (this.isUnmounted || token !== this.requestToken) return

@@ -43,7 +43,7 @@ export interface MailUsage {
     domains: number
     pendingDomains: number
     addresses: number
-    /** Null until forwarding ships (E3). */
+    /** Null when forwarding is off or Frogmail could not be asked. */
     forwardsThisMonth: number | null
   }
 }
