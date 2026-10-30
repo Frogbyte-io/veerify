@@ -1,6 +1,11 @@
 import { and, eq, inArray, isNotNull, isNull, like, lte, ne, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportInbox, projectMailAddress, projectMailDomain } from '~/server/database/schema/support'
+import {
+  mailForwardDestination,
+  supportInbox,
+  projectMailAddress,
+  projectMailDomain,
+} from '~/server/database/schema/support'
 import {
   PENDING_TTL_DAYS,
   SUSPENDED_TTL_DAYS,
@@ -21,6 +26,7 @@ import {
   resolveSenderPolicy,
   resolveProjectSenderAuthorization,
 } from '~/server/utils/sending-domains'
+import { syncAddressRoute } from '~/server/utils/inbound-routes'
 import { recordSupportMetric, type SupportMetricName } from '~/server/utils/support-observability'
 import { createLogger } from '~/server/utils/logger'
 
@@ -739,13 +745,6 @@ export async function detachForeignAddresses(
   return detached.length + cleared.length
 }
 
-function inboundForwardUrl(providerName: string): string {
-  const configured = (process.env.SUPPORT_INBOUND_WEBHOOK_URL ?? '').trim()
-  if (configured) return configured
-  const base = (process.env.BETTER_AUTH_URL ?? '').trim().replace(/\/+$/, '')
-  return `${base}/api/support/inbound/${providerName}`
-}
-
 export interface DirectRouteReconciliation {
   created: number
   failed: number
@@ -788,33 +787,128 @@ export async function reconcileDirectRoutes(
     )
 
   for (const address of addresses) {
-    if (address.routeId && provider.deleteInboundRoute) {
-      await provider.deleteInboundRoute(address.routeId).catch(() => undefined)
-    }
-    let routeId: string | null = null
-    try {
-      const route = await provider.createInboundRoute({
-        address: address.address,
-        forwardUrl: inboundForwardUrl(provider.name),
-        description: `veerify:${address.inboxId}:${address.id}`,
-      })
-      routeId = route.routeId
-    } catch (raw) {
-      const error = toProviderError(raw)
-      logger.warn('Inbound route reconcile failed', { domainId: row.id, addressId: address.id, code: error.code })
-      if (error.code === 'missing_scope' || error.code === 'unauthorized') {
+    const synced = await syncAddressRoute(address.id, { provider, claimId: row.id })
+    if (synced.errorCode) {
+      logger.warn('Inbound route reconcile failed', { domainId: row.id, addressId: address.id, code: synced.errorCode })
+      if (synced.errorCode === 'missing_scope' || synced.errorCode === 'unauthorized') {
         result.misconfigured = true
         return result
       }
     }
-    await db
-      .update(projectMailAddress)
-      .set({ providerRouteId: routeId, providerRouteStatus: routeId ? 'active' : 'failed' })
-      .where(eq(projectMailAddress.id, address.id))
-    if (routeId) result.created++
-    else result.failed++
+    if (synced.status === 'active') result.created++
+    else if (synced.status === 'failed') result.failed++
   }
   return result
+}
+
+export interface ReceivingSyncResult {
+  /** `enableReceiving` was called. */
+  enabled: boolean
+  /** The row's `receiving_status` after the sync (null: not receiving through Frogmail). */
+  status: string | null
+  /** Local destination rows updated from the provider. */
+  destinationsUpdated: number
+  /** Why nothing happened or what was left for a later pass. */
+  skipped: 'no_forwarding' | 'provider_conflict' | 'receives_elsewhere' | 'error' | null
+}
+
+/**
+ * E3: SES receiving for a registered claim. Enables receiving once (allowed
+ * while the claim is still pending), refreshes `receiving_status` and the
+ * receiving MX record on every pass, and reconciles the local forward
+ * destinations from the provider's list (a missed webhook heals here).
+ * `receiving_provider_conflict` leaves the claim on the E2 path;
+ * `domain_receives_elsewhere` and transient errors are retried on a later pass.
+ * Never throws: a failure here must not fail the claim.
+ */
+export async function syncDomainReceiving(
+  row: Pick<SendingDomainRow, 'id' | 'domain' | 'receivingStatus'>,
+  provider: SendingDomainProvider
+): Promise<ReceivingSyncResult> {
+  const result: ReceivingSyncResult = {
+    enabled: false,
+    status: row.receivingStatus,
+    destinationsUpdated: 0,
+    skipped: null,
+  }
+  if (!provider.capabilities.forwarding || !provider.enableReceiving || !provider.getReceiving) {
+    return { ...result, skipped: 'no_forwarding' }
+  }
+
+  try {
+    let state =
+      row.receivingStatus && row.receivingStatus !== 'disabled' ? await provider.getReceiving(row.domain) : null
+    if (!state || state.status === 'disabled') {
+      state = await provider.enableReceiving(row.domain)
+      result.enabled = true
+    }
+
+    const [current] = await db
+      .select({ dnsRecords: projectMailDomain.dnsRecords })
+      .from(projectMailDomain)
+      .where(eq(projectMailDomain.id, row.id))
+      .limit(1)
+    const patch: SendingDomainPatch = { receivingStatus: state.status }
+    if (current && state.records.length > 0) {
+      const records = [...current.dnsRecords.filter((r) => r.purpose !== 'receiving'), ...state.records]
+      patch.dnsRecords = records.sort((a, b) => RECEIVING_RECORD_ORDER[a.purpose] - RECEIVING_RECORD_ORDER[b.purpose])
+    }
+    await db.update(projectMailDomain).set(patch).where(eq(projectMailDomain.id, row.id))
+    result.status = state.status
+
+    result.destinationsUpdated = await reconcileForwardDestinations(row, provider)
+  } catch (raw) {
+    const error = toProviderError(raw)
+    if (error.code === 'receiving_provider_conflict') result.skipped = 'provider_conflict'
+    else if (error.code === 'domain_receives_elsewhere') result.skipped = 'receives_elsewhere'
+    else result.skipped = 'error'
+    logger.warn('Receiving sync failed', { domainId: row.id, code: error.code })
+  }
+  return result
+}
+
+const RECEIVING_RECORD_ORDER: Record<SendingDomainDnsRecord['purpose'], number> = {
+  ownership: 0,
+  sending: 1,
+  receiving: 2,
+  recommended: 3,
+}
+
+/** Mirrors provider destination state onto the local rows (by Frogmail id, else email). Returns rows changed. */
+export async function reconcileForwardDestinations(
+  row: Pick<SendingDomainRow, 'id' | 'domain'>,
+  provider: SendingDomainProvider
+): Promise<number> {
+  if (!provider.listForwardDestinations) return 0
+  const remote = await provider.listForwardDestinations(row.domain)
+  const local = await db.select().from(mailForwardDestination).where(eq(mailForwardDestination.domainId, row.id))
+  let changed = 0
+  for (const item of local) {
+    const match =
+      remote.find((r) => item.frogmailDestinationId && r.id === item.frogmailDestinationId) ??
+      remote.find((r) => r.email.trim().toLowerCase() === item.email)
+    if (!match) continue
+    const next = {
+      frogmailDestinationId: match.id,
+      status: match.status,
+      statusReason: match.statusReason,
+      verificationSentAt: match.verificationSentAt ?? item.verificationSentAt,
+      verifiedAt: match.verifiedAt ?? item.verifiedAt,
+    }
+    const same =
+      next.frogmailDestinationId === item.frogmailDestinationId &&
+      next.status === item.status &&
+      next.statusReason === item.statusReason &&
+      next.verificationSentAt?.getTime() === item.verificationSentAt?.getTime() &&
+      next.verifiedAt?.getTime() === item.verifiedAt?.getTime()
+    if (same) continue
+    await db
+      .update(mailForwardDestination)
+      .set({ ...next, updatedAt: new Date() })
+      .where(eq(mailForwardDestination.id, item.id))
+    changed++
+  }
+  return changed
 }
 
 /**
@@ -905,6 +999,8 @@ export interface SendingDomainPollDeps {
   detach?: SaveSendingDomainHooks['detach']
   /** Create or retry direct-receiving routes for a verified claim (§9.2). */
   reconcileRoutes?: (row: SendingDomainRow, provider: SendingDomainProvider) => Promise<DirectRouteReconciliation>
+  /** E3: enable and refresh SES receiving and reconcile forward destinations. */
+  syncReceiving?: (row: SendingDomainRow, provider: SendingDomainProvider) => Promise<unknown>
   deleteRoutes?: RemoveDeps['deleteRoutes']
   checkOwnership?: typeof checkOwnershipTxt
   checkDmarcRecord?: typeof checkDmarc
@@ -950,6 +1046,7 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
     ((row: SendingDomainRow, patch: SendingDomainPatch) =>
       saveSendingDomainPatch(row, patch, { policy, detach: deps.detach, metric }))
   const reconcileRoutes = deps.reconcileRoutes ?? reconcileDirectRoutes
+  const syncReceiving = deps.syncReceiving ?? syncDomainReceiving
   const deleteRow = deps.deleteRow ?? deleteSendingDomainRow
   const release = deps.release ?? releaseSendingDomainLeases
   const batchSize = deps.batchSize ?? SENDING_DOMAIN_BATCH_SIZE
@@ -1033,8 +1130,19 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
       summary.suspended++
       emit('support.sending_domain.suspended', row, 'suspended')
     }
+    // Receiving first, so route reconcile sees `receiving_status` and the destinations.
+    await receiving(row)
     if (outcome.patch.status === 'verified' && outcome.patch.receivesViaProvider && !routeScopeReported) {
       await reconcile(row)
+    }
+  }
+
+  /** Receiving sync is best effort: it never fails the row it follows (E3). */
+  async function receiving(row: SendingDomainRow) {
+    try {
+      await syncReceiving(row, provider!)
+    } catch (error) {
+      logger.warn('Receiving sync failed', { domainId: row.id, error })
     }
   }
 
@@ -1057,6 +1165,7 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
       consecutiveUnavailable = 0
       summary.registered++
       await finish(row, outcome.patch)
+      await receiving(row)
       return
     }
     if (outcome.kind === 'misconfigured') {

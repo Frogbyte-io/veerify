@@ -576,6 +576,8 @@ export default defineEventHandler(async (event) => {
           rawBody: stripped.rawBody,
           matchedBy: thread.matchedBy,
           ...(message.isSpam ? { spam: true } : {}),
+          ...(message.frogmailForwards?.length ? { frogmailForwards: message.frogmailForwards } : {}),
+          ...(message.attachmentsRemoved ? { attachmentsRemoved: true } : {}),
         },
         createdAt: message.receivedAt,
       })

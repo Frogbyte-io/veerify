@@ -2,7 +2,14 @@ import type { FetchImpl } from '~/server/services/support-channels/types'
 import type { SendingDomainDnsRecord } from '~/lib/support-sending-domains'
 import {
   SendingDomainProviderError,
+  type ForwardDestinationStatus,
+  type InboundRouteInput,
+  type InboundRouteResult,
   type ProviderDomainResult,
+  type ProviderDomainUsageTotals,
+  type ProviderForwardDestination,
+  type ProviderReceivingState,
+  type ReceivingStatus,
   type SendingDomainCapabilities,
   type SendingDomainErrorCode,
   type SendingDomainProvider,
@@ -37,6 +44,92 @@ interface MailgunResponseBody {
   frogmail_dns_cleanup?: { removed?: string[]; restored?: string[]; kept?: string[]; failed?: string[] }
   route?: { id?: string }
   id?: string
+  frogmail_forward_destinations?: FrogmailForwardDestination[]
+}
+
+/** A Frogmail forward destination, as route responses and `/api/v1/forward-destinations` return it. */
+interface FrogmailForwardDestination {
+  id?: string
+  email?: string
+  status?: string
+  status_reason?: string | null
+  verification_sent_at?: string | null
+  verified_at?: string | null
+}
+
+interface FrogmailReceiving {
+  status?: string
+  forwarding_paused?: boolean
+  records?: Array<{ type?: string; name?: string; priority?: number | string; value?: string; status?: string }>
+  last_received_at?: string | null
+}
+
+/** Native Frogmail (`/api/v1`) bodies: `{data}` or `{data: [], next_cursor}`. */
+interface FrogmailNativeBody {
+  data?: unknown
+  next_cursor?: string | null
+}
+
+/** Frogmail's limit on email forwards per route. */
+export const MAX_ROUTE_FORWARDS = 5
+
+const RECEIVING_STATUSES: ReceivingStatus[] = ['disabled', 'pending_verification', 'pending_mx', 'active']
+const DESTINATION_STATUSES: ForwardDestinationStatus[] = ['pending', 'verified', 'revoked', 'suspended']
+
+function toDate(value: unknown): Date | null {
+  if (typeof value !== 'string' || !value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function toDestination(raw: FrogmailForwardDestination): ProviderForwardDestination | null {
+  if (!raw?.id || !raw.email) return null
+  const status = DESTINATION_STATUSES.includes(raw.status as ForwardDestinationStatus)
+    ? (raw.status as ForwardDestinationStatus)
+    : 'pending'
+  return {
+    id: String(raw.id),
+    email: String(raw.email).toLowerCase(),
+    status,
+    statusReason: typeof raw.status_reason === 'string' ? raw.status_reason : null,
+    verificationSentAt: toDate(raw.verification_sent_at),
+    verifiedAt: toDate(raw.verified_at),
+  }
+}
+
+function toReceiving(domain: string, raw: FrogmailReceiving | undefined): ProviderReceivingState {
+  const status = RECEIVING_STATUSES.includes(raw?.status as ReceivingStatus)
+    ? (raw!.status as ReceivingStatus)
+    : 'disabled'
+  return {
+    status,
+    forwardingPaused: raw?.forwarding_paused === true,
+    records: (raw?.records ?? []).map((record) => ({
+      purpose: 'receiving' as const,
+      type: String(record.type ?? 'MX').toUpperCase() as SendingDomainDnsRecord['type'],
+      name: (record.name ?? '').trim() || domain,
+      value: String(record.value ?? ''),
+      ...(record.priority !== undefined && record.priority !== null ? { priority: String(record.priority) } : {}),
+      status:
+        record.status === 'valid'
+          ? ('valid' as const)
+          : record.status === 'invalid'
+            ? ('invalid' as const)
+            : ('unknown' as const),
+    })),
+    lastReceivedAt: toDate(raw?.last_received_at),
+  }
+}
+
+/** A forward destination for a route action: a plain address, no quotes or control characters. */
+function routeForwardAddress(email: string): string {
+  const value = String(email ?? '')
+    .trim()
+    .toLowerCase()
+  if (!/^[^\s"\\@<>()]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(value)) {
+    throw new SendingDomainProviderError('forward_destination_invalid', 'The forward address is not valid', false)
+  }
+  return value
 }
 
 /** The address as a Mailgun route pattern, with `.`, `-` and `_` escaped. `+` is refused. */
@@ -118,12 +211,13 @@ function mapRecord(
 export class MailgunSendingDomainProvider implements SendingDomainProvider {
   readonly name = 'mailgun'
   readonly accountKey: string
-  readonly capabilities: SendingDomainCapabilities = {
+  capabilities: SendingDomainCapabilities = {
     register: true,
     verifyNow: true,
     remove: true,
     inboundRoutes: true,
     authorizesSubdomains: true,
+    forwarding: false,
   }
 
   private readonly apiKey: string
@@ -137,6 +231,7 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     apiBaseUrl?: string
     fetchImpl?: FetchImpl
     timeoutMs?: number
+    forwarding?: boolean
   }) {
     this.apiKey = (options?.apiKey ?? process.env.SUPPORT_MAILGUN_API_KEY ?? '').trim()
     this.accountKey = (options?.accountKey ?? process.env.SUPPORT_MAILGUN_ACCOUNT_KEY ?? '').trim()
@@ -149,6 +244,9 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     ).replace(/\/+$/, '')
     this.fetchImpl = options?.fetchImpl ?? ((input, init) => fetch(input, init))
     this.timeoutMs = options?.timeoutMs ?? REQUEST_TIMEOUT_MS
+    // Frogmail with SES receiving only; plain Mailgun has none of the /api/v1 calls.
+    const forwarding = options?.forwarding ?? process.env.MAIL_FORWARDING_ENABLED?.trim().toLowerCase() === 'true'
+    this.capabilities = { ...this.capabilities, forwarding }
   }
 
   isConfigured(): { configured: boolean; missing: string[] } {
@@ -213,25 +311,52 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     }
   }
 
-  async createInboundRoute(input: {
-    address: string
-    forwardUrl: string
-    description: string
-  }): Promise<{ routeId: string }> {
-    const route = inboundRouteDefinition(input.address)
-    const form = new URLSearchParams()
-    form.append('priority', String(route.priority))
-    form.append('description', input.description)
-    form.append('expression', route.expression)
-    form.append('action', `forward("${input.forwardUrl.replace(/["\\]/g, '')}")`)
-    form.append('action', 'stop()')
-
-    const body = await this.request('POST', '/v3/routes', { form })
+  async createInboundRoute(input: InboundRouteInput): Promise<InboundRouteResult> {
+    const body = await this.request('POST', '/v3/routes', { form: this.routeForm(input) })
     const routeId = body.route?.id ?? body.id
     if (!routeId) {
       throw new SendingDomainProviderError('unknown', 'The provider did not return a route id', false)
     }
-    return { routeId: String(routeId) }
+    return { routeId: String(routeId), forwardDestinations: this.routeDestinations(body) }
+  }
+
+  async updateInboundRoute(routeId: string, input: InboundRouteInput): Promise<InboundRouteResult> {
+    const body = await this.request('PUT', `/v3/routes/${encodeURIComponent(routeId)}`, {
+      form: this.routeForm(input),
+    })
+    return { routeId, forwardDestinations: this.routeDestinations(body) }
+  }
+
+  /**
+   * Inbox delivery (`forward(url)`) first, then each email forward, then
+   * `stop()`. A route needs at least one of the two.
+   */
+  private routeForm(input: InboundRouteInput): URLSearchParams {
+    const route = inboundRouteDefinition(input.address)
+    const forwards = [...new Set((input.forwardTo ?? []).map(routeForwardAddress))]
+    if (forwards.length > MAX_ROUTE_FORWARDS) {
+      throw new SendingDomainProviderError(
+        'forward_destination_invalid',
+        `An address can forward to at most ${MAX_ROUTE_FORWARDS} mailboxes`,
+        false
+      )
+    }
+    if (!input.forwardUrl && forwards.length === 0) {
+      throw new SendingDomainProviderError('invalid_domain', 'A route needs inbox delivery or a forward', false)
+    }
+    const form = new URLSearchParams()
+    form.append('priority', String(route.priority))
+    form.append('description', input.description)
+    form.append('expression', route.expression)
+    if (input.forwardUrl) form.append('action', `forward("${input.forwardUrl.replace(/["\\]/g, '')}")`)
+    for (const email of forwards) form.append('action', `forward("${email}")`)
+    form.append('action', 'stop()')
+    return form
+  }
+
+  private routeDestinations(body: MailgunResponseBody): ProviderForwardDestination[] {
+    const list = Array.isArray(body.frogmail_forward_destinations) ? body.frogmail_forward_destinations : []
+    return list.map(toDestination).filter((item): item is ProviderForwardDestination => item !== null)
   }
 
   async deleteInboundRoute(routeId: string): Promise<void> {
@@ -242,6 +367,118 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
       if (error instanceof SendingDomainProviderError && error.code === 'not_found') return
       throw error
     }
+  }
+
+  async enableReceiving(domain: string): Promise<ProviderReceivingState> {
+    const name = normalizeDomainName(domain)
+    const body = await this.native('PUT', `/api/v1/domains/${encodeURIComponent(name)}/receiving`, { provider: 'ses' })
+    return toReceiving(name, body.data as FrogmailReceiving)
+  }
+
+  async getReceiving(domain: string): Promise<ProviderReceivingState | null> {
+    const name = normalizeDomainName(domain)
+    try {
+      const body = await this.native('GET', `/api/v1/domains/${encodeURIComponent(name)}/receiving`)
+      return toReceiving(name, body.data as FrogmailReceiving)
+    } catch (error) {
+      if (error instanceof SendingDomainProviderError && error.code === 'not_found') return null
+      throw error
+    }
+  }
+
+  async setForwardingPaused(domain: string, paused: boolean): Promise<ProviderReceivingState> {
+    const name = normalizeDomainName(domain)
+    const body = await this.native('PATCH', `/api/v1/domains/${encodeURIComponent(name)}/receiving`, {
+      forwarding_paused: paused,
+    })
+    return toReceiving(name, body.data as FrogmailReceiving)
+  }
+
+  async disableReceiving(domain: string): Promise<void> {
+    const name = normalizeDomainName(domain)
+    try {
+      await this.native('DELETE', `/api/v1/domains/${encodeURIComponent(name)}/receiving`)
+    } catch (error) {
+      if (error instanceof SendingDomainProviderError && error.code === 'not_found') return
+      throw error
+    }
+  }
+
+  async listForwardDestinations(domain: string): Promise<ProviderForwardDestination[]> {
+    const name = normalizeDomainName(domain)
+    const result: ProviderForwardDestination[] = []
+    let cursor: string | null = null
+    // Bounded: a domain has a handful of destinations; 20 pages is far beyond that.
+    for (let page = 0; page < 20; page++) {
+      const query = new URLSearchParams({ domain: name })
+      if (cursor) query.set('cursor', cursor)
+      const body = await this.native('GET', `/api/v1/forward-destinations?${query}`)
+      const items = Array.isArray(body.data) ? (body.data as FrogmailForwardDestination[]) : []
+      for (const item of items) {
+        const destination = toDestination(item)
+        if (destination) result.push(destination)
+      }
+      cursor = body.next_cursor ?? null
+      if (!cursor) break
+    }
+    return result
+  }
+
+  async createForwardDestination(domain: string, email: string): Promise<ProviderForwardDestination> {
+    const body = await this.native('POST', '/api/v1/forward-destinations', {
+      domain: normalizeDomainName(domain),
+      email: routeForwardAddress(email),
+    })
+    return this.destinationFrom(body)
+  }
+
+  async resendForwardDestination(id: string): Promise<ProviderForwardDestination> {
+    const body = await this.native('POST', `/api/v1/forward-destinations/${encodeURIComponent(id)}/resend`)
+    return this.destinationFrom(body)
+  }
+
+  async deleteForwardDestination(id: string): Promise<ProviderForwardDestination | null> {
+    try {
+      const body = await this.native('DELETE', `/api/v1/forward-destinations/${encodeURIComponent(id)}`)
+      return this.destinationFrom(body)
+    } catch (error) {
+      if (error instanceof SendingDomainProviderError && error.code === 'not_found') return null
+      throw error
+    }
+  }
+
+  async getDomainUsage(input: { domains: string[]; from: string; to: string }): Promise<ProviderDomainUsageTotals> {
+    const totals: ProviderDomainUsageTotals = { received: 0, forwarded: 0, forwardSkipped: 0, blocked: 0 }
+    if (input.domains.length === 0) return totals
+    const query = new URLSearchParams({ from: input.from, to: input.to, limit: '1' })
+    for (const domain of input.domains) query.append('domain[]', normalizeDomainName(domain))
+    const body = (await this.native('GET', `/api/v1/domain-usage?${query}`)) as FrogmailNativeBody & {
+      totals?: Record<string, unknown>
+    }
+    const count = (value: unknown) => Number(value ?? 0) || 0
+    return {
+      received: count(body.totals?.received),
+      forwarded: count(body.totals?.forwarded),
+      forwardSkipped: count(body.totals?.forward_skipped),
+      blocked: count(body.totals?.blocked),
+    }
+  }
+
+  private destinationFrom(body: FrogmailNativeBody): ProviderForwardDestination {
+    const destination = toDestination(body.data as FrogmailForwardDestination)
+    if (!destination) {
+      throw new SendingDomainProviderError(
+        'provider_unavailable',
+        'The provider returned an unreadable destination',
+        true
+      )
+    }
+    return destination
+  }
+
+  /** Native Frogmail API: Bearer auth, JSON bodies, errors as `{message, code}`. */
+  private async native(method: string, path: string, json?: Record<string, unknown>): Promise<FrogmailNativeBody> {
+    return (await this.request(method, path, { json, bearer: true })) as FrogmailNativeBody
   }
 
   private toResult(domain: string, body: MailgunResponseBody): ProviderDomainResult {
@@ -264,20 +501,23 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
   private async request(
     method: string,
     path: string,
-    options?: { form?: URLSearchParams }
-  ): Promise<MailgunResponseBody> {
+    options?: { form?: URLSearchParams; json?: Record<string, unknown>; bearer?: boolean }
+  ): Promise<MailgunResponseBody & FrogmailNativeBody> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      Authorization: `Basic ${Buffer.from(`api:${this.apiKey}`).toString('base64')}`,
+      Authorization: options?.bearer
+        ? `Bearer ${this.apiKey}`
+        : `Basic ${Buffer.from(`api:${this.apiKey}`).toString('base64')}`,
     }
     if (options?.form) headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    if (options?.json) headers['Content-Type'] = 'application/json'
 
     let response: Response
     try {
       response = await this.fetchImpl(`${this.apiBaseUrl}${path}`, {
         method,
         headers,
-        body: options?.form?.toString(),
+        body: options?.json ? JSON.stringify(options.json) : options?.form?.toString(),
         signal: AbortSignal.timeout(this.timeoutMs),
       })
     } catch (error) {
@@ -295,7 +535,7 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     if (!text) return {}
     try {
       const parsed = JSON.parse(text)
-      return parsed && typeof parsed === 'object' ? (parsed as MailgunResponseBody) : {}
+      return parsed && typeof parsed === 'object' ? (parsed as MailgunResponseBody & FrogmailNativeBody) : {}
     } catch {
       throw new SendingDomainProviderError('provider_unavailable', 'The provider returned an unreadable response', true)
     }
@@ -303,9 +543,12 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
 
   private toError(response: Response, bodyText: string): SendingDomainProviderError {
     let providerMessage = bodyText
+    // Native Frogmail errors carry `code` in the body; Mailgun-compatible ones in X-Frogmail-Error.
+    let nativeCode: string | null = null
     try {
-      const parsed = JSON.parse(bodyText) as { message?: unknown }
+      const parsed = JSON.parse(bodyText) as { message?: unknown; code?: unknown }
       if (typeof parsed?.message === 'string') providerMessage = parsed.message
+      if (typeof parsed?.code === 'string') nativeCode = parsed.code
     } catch {
       // Plain text body (auth errors).
     }
@@ -314,7 +557,8 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
       new SendingDomainProviderError(code, message, retryable, retryAfter)
 
     // Machine-readable code first (Frogmail F-2 and auth errors).
-    switch (response.headers.get('X-Frogmail-Error')) {
+    const frogmailCode = response.headers.get('X-Frogmail-Error') ?? nativeCode
+    switch (frogmailCode) {
       case 'domain_taken':
         return make('already_exists')
       case 'domain_owned_elsewhere':
@@ -329,6 +573,20 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
         return make('missing_scope')
       case 'unauthenticated':
         return make('unauthorized')
+      case 'not_found':
+        return make('not_found')
+      case 'receiving_unavailable':
+      case 'domain_receives_elsewhere':
+      case 'receiving_provider_conflict':
+      case 'domain_not_receiving':
+      case 'forward_destination_invalid':
+      case 'forward_would_loop':
+      case 'forward_requires_ses':
+      case 'forward_requires_domain':
+      case 'conflict':
+        return make(frogmailCode as SendingDomainErrorCode)
+      case 'verification_throttled':
+        return make('verification_throttled', true, parseRetryAfter(response.headers.get('Retry-After')))
       default:
         break
     }

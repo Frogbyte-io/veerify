@@ -281,6 +281,9 @@ export const projectMailAddress = pgTable(
     // 'helpdesk': the inbox's auto-reply, SLA, CSAT and automation apply.
     // 'mail': plain mail, none of those.
     behaviour: text('behaviour').default('helpdesk').notNull(),
+    // False for a forward-only address: its route has no inbox `forward(url)`
+    // action, so nothing reaches the inbox. Needs at least one forward.
+    deliverToInbox: boolean('deliver_to_inbox').default(true).notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -1203,6 +1206,11 @@ export const projectMailDomain = pgTable(
     providerOwnership: text('provider_ownership'),
     providerState: text('provider_state'),
     receivesViaProvider: boolean('receives_via_provider').default(false).notNull(),
+    // Frogmail SES receiving (`GET /api/v1/domains/{d}/receiving`): null until
+    // enabled, then 'pending_verification' / 'pending_mx' / 'active' / 'disabled'.
+    receivingStatus: text('receiving_status'),
+    // Set while Veerify has paused forwarding for the domain (monthly forward limit).
+    forwardingPausedAt: timestamp('forwarding_paused_at'),
     ownershipToken: text('ownership_token').notNull(),
     ownershipVerifiedAt: timestamp('ownership_verified_at'),
     ownershipFailures: integer('ownership_failures').default(0).notNull(),
@@ -1242,5 +1250,70 @@ export const projectMailDomain = pgTable(
       'project_mail_domain_provider_state_check',
       sql`${table.providerState} is null or ${table.providerState} in ('active','unverified')`
     ),
+    validReceivingStatus: check(
+      'project_mail_domain_receiving_status_check',
+      sql`${table.receivingStatus} is null or ${table.receivingStatus} in ('pending_verification','pending_mx','active','disabled')`
+    ),
+  })
+)
+
+// An external mailbox a receiving domain forwards to, mirrored from Frogmail's
+// forward destination. Consent is per receiving domain, as in Frogmail: the
+// recipient confirms once per domain, and every address on the domain that
+// forwards there shares the row. Status comes from route responses, the
+// `forward_destination.*` webhooks and the domain poller.
+export const mailForwardDestination = pgTable(
+  'mail_forward_destination',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    domainId: text('domain_id')
+      .notNull()
+      .references(() => projectMailDomain.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    frogmailDestinationId: text('frogmail_destination_id'),
+    status: text('status').default('pending').notNull(),
+    // Frogmail `status_reason`: unsubscribed, api, bounced, complained, expired, domain_disabled.
+    statusReason: text('status_reason'),
+    verificationSentAt: timestamp('verification_sent_at'),
+    verifiedAt: timestamp('verified_at'),
+    lastEventAt: timestamp('last_event_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueDomainEmail: uniqueIndex('mail_forward_destination_domain_email_idx').on(table.domainId, table.email),
+    uniqueFrogmailId: uniqueIndex('mail_forward_destination_frogmail_idx').on(table.frogmailDestinationId),
+    projectIdx: index('mail_forward_destination_project_idx').on(table.projectId),
+    validStatus: check(
+      'mail_forward_destination_status_check',
+      sql`${table.status} in ('pending','verified','revoked','suspended')`
+    ),
+  })
+)
+
+// Which destinations an address forwards to (at most 5, Frogmail's per-route limit).
+export const projectMailAddressForward = pgTable(
+  'project_mail_address_forward',
+  {
+    addressId: text('address_id')
+      .notNull()
+      .references(() => projectMailAddress.id, { onDelete: 'cascade' }),
+    destinationId: text('destination_id')
+      .notNull()
+      .references(() => mailForwardDestination.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.addressId, table.destinationId] }),
+    destinationIdx: index('project_mail_address_forward_destination_idx').on(table.destinationId),
   })
 )

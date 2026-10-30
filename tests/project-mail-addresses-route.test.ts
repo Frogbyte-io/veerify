@@ -49,6 +49,16 @@ function row(address: string, extra: Record<string, unknown> = {}) {
   }
 }
 
+describe('GET /api/projects/[slug]/mail/addresses (E3 fields)', () => {
+  it('returns deliverToInbox, empty forwards, domains and the forwarding capability', async () => {
+    state.rows = [row('hello@b.com', { deliverToInbox: false })]
+    const res = await call({})
+    expect(res.data.addresses[0]).toMatchObject({ deliverToInbox: false, forwards: [] })
+    expect(Array.isArray(res.data.domains)).toBe(true)
+    expect(typeof res.data.forwarding).toBe('boolean')
+  })
+})
+
 describe('GET /api/projects/[slug]/mail/addresses', () => {
   beforeEach(() => {
     state.rows = []

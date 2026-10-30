@@ -43,6 +43,7 @@ import {
 import { checkRateLimit } from '~/server/utils/rate-limit'
 import { recordSupportMetric } from '~/server/utils/support-observability'
 import { db } from '~/server/database/drizzle'
+import { touchForwardDestination } from '~/server/utils/frogmail-destination-events'
 
 const logger = createLogger('support-delivery')
 
@@ -101,6 +102,22 @@ export default defineEventHandler(async (event) => {
       error: error instanceof Error ? error.message : error,
     })
     return accepted('unparseable-event')
+  }
+
+  // Frogmail forwards (tag `frogmail-forward`) are not support deliveries: acknowledge, stamp the
+  // destination's `last_event_at`, and record nothing else (no delivery event row, no suppression).
+  if (deliveryEvent.isForward) {
+    if (deliveryEvent.forwardDestinationId) {
+      try {
+        await touchForwardDestination(deliveryEvent.forwardDestinationId, deliveryEvent.occurredAt)
+      } catch (error) {
+        logger.error('Failed to stamp forward destination event', {
+          error: error instanceof Error ? error.message : error,
+        })
+        throw createError({ statusCode: 500, statusMessage: 'Delivery event processing failed' })
+      }
+    }
+    return accepted('forward-event')
   }
 
   if (!deliveryEvent.providerEventId) {

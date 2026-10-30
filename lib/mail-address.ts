@@ -51,5 +51,36 @@ export interface ProjectMailAddressItem {
   domainId: string | null
   /** Provider inbound route state; null when mail arrives by forwarding instead of a direct route. */
   routeStatus: 'active' | 'failed' | null
+  /** False for a forward-only address: its route has no inbox action. */
+  deliverToInbox: boolean
+  forwards: ProjectMailAddressForward[]
   createdAt: string
+}
+
+export type MailForwardStatus = 'pending' | 'verified' | 'revoked' | 'suspended'
+
+/** One forward destination of an address, mirrored from Frogmail. */
+export interface ProjectMailAddressForward {
+  id: string
+  email: string
+  status: MailForwardStatus
+  statusReason: string | null
+  /** ISO time the confirmation mail went out; null = not sent yet. */
+  verificationSentAt: string | null
+}
+
+export interface ProjectMailDomainItem {
+  id: string
+  domain: string
+  /** Null until receiving is enabled. */
+  receivingStatus: 'pending_verification' | 'pending_mx' | 'active' | 'disabled' | null
+  forwardingPaused: boolean
+}
+
+/** Response of `GET /api/projects/{slug}/mail/addresses`. */
+export interface ProjectMailAddressesResponse {
+  addresses: ProjectMailAddressItem[]
+  domains: ProjectMailDomainItem[]
+  /** Provider capability: false when forwarding is off (E2 behaviour, hide Forward). */
+  forwarding: boolean
 }

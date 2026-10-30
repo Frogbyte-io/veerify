@@ -57,6 +57,11 @@ export interface SendingDomainCapabilities {
   remove: boolean
   inboundRoutes: boolean
   authorizesSubdomains: boolean
+  /**
+   * SES receiving and email forwarding (Frogmail, with `MAIL_FORWARDING_ENABLED`).
+   * Optional: providers without it never forward.
+   */
+  forwarding?: boolean
 }
 
 /** `GET /api/support/projects/[projectId]/sending-domains` response data (design §7.1). */
