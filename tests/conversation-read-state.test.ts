@@ -37,6 +37,7 @@ vi.mock('~/server/database/drizzle', () => {
       },
       where: () => fluent,
       orderBy: () => fluent,
+      groupBy: () => result,
       limit: () => result,
       then: (...args: Parameters<Promise<unknown>['then']>) => result.then(...args),
     }

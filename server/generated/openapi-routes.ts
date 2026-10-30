@@ -11306,10 +11306,12 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "view",
-          "description": "`archived` is status closed. `spam` and `trash` are folders (`spamAt` / `deletedAt`); every other view, the counts and search exclude spam and trashed conversations. `spam` lists spam that is not in Trash.\n",
+          "description": "`inbox` is every open or pending conversation, whoever it is assigned to (the default view in the UI); `snoozed` is status snoozed; `all` is every conversation in the normal folder. `archived` is status closed. `spam` and `trash` are folders (`spamAt` / `deletedAt`); every other view, the counts and search exclude spam and trashed conversations. `spam` lists spam that is not in Trash.\n",
           "schema": {
             "type": "string",
             "enum": [
+              "inbox",
+              "snoozed",
               "unassigned",
               "assigned-to-me",
               "resolved",
@@ -11403,8 +11405,60 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Conversation page; each item carries `mailAddressId` and `mailAddress` (the receiving address",
-          "or null)": null
+          "description": "Conversation page; each item carries `mailAddressId` and `mailAddress` (the receiving address, or null). `unreadCounts` are for the signed-in agent and cover the normal folder (no spam or trash): `unassigned` and `assignedToMe` count unread open or pending conversations, `inbox` all unread open or pending ones, and `breachingSoon` counts open or pending conversations (read or not) whose SLA is breaching within the hour. These four are limited to `mailAddressId` when it is given. `byAddress` maps each receiving address id to its unread open or pending conversations and is never limited by `mailAddressId`.\n",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "conversations": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "hasMore": {
+                        "type": "boolean"
+                      },
+                      "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "unreadCounts": {
+                        "type": "object",
+                        "properties": {
+                          "unassigned": {
+                            "type": "integer"
+                          },
+                          "assignedToMe": {
+                            "type": "integer"
+                          },
+                          "inbox": {
+                            "type": "integer"
+                          },
+                          "breachingSoon": {
+                            "type": "integer"
+                          },
+                          "byAddress": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         },
         "403": {
           "description": "Not a member of this inbox or a project admin"
@@ -11470,8 +11524,8 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Update a conversation's status, priority, assignee, subject, or folder",
-      "description": "Every status, priority, assignee, and folder change also writes an `activity` message into the thread, in the same transaction as the update. Subject changes deliberately do not - they are not an operational event worth an inline feed entry.\nArchive is `status: closed` (labelled Archived in the UI). Spam and Trash are folders, not statuses: `spam: true` sets `spamAt`, `spam: false` clears it; `deleted: true` sets `deletedAt` (the conversation is purged permanently after 30 days), `deleted: false` restores it. A conversation keeps its status while in a folder, and re-sending the current state is a no-op. Permissions are the same as for status changes: any member of the conversation's inbox who can work conversations (agent, supervisor, admin) or a project admin.\n",
+      "summary": "Update a conversation's status, priority, assignee, subject, type, or folder",
+      "description": "Every status, priority, assignee, and folder change also writes an `activity` message into the thread, in the same transaction as the update. Subject changes deliberately do not - they are not an operational event worth an inline feed entry.\nArchive is `status: closed` (labelled Archived in the UI). Spam and Trash are folders, not statuses: `spam: true` sets `spamAt`, `spam: false` clears it; `deleted: true` sets `deletedAt` (the conversation is purged permanently after 30 days), `deleted: false` restores it. A conversation keeps its status while in a folder, and re-sending the current state is a no-op.\n`behaviour` switches the conversation between plain mail (`mail`) and a support case (`helpdesk`; SLA, auto-replies, CSAT and automation rules apply). A real change writes an `activity` message (\"Turned this into a support case.\" / \"Turned this into plain mail.\"). Becoming a support case assigns the SLA policy that applies now; becoming plain mail clears `slaPolicyId`, the three due dates and `slaPausedAt`. The case number (`displayId`) never changes. Permissions are the same as for status changes: any member of the conversation's inbox who can work conversations (agent, supervisor, admin) or a project admin.\n",
       "operationId": "updateSupportConversation",
       "parameters": [
         {
@@ -11517,6 +11571,14 @@ export const openapiPaths = {
                   "type": "string",
                   "maxLength": 500,
                   "nullable": true
+                },
+                "behaviour": {
+                  "type": "string",
+                  "enum": [
+                    "mail",
+                    "helpdesk"
+                  ],
+                  "description": "Turn the conversation into plain mail or a support case"
                 },
                 "spam": {
                   "type": "boolean",
@@ -11741,7 +11803,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Write an agent reply or an internal note to a conversation",
-      "description": "Only `outgoing` (customer-visible reply) and `note` (internal-only) kinds may be created here - `incoming` is written by the mail pipeline and `activity` by the system, never by an agent directly. `isPrivate` is derived from `kind` server-side and is never taken from the request body, since a private note rendered as a public reply is the worst failure mode in a support tool. An `outgoing` message atomically claims an unassigned conversation for the replying agent, writes the matching activity, and enqueues the durable outbox delivery in the same transaction; a `note` never claims or dispatches mail.\n",
+      "description": "Only `outgoing` (customer-visible reply) and `note` (internal-only) kinds may be created here - `incoming` is written by the mail pipeline and `activity` by the system, never by an agent directly. `isPrivate` is derived from `kind` server-side and is never taken from the request body, since a private note rendered as a public reply is the worst failure mode in a support tool. An `outgoing` message atomically claims an unassigned conversation for the replying agent, writes the matching activity, and enqueues the durable outbox delivery in the same transaction; a `note` never claims or dispatches mail.\nThree optional fields apply to `outgoing` messages only (400 for a note). `fromAddressId` sends the reply from one of the inbox's own addresses instead of the default (see `canSendFrom` on `GET /api/support/inboxes/{id}/addresses`); the project sender policy still applies. `behaviour` turns the conversation into plain mail or a support case in the same transaction as the message, with the effects of `PATCH /api/support/conversations/{id}`; if the reply is rejected the type is not changed. `resolve` sets the status to `resolved` after the message is committed, as that PATCH would. The response carries `resolved: true` when it did, and `false` when `resolve` was not requested, the conversation was already resolved, or resolving failed (the message is sent either way).\n",
       "operationId": "createSupportConversationMessage",
       "parameters": [
         {
@@ -11753,12 +11815,74 @@ export const openapiPaths = {
           }
         }
       ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "kind",
+                "body"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "outgoing",
+                    "note"
+                  ]
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50000
+                },
+                "bodyHtml": {
+                  "type": "string",
+                  "maxLength": 200000
+                },
+                "attachments": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "uploadId"
+                    ],
+                    "properties": {
+                      "uploadId": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "fromAddressId": {
+                  "type": "string",
+                  "description": "A custom, non-catch-all address of this inbox on a verified project email domain; outgoing only"
+                },
+                "behaviour": {
+                  "type": "string",
+                  "enum": [
+                    "mail",
+                    "helpdesk"
+                  ],
+                  "description": "Turn the conversation into plain mail or a support case with this reply; outgoing only"
+                },
+                "resolve": {
+                  "type": "boolean",
+                  "description": "Resolve the conversation after sending; outgoing only"
+                }
+              }
+            }
+          }
+        }
+      },
       "responses": {
         "200": {
-          "description": "Message created"
+          "description": "Message created: `{ message, resolved }`"
         },
         "400": {
-          "description": "Validation failed"
+          "description": "Validation failed, `fromAddressId` cannot be used to send from, or `fromAddressId`, `behaviour` or `resolve` on a note"
         },
         "403": {
           "description": "Not a member of this inbox or a project admin"
@@ -12242,7 +12366,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "List an inbox's receiving addresses",
-      "description": "Each address carries its behaviour (`mail` or `helpdesk`), product tag, the project email domain it sits on (`domainId`), its provider route state and `isCatchAll` (true for `*@domain`).\n",
+      "description": "Each address carries its behaviour (`mail` or `helpdesk`), product tag, the project email domain it sits on (`domainId`), its provider route state and `isCatchAll` (true for `*@domain`). `canSendFrom` says whether a reply can be sent from the address (`fromAddressId` on a reply): a custom, non-catch-all address on a verified project email domain. `inboxSendingAddress` is the inbox's own sending address, which replies use when no address is chosen.\n",
       "operationId": "listSupportInboxAddresses",
       "parameters": [
         {
@@ -12271,8 +12395,24 @@ export const openapiPaths = {
                       "addresses": {
                         "type": "array",
                         "items": {
-                          "$ref": "#/components/schemas/SupportInboxAddress"
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/SupportInboxAddress"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "canSendFrom": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          ]
                         }
+                      },
+                      "inboxSendingAddress": {
+                        "type": "string",
+                        "nullable": true
                       }
                     }
                   }

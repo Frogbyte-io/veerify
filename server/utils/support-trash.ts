@@ -18,6 +18,8 @@ export const TRASH_RETENTION_DAYS = 30
 export const DEFAULT_TRASH_PURGE_BATCH = 25
 
 export const CONVERSATION_LIST_VIEWS = [
+  'inbox',
+  'snoozed',
   'unassigned',
   'assigned-to-me',
   'resolved',

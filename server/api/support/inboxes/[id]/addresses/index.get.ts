@@ -7,7 +7,11 @@
  *     description: >
  *       Each address carries its behaviour (`mail` or `helpdesk`), product tag,
  *       the project email domain it sits on (`domainId`), its provider route
- *       state and `isCatchAll` (true for `*@domain`).
+ *       state and `isCatchAll` (true for `*@domain`). `canSendFrom` says whether a
+ *       reply can be sent from the address (`fromAddressId` on a reply): a custom,
+ *       non-catch-all address on a verified project email domain.
+ *       `inboxSendingAddress` is the inbox's own sending address, which replies
+ *       use when no address is chosen.
  *     operationId: listSupportInboxAddresses
  *     parameters:
  *       - in: path
@@ -28,7 +32,13 @@
  *                   properties:
  *                     addresses:
  *                       type: array
- *                       items: { $ref: '#/components/schemas/SupportInboxAddress' }
+ *                       items:
+ *                         allOf:
+ *                           - $ref: '#/components/schemas/SupportInboxAddress'
+ *                           - type: object
+ *                             properties:
+ *                               canSendFrom: { type: boolean }
+ *                     inboxSendingAddress: { type: string, nullable: true }
  *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  */
@@ -38,13 +48,14 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { projectMailAddress } from '~/server/database/schema/support'
-import { toInboxAddressResponse } from '~/server/utils/inbox-address-rules'
+import { toInboxAddressListItem } from '~/server/utils/inbox-address-rules'
+import { loadVerifiedMailDomains } from '~/server/utils/conversation-sender'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const inboxId = getRouterParam(event, 'id') as string
 
-  await requireInboxAccess(inboxId, session.user.id)
+  const inbox = await requireInboxAccess(inboxId, session.user.id)
 
   const addresses = await db
     .select()
@@ -52,5 +63,10 @@ export default defineEventHandler(async (event) => {
     .where(eq(projectMailAddress.inboxId, inboxId))
     .orderBy(asc(projectMailAddress.createdAt))
 
-  return createSuccessResponse({ addresses: addresses.map(toInboxAddressResponse) })
+  const verifiedDomains = await loadVerifiedMailDomains(inbox.projectId)
+
+  return createSuccessResponse({
+    addresses: addresses.map((row) => toInboxAddressListItem(row, verifiedDomains)),
+    inboxSendingAddress: inbox.emailAddress ?? null,
+  })
 })
