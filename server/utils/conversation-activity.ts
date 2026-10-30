@@ -20,7 +20,7 @@ import { user } from '~/server/database/schema/auth'
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export interface ConversationChange {
-  field: 'status' | 'priority' | 'assigneeUserId'
+  field: 'status' | 'priority' | 'assigneeUserId' | 'behaviour'
   from: string | null
   to: string | null
 }
@@ -30,13 +30,14 @@ export interface ConversationChange {
  * deliberately absent: it is updatable, but renaming a ticket is not an
  * operational event the thread should narrate.
  */
-const TRACKED_FIELDS = ['status', 'priority', 'assigneeUserId'] as const
+const TRACKED_FIELDS = ['status', 'priority', 'assigneeUserId', 'behaviour'] as const
 
 export interface ConversationPatch {
   status?: string
   priority?: string | null
   assigneeUserId?: string | null
   subject?: string | null
+  behaviour?: string
 }
 
 interface ConversationState {
@@ -44,6 +45,7 @@ interface ConversationState {
   priority?: string | null
   assigneeUserId?: string | null
   subject?: string | null
+  behaviour?: string | null
 }
 
 export interface ConversationPatchDiff {
@@ -185,6 +187,9 @@ async function describeChange(tx: Tx, change: ConversationChange): Promise<strin
       const [assignee] = await tx.select({ name: user.name }).from(user).where(eq(user.id, change.to)).limit(1)
       return `Assigned to ${assignee?.name ?? change.to}.`
     }
+
+    case 'behaviour':
+      return change.to === 'helpdesk' ? 'Turned this into a support case.' : 'Turned this into plain mail.'
   }
 }
 

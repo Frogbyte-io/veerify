@@ -13,10 +13,13 @@
  *       - in: query
  *         name: view
  *         description: >
- *           `archived` is status closed. `spam` and `trash` are folders (`spamAt` /
+ *           `inbox` is every open or pending conversation, whoever it is assigned to
+ *           (the default view in the UI); `snoozed` is status snoozed; `all` is
+ *           every conversation in the normal folder. `archived` is status closed.
+ *           `spam` and `trash` are folders (`spamAt` /
  *           `deletedAt`); every other view, the counts and search exclude spam and
  *           trashed conversations. `spam` lists spam that is not in Trash.
- *         schema: { type: string, enum: [unassigned, assigned-to-me, resolved, breaching-soon, archived, spam, trash, all] }
+ *         schema: { type: string, enum: [inbox, snoozed, unassigned, assigned-to-me, resolved, breaching-soon, archived, spam, trash, all] }
  *       - in: query
  *         name: status
  *         schema: { type: string }
@@ -49,7 +52,35 @@
  *         name: cursor
  *         schema: { type: string }
  *     responses:
- *       200: { description: Conversation page; each item carries `mailAddressId` and `mailAddress` (the receiving address, or null) }
+ *       200:
+ *         description: >
+ *           Conversation page; each item carries `mailAddressId` and `mailAddress` (the receiving
+ *           address, or null). `unreadCounts` are for the signed-in agent and cover the normal folder
+ *           (no spam or trash): `unassigned` and `assignedToMe` count unread open or pending
+ *           conversations, `inbox` all unread open or pending ones, and `breachingSoon` counts open or
+ *           pending conversations (read or not) whose SLA is breaching within the hour. These four are
+ *           limited to `mailAddressId` when it is given. `byAddress` maps each receiving address id to
+ *           its unread open or pending conversations and is never limited by `mailAddressId`.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     conversations: { type: array, items: { type: object } }
+ *                     hasMore: { type: boolean }
+ *                     nextCursor: { type: string, nullable: true }
+ *                     unreadCounts:
+ *                       type: object
+ *                       properties:
+ *                         unassigned: { type: integer }
+ *                         assignedToMe: { type: integer }
+ *                         inbox: { type: integer }
+ *                         breachingSoon: { type: integer }
+ *                         byAddress: { type: object, additionalProperties: { type: integer } }
  *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  */
@@ -74,6 +105,22 @@ import { CONVERSATION_LIST_VIEWS, folderCondition } from '~/server/utils/support
 
 const MAX_POSTGRES_INTEGER = 2147483647
 
+const ACTIVE_STATUSES = ['open', 'pending'] as const
+
+/** Open or pending, not paused, with a response or resolution due within the hour. */
+function breachingSoonConditions(now: Date) {
+  const soon = new Date(now.getTime() + 60 * 60_000)
+  return [
+    inArray(conversation.status, ACTIVE_STATUSES),
+    isNull(conversation.slaPausedAt),
+    or(
+      and(isNotNull(conversation.firstResponseDueAt), lte(conversation.firstResponseDueAt, soon)),
+      and(isNotNull(conversation.nextResponseDueAt), lte(conversation.nextResponseDueAt, soon)),
+      and(isNotNull(conversation.resolutionDueAt), lte(conversation.resolutionDueAt, soon))
+    )!,
+  ]
+}
+
 const querySchema = z.object({
   inboxId: z.string().min(1),
   view: z.enum(CONVERSATION_LIST_VIEWS).optional(),
@@ -96,10 +143,14 @@ export default defineEventHandler(async (event) => {
   await requireInboxAccess(query.inboxId, session.user.id)
 
   const conditions = [eq(conversation.inboxId, query.inboxId), folderCondition(query.view)]
-  const activeStatuses = ['open', 'pending'] as const
+  const activeStatuses = ACTIVE_STATUSES
   const search = query.search?.trim()
 
-  if (!search && query.view === 'unassigned') {
+  if (!search && query.view === 'inbox') {
+    conditions.push(inArray(conversation.status, activeStatuses))
+  } else if (!search && query.view === 'snoozed') {
+    conditions.push(eq(conversation.status, 'snoozed'))
+  } else if (!search && query.view === 'unassigned') {
     conditions.push(isNull(conversation.assigneeUserId), inArray(conversation.status, activeStatuses))
   } else if (!search && query.view === 'assigned-to-me') {
     conditions.push(eq(conversation.assigneeUserId, session.user.id), inArray(conversation.status, activeStatuses))
@@ -108,16 +159,7 @@ export default defineEventHandler(async (event) => {
   } else if (!search && query.view === 'archived') {
     conditions.push(eq(conversation.status, 'closed'))
   } else if (!search && query.view === 'breaching-soon') {
-    const soon = new Date(Date.now() + 60 * 60_000)
-    conditions.push(
-      inArray(conversation.status, activeStatuses),
-      isNull(conversation.slaPausedAt),
-      or(
-        and(isNotNull(conversation.firstResponseDueAt), lte(conversation.firstResponseDueAt, soon)),
-        and(isNotNull(conversation.nextResponseDueAt), lte(conversation.nextResponseDueAt, soon)),
-        and(isNotNull(conversation.resolutionDueAt), lte(conversation.resolutionDueAt, soon))
-      )!
-    )
+    conditions.push(...breachingSoonConditions(new Date()))
   }
 
   if (query.status) conditions.push(eq(conversation.status, query.status))
@@ -198,7 +240,12 @@ export default defineEventHandler(async (event) => {
 
   const unreadSignalAt = sql`coalesce(${conversation.lastCustomerReplyAt}, ${conversation.createdAt})`
   const unreadForViewer = sql`(${conversationReadState.lastReadAt} is null or ${conversationReadState.lastReadAt} < ${unreadSignalAt})`
-  const [unreadCounts = { unassigned: 0, assignedToMe: 0 }] = await db
+  const readStateJoin = and(
+    eq(conversationReadState.conversationId, conversation.id),
+    eq(conversationReadState.userId, session.user.id)
+  )
+  const inboxFolder = [eq(conversation.inboxId, query.inboxId), folderCondition(undefined)]
+  const [counts] = await db
     .select({
       unassigned:
         sql<number>`count(*) filter (where ${conversation.assigneeUserId} is null and ${conversation.status} in ('open', 'pending') and ${unreadForViewer})`.mapWith(
@@ -208,13 +255,49 @@ export default defineEventHandler(async (event) => {
         sql<number>`count(*) filter (where ${conversation.assigneeUserId} = ${session.user.id} and ${conversation.status} in ('open', 'pending') and ${unreadForViewer})`.mapWith(
           Number
         ),
+      inbox:
+        sql<number>`count(*) filter (where ${conversation.status} in ('open', 'pending') and ${unreadForViewer})`.mapWith(
+          Number
+        ),
+      // A count of what is breaching, read or not, not of unread conversations.
+      breachingSoon: sql<number>`count(*) filter (where ${and(...breachingSoonConditions(new Date()))})`.mapWith(
+        Number
+      ),
     })
     .from(conversation)
-    .leftJoin(
-      conversationReadState,
-      and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))
+    .leftJoin(conversationReadState, readStateJoin)
+    .where(and(...inboxFolder, query.mailAddressId ? eq(conversation.mailAddressId, query.mailAddressId) : undefined))
+
+  // Per receiving address, deliberately not narrowed by `mailAddressId`: the
+  // address list shows every address's badge while one of them is selected.
+  const byAddressRows = await db
+    .select({
+      mailAddressId: conversation.mailAddressId,
+      count: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(conversation)
+    .leftJoin(conversationReadState, readStateJoin)
+    .where(
+      and(
+        ...inboxFolder,
+        isNotNull(conversation.mailAddressId),
+        inArray(conversation.status, activeStatuses),
+        unreadForViewer
+      )
     )
-    .where(and(eq(conversation.inboxId, query.inboxId), folderCondition(undefined)))
+    .groupBy(conversation.mailAddressId)
+  const byAddress: Record<string, number> = {}
+  for (const row of byAddressRows) {
+    if (row.mailAddressId) byAddress[row.mailAddressId] = row.count
+  }
+
+  const unreadCounts = {
+    unassigned: counts?.unassigned ?? 0,
+    assignedToMe: counts?.assignedToMe ?? 0,
+    inbox: counts?.inbox ?? 0,
+    breachingSoon: counts?.breachingSoon ?? 0,
+    byAddress,
+  }
 
   return createSuccessResponse({
     conversations: items,

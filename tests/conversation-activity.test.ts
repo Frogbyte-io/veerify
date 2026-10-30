@@ -73,6 +73,15 @@ describe('recordConversationActivity', () => {
     expect(rows[0].body).toBe('Assigned to u1.')
   })
 
+  it('describes turning a conversation into a support case and back into plain mail', async () => {
+    expect((await bodies([{ field: 'behaviour', from: 'mail', to: 'helpdesk' }]))[0].body).toBe(
+      'Turned this into a support case.'
+    )
+    expect((await bodies([{ field: 'behaviour', from: 'helpdesk', to: 'mail' }]))[0].body).toBe(
+      'Turned this into plain mail.'
+    )
+  })
+
   it('describes unassignment', async () => {
     const rows = await bodies([{ field: 'assigneeUserId', from: 'u1', to: null }])
     expect(rows[0].body).toBe('Unassigned.')
@@ -131,6 +140,14 @@ describe('diffConversationPatch', () => {
     const { changes, updates } = diffConversationPatch(open, {}, now)
     expect(changes).toEqual([])
     expect(updates).toEqual({})
+  })
+
+  it('tracks a type switch, and ignores re-sending the current type', () => {
+    expect(diffConversationPatch({ behaviour: 'mail' }, { behaviour: 'helpdesk' }, now)).toEqual({
+      changes: [{ field: 'behaviour', from: 'mail', to: 'helpdesk' }],
+      updates: { behaviour: 'helpdesk' },
+    })
+    expect(diffConversationPatch({ behaviour: 'mail' }, { behaviour: 'mail' }, now).changes).toEqual([])
   })
 
   it('ignores a field whose value is unchanged', () => {
