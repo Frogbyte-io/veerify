@@ -406,4 +406,190 @@ describe('resolveThread (real Postgres)', () => {
       expect(result.matchedBy).not.toBe('message-id')
     })
   })
+
+  describe('several referenced ids, each naming one stored message', () => {
+    // A customer reply's References legitimately names several messages we
+    // stored: their own original and our reply, and Frogmail appends our
+    // original id next to the SES-rewritten one. Only one id naming several
+    // messages is an untrustworthy identity.
+    const conversationA = `conv_thread_multi_a_${randomUUID()}`
+    const conversationB = `conv_thread_multi_b_${randomUUID()}`
+    const customerOriginalId = `customer-original-${randomUUID()}@customer.example`
+    const ourReplyId = `our-reply-${randomUUID()}@acme.com`
+    const ourReplySesId = `0100019c-${randomUUID()}@email.amazonses.com`
+    const otherConversationMessageId = `other-thread-${randomUUID()}@acme.com`
+    const laterOtherConversationMessageId = `other-thread-later-${randomUUID()}@acme.com`
+
+    beforeAll(async () => {
+      await db.insert(conversation).values([
+        {
+          id: conversationA,
+          inboxId,
+          projectId,
+          contactId,
+          displayId: 9101,
+          subject: 'Shipping delay',
+          status: 'open',
+          lastActivityAt: now,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: conversationB,
+          inboxId,
+          projectId,
+          contactId,
+          displayId: 9102,
+          subject: 'Older ticket',
+          status: 'open',
+          lastActivityAt: now,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ])
+      await db.insert(conversationMessage).values([
+        {
+          id: `msg_thread_multi_in_${randomUUID()}`,
+          conversationId: conversationA,
+          kind: 'incoming',
+          body: 'Where is my order?',
+          senderKind: 'contact',
+          channelMessageId: customerOriginalId,
+          createdAt: now,
+        },
+        {
+          id: `msg_thread_multi_out_${randomUUID()}`,
+          conversationId: conversationA,
+          kind: 'outgoing',
+          body: 'It ships tomorrow',
+          senderKind: 'agent',
+          channelMessageId: ourReplyId,
+          createdAt: new Date(now.getTime() + 1),
+        },
+        {
+          id: `msg_thread_multi_b_${randomUUID()}`,
+          conversationId: conversationB,
+          kind: 'outgoing',
+          body: 'An older thread',
+          senderKind: 'agent',
+          channelMessageId: otherConversationMessageId,
+          createdAt: now,
+        },
+        {
+          id: `msg_thread_multi_b_later_${randomUUID()}`,
+          conversationId: conversationB,
+          kind: 'outgoing',
+          body: 'A later message in the older thread',
+          senderKind: 'agent',
+          channelMessageId: laterOtherConversationMessageId,
+          createdAt: now,
+        },
+      ])
+    })
+
+    it('continues the conversation when References names the customer original and our reply', async () => {
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: ourReplyId,
+          references: [customerOriginalId, ourReplyId],
+          subject: 'Re: Shipping delay',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: conversationA, matchedBy: 'message-id' })
+    })
+
+    it('continues the production shape: customer original, unknown SES id, our Frogmail original id', async () => {
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: ourReplySesId,
+          references: [customerOriginalId, ourReplySesId, ourReplyId],
+          subject: 'Re: Shipping delay',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: conversationA, matchedBy: 'message-id' })
+    })
+
+    it('continues when the SES id is stored as the provider id of our reply', async () => {
+      const ourReplyRow = await db
+        .select({ id: conversationMessage.id })
+        .from(conversationMessage)
+        .where(eq(conversationMessage.channelMessageId, ourReplyId))
+      expect(await recordProviderChannelMessageId(db, ourReplyRow[0].id, ourReplySesId)).toBe(true)
+
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: ourReplySesId,
+          references: [customerOriginalId, ourReplySesId, ourReplyId],
+          subject: 'Re: Shipping delay',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: conversationA, matchedBy: 'message-id' })
+    })
+
+    it('prefers the In-Reply-To conversation over an older References entry in another conversation', async () => {
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: ourReplyId,
+          references: [otherConversationMessageId, ourReplyId],
+          subject: 'Anything',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: conversationA, matchedBy: 'message-id' })
+    })
+
+    it('takes the newest matching References entry when In-Reply-To matched nothing', async () => {
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: `unknown-${randomUUID()}@x.com`,
+          references: [customerOriginalId, laterOtherConversationMessageId],
+          subject: 'Anything',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: conversationB, matchedBy: 'message-id' })
+    })
+
+    it('stays ambiguous when one of several referenced ids names two stored messages', async () => {
+      const duplicateRowId = `msg_thread_multi_dup_${randomUUID()}`
+      await db.insert(conversationMessage).values({
+        id: duplicateRowId,
+        conversationId: conversationA,
+        kind: 'outgoing',
+        body: 'Same Message-ID stored twice',
+        senderKind: 'agent',
+        channelMessageId: ourReplyId,
+        createdAt: now,
+      })
+
+      try {
+        const result = await resolve(
+          {
+            messageId: 'customer-reply@x.com',
+            inReplyTo: ourReplyId,
+            references: [customerOriginalId, ourReplyId],
+            subject: 'Re: Shipping delay',
+          },
+          contactId
+        )
+
+        expect(result).toEqual({ conversationId: null, matchedBy: 'ambiguous-message-id' })
+      } finally {
+        await db.delete(conversationMessage).where(eq(conversationMessage.id, duplicateRowId))
+      }
+    })
+  })
 })

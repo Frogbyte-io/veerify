@@ -4,6 +4,7 @@ import type { InboundMessage } from '../server/services/support-channels/types'
 import type { ThreadableMessage } from '../server/utils/inbound-threading'
 import {
   normalizeSubject,
+  resolveMessageIdMatches,
   SUBJECT_FALLBACK_WINDOW_DAYS,
   updatesForInboundReply,
 } from '../server/utils/inbound-threading'
@@ -128,5 +129,96 @@ describe('inbound conversation updates', () => {
       lastCustomerReplyAt: receivedAt,
       updatedAt,
     })
+  })
+})
+
+describe('resolveMessageIdMatches', () => {
+  const customerOriginal = 'customer-original@customer.example'
+  const ourOriginal = 'our-reply@veerify.example'
+  const ourSesId = '0100019a-ses@email.amazonses.com'
+
+  function stored(
+    conversationId: string,
+    channelMessageId: string | null,
+    providerChannelMessageId: string | null = null
+  ) {
+    return { conversationId, channelMessageId, providerChannelMessageId }
+  }
+
+  it('returns null when nothing matched, leaving the thread-key fallback to run', () => {
+    expect(resolveMessageIdMatches({ inReplyTo: 'a@x', references: [] }, [])).toBeNull()
+  })
+
+  it('continues the conversation when References names the customer original and our reply', () => {
+    const result = resolveMessageIdMatches({ inReplyTo: ourOriginal, references: [customerOriginal, ourOriginal] }, [
+      stored('conv-1', ourOriginal),
+      stored('conv-1', customerOriginal),
+    ])
+
+    expect(result).toEqual({ conversationId: 'conv-1', matchedBy: 'message-id' })
+  })
+
+  it('continues the production shape: customer original, unknown SES id, then our Frogmail original id', () => {
+    const unknownSesId = '0100019b-unknown@email.amazonses.com'
+    const result = resolveMessageIdMatches(
+      { inReplyTo: unknownSesId, references: [customerOriginal, unknownSesId, ourOriginal] },
+      [stored('conv-1', ourOriginal, ourSesId), stored('conv-1', customerOriginal)]
+    )
+
+    expect(result).toEqual({ conversationId: 'conv-1', matchedBy: 'message-id' })
+  })
+
+  it('attributes a row matched only through its provider id', () => {
+    const result = resolveMessageIdMatches({ inReplyTo: ourSesId, references: [customerOriginal, ourSesId] }, [
+      stored('conv-1', ourOriginal, ourSesId),
+      stored('conv-1', customerOriginal),
+    ])
+
+    expect(result).toEqual({ conversationId: 'conv-1', matchedBy: 'message-id' })
+  })
+
+  it('stays ambiguous when one id names two stored messages, even in one conversation', () => {
+    const result = resolveMessageIdMatches({ inReplyTo: ourOriginal, references: [] }, [
+      stored('conv-1', ourOriginal),
+      stored('conv-1', ourOriginal),
+    ])
+
+    expect(result).toEqual({ conversationId: null, matchedBy: 'ambiguous-message-id' })
+  })
+
+  it('stays ambiguous when one id names one message by its own id and another by provider id', () => {
+    const result = resolveMessageIdMatches({ inReplyTo: ourSesId, references: [] }, [
+      stored('conv-1', ourSesId),
+      stored('conv-2', ourOriginal, ourSesId),
+    ])
+
+    expect(result).toEqual({ conversationId: null, matchedBy: 'ambiguous-message-id' })
+  })
+
+  it('prefers the In-Reply-To conversation over an older References entry elsewhere', () => {
+    const result = resolveMessageIdMatches({ inReplyTo: 'parent@x', references: ['older@x', 'parent@x'] }, [
+      stored('conv-b', 'older@x'),
+      stored('conv-a', 'parent@x'),
+    ])
+
+    expect(result).toEqual({ conversationId: 'conv-a', matchedBy: 'message-id' })
+  })
+
+  it('prefers the In-Reply-To conversation even when References puts another conversation last', () => {
+    const result = resolveMessageIdMatches({ inReplyTo: 'parent@x', references: ['parent@x', 'newer@x'] }, [
+      stored('conv-b', 'newer@x'),
+      stored('conv-a', 'parent@x'),
+    ])
+
+    expect(result).toEqual({ conversationId: 'conv-a', matchedBy: 'message-id' })
+  })
+
+  it('takes the newest matching References entry when In-Reply-To matched nothing', () => {
+    const result = resolveMessageIdMatches(
+      { inReplyTo: 'unknown@x', references: ['oldest@x', 'newest-match@x', 'unknown@x'] },
+      [stored('conv-old', 'oldest@x'), stored('conv-new', 'newest-match@x')]
+    )
+
+    expect(result).toEqual({ conversationId: 'conv-new', matchedBy: 'message-id' })
   })
 })
