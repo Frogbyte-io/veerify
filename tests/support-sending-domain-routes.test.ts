@@ -51,6 +51,8 @@ const poller = vi.hoisted(() => ({
   deleteSendingDomainRow: vi.fn(async () => undefined),
 }))
 
+const webhooks = vi.hoisted(() => ({ syncDeliveryWebhooks: vi.fn(async () => ({ status: 'ensured' })) }))
+
 const rateLimit = vi.hoisted(() => ({ requireRateLimit: vi.fn(async () => undefined) }))
 const mailLimits = vi.hoisted(() => ({
   getOrganizationIdForProject: vi.fn(async () => 'org-1'),
@@ -171,6 +173,7 @@ vi.mock('~/server/utils/sending-domain-poller', async () => {
   )
   return { ...actual, ...poller }
 })
+vi.mock('~/server/utils/sending-domain-webhooks', () => webhooks)
 vi.mock('~/server/utils/sending-domain-api', async () => {
   const actual = await vi.importActual<typeof import('~/server/utils/sending-domain-api')>(
     '~/server/utils/sending-domain-api'
@@ -550,6 +553,17 @@ describe('POST sending-domains/[id]/verify', () => {
     expect(provider.get).not.toHaveBeenCalled()
     expect(res.success).toBe(true)
     expect(poller.saveSendingDomainPatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('ensures delivery webhooks once the claim is verified, but not while it is pending', async () => {
+    state.row = { ...NOW_ROW, status: 'pending' }
+    await call(verify)
+    expect(webhooks.syncDeliveryWebhooks).toHaveBeenCalledWith(expect.objectContaining({ id: 'sd-1' }), provider)
+
+    webhooks.syncDeliveryWebhooks.mockClear()
+    provider.verify.mockResolvedValueOnce({ ...activeResult, state: 'unverified' })
+    await call(verify)
+    expect(webhooks.syncDeliveryWebhooks).not.toHaveBeenCalled()
   })
 
   it('answers 429 with Retry-After when the provider rate limits', async () => {

@@ -54,6 +54,7 @@ import {
   requireConfiguredSendingDomainProvider,
   requireSendingDomainsEnabled,
 } from '~/server/utils/sending-domain-api'
+import { syncDeliveryWebhooks } from '~/server/utils/sending-domain-webhooks'
 
 const logger = createLogger('sending-domains')
 
@@ -150,7 +151,9 @@ async function verifyClaim(
     })
   }
 
-  await saveSendingDomainPatch(claim, outcome.patch)
+  const saved = await saveSendingDomainPatch(claim, outcome.patch)
+  // Best effort and skipped when already done; the domain poll retries a failure.
+  if (saved && outcome.patch.status === 'verified') await syncDeliveryWebhooks(claim, provider)
   if (outcome.transition === 'verified') {
     recordSupportMetric('support.sending_domain.verified', {
       domainId: claim.id,

@@ -1211,6 +1211,10 @@ export const projectMailDomain = pgTable(
     receivingStatus: text('receiving_status'),
     // Set while Veerify has paused forwarding for the domain (monthly forward limit).
     forwardingPausedAt: timestamp('forwarding_paused_at'),
+    // Marker for the provider's delivery webhooks (`delivered`, `permanent_fail`,
+    // `temporary_fail`, `complained`): a hash of provider, delivery URL and events,
+    // set once they were ensured. Null (or a stale hash) makes the poll ensure them.
+    deliveryWebhooksKey: text('delivery_webhooks_key'),
     ownershipToken: text('ownership_token').notNull(),
     ownershipVerifiedAt: timestamp('ownership_verified_at'),
     ownershipFailures: integer('ownership_failures').default(0).notNull(),

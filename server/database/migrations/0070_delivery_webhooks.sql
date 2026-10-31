@@ -1,0 +1,1 @@
+ALTER TABLE "project_mail_domain" ADD COLUMN "delivery_webhooks_key" text;

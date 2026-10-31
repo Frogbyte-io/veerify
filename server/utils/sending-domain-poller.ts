@@ -27,6 +27,7 @@ import {
   resolveProjectSenderAuthorization,
 } from '~/server/utils/sending-domains'
 import { syncAddressRoute } from '~/server/utils/inbound-routes'
+import { syncDeliveryWebhooks } from '~/server/utils/sending-domain-webhooks'
 import { recordSupportMetric, type SupportMetricName } from '~/server/utils/support-observability'
 import { createLogger } from '~/server/utils/logger'
 
@@ -301,6 +302,8 @@ export async function registerSendingDomainClaim(
       receivesViaProvider: registration.receivesMail,
       dnsRecords: buildRecords(row, registration.records, 'unknown', null),
       verifiedAt: null,
+      // A (re-)registered provider domain may have lost its webhooks: ensure them again once verified.
+      deliveryWebhooksKey: null,
       attemptCount: 0,
       ownershipFailures: 0,
       providerFailures: 0,
@@ -1001,6 +1004,8 @@ export interface SendingDomainPollDeps {
   reconcileRoutes?: (row: SendingDomainRow, provider: SendingDomainProvider) => Promise<DirectRouteReconciliation>
   /** E3: enable and refresh SES receiving and reconcile forward destinations. */
   syncReceiving?: (row: SendingDomainRow, provider: SendingDomainProvider) => Promise<unknown>
+  /** Ensure the delivery webhooks of a verified claim (cheap when its marker matches). */
+  syncWebhooks?: (row: SendingDomainRow, provider: SendingDomainProvider) => Promise<unknown>
   deleteRoutes?: RemoveDeps['deleteRoutes']
   checkOwnership?: typeof checkOwnershipTxt
   checkDmarcRecord?: typeof checkDmarc
@@ -1047,6 +1052,7 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
       saveSendingDomainPatch(row, patch, { policy, detach: deps.detach, metric }))
   const reconcileRoutes = deps.reconcileRoutes ?? reconcileDirectRoutes
   const syncReceiving = deps.syncReceiving ?? syncDomainReceiving
+  const syncWebhooks = deps.syncWebhooks ?? syncDeliveryWebhooks
   const deleteRow = deps.deleteRow ?? deleteSendingDomainRow
   const release = deps.release ?? releaseSendingDomainLeases
   const batchSize = deps.batchSize ?? SENDING_DOMAIN_BATCH_SIZE
@@ -1132,6 +1138,7 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
     }
     // Receiving first, so route reconcile sees `receiving_status` and the destinations.
     await receiving(row)
+    if (outcome.patch.status === 'verified') await webhooks(row)
     if (outcome.patch.status === 'verified' && outcome.patch.receivesViaProvider && !routeScopeReported) {
       await reconcile(row)
     }
@@ -1143,6 +1150,15 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
       await syncReceiving(row, provider!)
     } catch (error) {
       logger.warn('Receiving sync failed', { domainId: row.id, error })
+    }
+  }
+
+  /** Delivery webhooks are best effort: a failure is logged and retried on the next check. */
+  async function webhooks(row: SendingDomainRow) {
+    try {
+      await syncWebhooks(row, provider!)
+    } catch (error) {
+      logger.warn('Delivery webhook sync failed', { domainId: row.id, error })
     }
   }
 

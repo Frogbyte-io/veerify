@@ -510,6 +510,7 @@ New components; `pages/support/settings.vue` only gets small insertions:
 | `SUPPORT_PLATFORM_MAIL_DOMAIN`     | empty    | The apex receiving and sending zone for platform forwarding addresses. Empty means no platform addresses.                                                                       |
 | `SUPPORT_SENDING_DOMAINS_RESERVED` | empty    | Comma list of extra domains no team may claim.                                                                                                                                  |
 | `SUPPORT_INBOUND_WEBHOOK_URL`      | empty    | Forward URL for created routes. Empty means `${BETTER_AUTH_URL}/api/support/inbound/<provider>`.                                                                                |
+| `SUPPORT_DELIVERY_WEBHOOK_URL`     | empty    | URL of the delivery webhooks Veerify ensures for verified Mailgun/Frogmail claims. Empty means `${BETTER_AUTH_URL}/api/support/delivery/<provider>`.                            |
 | `SUPPORT_SENDING_DOMAIN_PROVIDER`  | empty    | `fake` for dev and e2e only. Refused in production.                                                                                                                             |
 
 `server/plugins/validate-env.ts` gains warnings (not crashes) for these cases:
