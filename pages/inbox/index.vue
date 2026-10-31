@@ -134,10 +134,24 @@
           <SupportInboxSidebar v-bind="sidebarProps" v-on="sidebarListeners" />
         </aside>
 
+        <!-- Tablet: views stay one tap away in an icon rail; the rest is in the drawer -->
+        <aside v-else-if="showViewRail" class="w-14 shrink-0 border-r bg-sidebar" data-testid="support-view-rail">
+          <SupportInboxRail
+            :active-inbox-name="activeInbox?.name || 'Inbox'"
+            :active-view="activeView"
+            :unread-counts="unreadCounts"
+            @select-view="selectView"
+            @open-inboxes="showInboxSheet = true"
+          />
+        </aside>
+
         <!-- Conversation list -->
         <section
-          class="w-full min-w-0 shrink-0 @2xl/panes:block @2xl/panes:w-[320px] @2xl/panes:border-r @6xl/panes:w-[360px]"
-          :class="selectedConversationId ? 'hidden' : 'block'"
+          class="w-full min-w-0 shrink-0 @2xl/panes:block @2xl/panes:border-r @6xl/panes:w-[360px]"
+          :class="[
+            selectedConversationId ? 'hidden' : 'block',
+            showViewRail ? '@2xl/panes:w-[280px] @3xl/panes:w-[320px]' : '@2xl/panes:w-[320px]',
+          ]"
           aria-label="Conversations"
         >
           <SupportConversationList
@@ -158,7 +172,7 @@
             :members="inboxMembers"
             :current-user-id="currentUserId"
             :current-user-name="currentUserName"
-            :show-drawer-button="isCompactPanes"
+            :show-drawer-button="isCompactPanes && !showViewRail"
             @select="selectConversation"
             @search="handleConversationSearch"
             @clear-search="clearConversationSearch"
@@ -494,6 +508,11 @@ export default {
     // 2px is the pane card's border, which the container query excludes.
     isCompactPanes() {
       return this.pageWidth !== null && this.pageWidth < 898
+    },
+    // Tablets and unfolded foldables (list + thread fit, the full sidebar does not):
+    // an icon rail keeps the views visible. Mirrors @2xl/panes (42rem).
+    showViewRail() {
+      return this.isCompactPanes && this.pageWidth >= 672
     },
 
     activeInbox() {
