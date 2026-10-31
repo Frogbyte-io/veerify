@@ -293,6 +293,38 @@ describe('processOutboundDelivery', () => {
         })
       })
 
+      it('fails terminally when the Mailgun-compatible HTTP API refuses the sender domain', async () => {
+        const { createSupportSendEmail } = await import('../server/utils/support-mail-transport')
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+        const onSenderRejected = vi.fn().mockResolvedValue(undefined)
+        const fetchImpl = vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ message: 'Domain not found: projectb.com' }), { status: 404 })
+          )
+
+        const result = await processOutboundDelivery(withFrom(), {
+          sendEmail: createSupportSendEmail(vi.fn(), {
+            env: { SUPPORT_SEND_TRANSPORT: 'mailgun', SUPPORT_MAILGUN_SEND_API_KEY: 'send-key' },
+            fetchImpl,
+          }),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected,
+        })
+
+        expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
+        expect(onSenderRejected).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'delivery-1' }),
+          expect.stringContaining('Domain not found: projectb.com')
+        )
+        expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', 'SENDER_DOMAIN_NOT_AUTHORIZED', 1, {
+          terminal: true,
+        })
+      })
+
       it('also recognizes a thrown rejection, and still fails when suspending throws', async () => {
         const onFailed = vi.fn().mockResolvedValue(undefined)
 

@@ -2,15 +2,16 @@
 
 Veerify sends two kinds of mail and receives one:
 
-| Kind            | What                                                                                             | Transport                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Support mail    | Agent replies and auto-replies, sent by the support outbox (`server/utils/outbound-delivery.ts`) | Always the primary transport: `SMTP_*` (runtime `NUXT_NODEMAILER_*`)                |
-| System mail     | Sign-in links, email verification, password reset, invitations, notifications, digests           | `SYSTEM_SMTP_*` when `SYSTEM_SMTP_HOST` is set, otherwise the same primary `SMTP_*` |
-| Inbound support | Customer mail, posted by the provider to `/api/support/inbound/{provider}`                       | Webhook; signature checked with the selected provider's credentials                 |
+| Kind            | What                                                                                             | Transport                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Support mail    | Agent replies and auto-replies, sent by the support outbox (`server/utils/outbound-delivery.ts`) | The primary transport `SMTP_*` (runtime `NUXT_NODEMAILER_*`), or the Mailgun-compatible HTTP API with `SUPPORT_SEND_TRANSPORT=mailgun` |
+| System mail     | Sign-in links, email verification, password reset, invitations, notifications, digests           | `SYSTEM_SMTP_*` when `SYSTEM_SMTP_HOST` is set, otherwise the same primary `SMTP_*`                                                    |
+| Inbound support | Customer mail, posted by the provider to `/api/support/inbound/{provider}`                       | Webhook; signature checked with the selected provider's credentials                                                                    |
 
 The transport split lives in `lib/mail-transport.ts`. With `SYSTEM_SMTP_HOST` unset (the default),
 every message uses the primary transport exactly as before, so the split only takes effect once an
-operator opts in.
+operator opts in. `SUPPORT_SEND_TRANSPORT` (`server/utils/support-mail-transport.ts`) is read only by the
+support outbox; system mail never uses it.
 
 ## Dedicated system transport
 
@@ -55,14 +56,57 @@ prebuilt image switches transports with an environment change and a restart.
 
 ## Using Frogmail
 
-Frogmail, Frogbyte's email service, is Mailgun-compatible: an SMTP submission
-gateway for outbound mail, Mailgun-format signed inbound callbacks and event webhooks, and
-`GET /v4/domains`. Veerify talks to it through the existing `SMTP_*` and `mailgun` settings; no
-Frogmail-specific code path exists. The staged cutover (outbound first, then inbound, each with its
-own observation window) is described in the Frogmail repository's
+Frogmail, Frogbyte's email service, is Mailgun-compatible: the Mailgun sending API
+(`POST /v3/{domain}/messages`), an SMTP submission gateway, Mailgun-format signed inbound callbacks
+and event webhooks, and `GET /v4/domains`. Veerify talks to it through the existing `mailgun` settings
+(and optionally `SMTP_*`); no Frogmail-specific code path exists. The staged cutover (outbound first,
+then inbound, each with its own observation window) is described in the Frogmail repository's
 `docs/acceptance/production-cutover.md`.
 
+### Sending support replies over the HTTP API (recommended)
+
+With `SUPPORT_SEND_TRANSPORT=mailgun` the support outbox posts every reply to
+`{SUPPORT_MAILGUN_API_BASE_URL}/v3/{From domain}/messages` instead of using SMTP. Customer domains
+are verified in Frogmail, so replies from `support@<customer domain>` go out through Frogmail while
+`SMTP_*` (e.g. Resend) keeps carrying system mail, which only uses Veerify's own domain. No SMTP
+gateway is needed.
+
+| Variable                       | Value                                                                                                                                                             |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPPORT_SEND_TRANSPORT`       | `mailgun`. Empty or `smtp` (the default) keeps support mail on `SMTP_*`. Any other value fails deliveries with a configuration error.                             |
+| `SUPPORT_MAILGUN_API_BASE_URL` | The Frogmail origin, e.g. `https://frogmail.frogbyte.io` (no path). Empty means `https://api.mailgun.net`.                                                        |
+| `SUPPORT_MAILGUN_SEND_API_KEY` | A Frogmail API key of the Veerify project with only `emails:send`. Empty falls back to `SUPPORT_MAILGUN_API_KEY` (which then needs `emails:send`) with a warning. |
+
+Behaviour:
+
+- **Mapping.** `from`, `to` and `cc` (one field per address), `subject`, `text`, `html`,
+  `h:Reply-To`, and every outbox header as `h:<Name>`: `In-Reply-To`, `References` (trimmed to the
+  root plus the newest ids that fit Frogmail's 998-character header limit),
+  `X-Veerify-Idempotency-Key` and `X-Mailgun-Variables`. Frogmail turns `h:X-Mailgun-Variables`
+  into the message's user variables, so delivery webhooks carry `user-variables.veerify-delivery-id`
+  exactly as for SMTP sends. Attachments are `attachment` files; an attachment with a Content-ID is
+  an `inline` file named by its cid, matching the `cid:` reference in the HTML.
+- **Message-ID.** Frogmail refuses `h:Message-ID` and assigns its own, returned as `id`. Veerify
+  stores it (without brackets) as the delivery's `provider_message_id` and as the message's
+  `provider_channel_message_id`, so delivery events correlate and customer replies thread. Veerify's
+  generated id stays in `channel_message_id`; with SES behind Frogmail, recipients never saw that id
+  over SMTP either.
+- **Retries.** The outbox's idempotency key is sent as the `Idempotency-Key` request header, so a
+  retry after a timeout returns the original id instead of sending twice.
+- **Failures.** `404 Domain not found`, `400 Domain … is not verified for sending yet` and
+  `400 The sender domain …` are sender rejections: the delivery fails terminally with
+  `SENDER_DOMAIN_NOT_AUTHORIZED` and the project's domain claim is suspended, as for an SMTP 553.
+  Everything else (other `4xx`, `401` with the `X-Frogmail-Error` reason, `429`, `5xx`, network
+  errors and timeouts) is a retryable failure. A missing key is a configuration error that fails
+  (and retries) the delivery rather than falling back to SMTP. The API key is never logged.
+
+Roll back by setting `SUPPORT_SEND_TRANSPORT=smtp` (or clearing it).
+
 ### Veerify environment
+
+The variables below cover inbound, delivery events, domain checks and the SMTP gateway path. With
+the HTTP API above, the `SMTP_*` rows are not needed for support mail and keep pointing at the system
+mail provider.
 
 | Variable                       | Value                                                                                                                                                                                |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

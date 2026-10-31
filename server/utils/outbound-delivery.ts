@@ -21,6 +21,7 @@ import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
 import { isSenderAllowedForProject } from '~/server/utils/sender-enforcement'
 import { resolveEffectiveSenderPolicy } from '~/server/utils/sending-domains'
+import { createSupportSendEmail } from '~/server/utils/support-mail-transport'
 
 const logger = createLogger('outbound-delivery')
 
@@ -569,7 +570,11 @@ export type SendEmailFn = (options: SendEmailOptions) => Promise<SendEmailResult
 export type GetObjectFn = (storageKey: string) => Promise<Buffer>
 
 export interface ProcessOutboundDeliveryDeps {
-  /** Defaults to the real `sendEmail` - injectable so tests never touch `useNodeMailer()`. */
+  /**
+   * Defaults to the `SUPPORT_SEND_TRANSPORT` choice: the real `sendEmail` over
+   * SMTP, or the Mailgun-compatible HTTP API - injectable so tests never touch
+   * `useNodeMailer()` or the network.
+   */
   sendEmail?: SendEmailFn
   /** Defaults to the real storage provider - injectable so tests never touch disk/S3. */
   getObject?: GetObjectFn
@@ -670,8 +675,9 @@ export async function processOutboundDelivery(
   deps: ProcessOutboundDeliveryDeps = {}
 ): Promise<{ outcome: 'sent' } | { outcome: 'failed'; error: string }> {
   // This worker only ever runs server-side (Nitro scheduled task or API
-  // route); `sendEmail` throws on the client.
-  const send = deps.sendEmail ?? (defaultSendEmail as SendEmailFn)
+  // route); `sendEmail` throws on the client. SUPPORT_SEND_TRANSPORT picks
+  // SMTP (the default) or the Mailgun-compatible HTTP API, per send.
+  const send = deps.sendEmail ?? createSupportSendEmail(defaultSendEmail as SendEmailFn)
   const getObject = deps.getObject ?? ((key: string) => getStorageProvider().getObject(key))
   const getAttachmentSizes =
     deps.getAttachmentSizes ??
@@ -732,8 +738,8 @@ export async function processOutboundDelivery(
     }
 
     const result = await send({
-      // Support mail always uses the primary transport (`SMTP_*`), never the
-      // optional dedicated system transport.
+      // Over SMTP, support mail uses the primary transport (`SMTP_*`), never
+      // the optional dedicated system transport.
       channel: 'support',
       to: claim.payload.to,
       cc: claim.payload.cc,
