@@ -108,6 +108,23 @@ export interface ProviderDomainUsageTotals {
   blocked: number
 }
 
+/** Outcome of `ensureDeliveryWebhooks`, per webhook event. */
+export interface DeliveryWebhooksResult {
+  /** Created with our URL (the event had none). */
+  created: string[]
+  /** Our URL added next to the event's existing URLs. */
+  updated: string[]
+  /** Already pointing at our URL. */
+  unchanged: string[]
+  /** Not changed: the event already has the provider's maximum of URLs, none of them ours. */
+  full: string[]
+  /**
+   * The provider issued the project's webhook signing key while saving (Frogmail
+   * returns it once as `mailgun_signing_key`). The key itself is never returned.
+   */
+  signingKeyIssued: boolean
+}
+
 export interface SendingDomainProvider {
   readonly name: string
   readonly accountKey: string
@@ -152,4 +169,9 @@ export interface SendingDomainProvider {
    * disabling receiving, so a workspace cannot reset its count.
    */
   getDomainUsage?(input: { domains: string[]; from: string; to: string }): Promise<ProviderDomainUsageTotals>
+  /**
+   * Make each of `events` deliver to `url` (Mailgun `/v3/domains/{d}/webhooks`), keeping
+   * any other URLs already set. Idempotent: an event that already has `url` is not touched.
+   */
+  ensureDeliveryWebhooks?(domain: string, url: string, events: readonly string[]): Promise<DeliveryWebhooksResult>
 }

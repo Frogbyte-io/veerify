@@ -2,6 +2,7 @@ import type { FetchImpl } from '~/server/services/support-channels/types'
 import type { SendingDomainDnsRecord } from '~/lib/support-sending-domains'
 import {
   SendingDomainProviderError,
+  type DeliveryWebhooksResult,
   type ForwardDestinationStatus,
   type InboundRouteInput,
   type InboundRouteResult,
@@ -45,6 +46,10 @@ interface MailgunResponseBody {
   route?: { id?: string }
   id?: string
   frogmail_forward_destinations?: FrogmailForwardDestination[]
+  /** `GET /v3/domains/{d}/webhooks`: `{event: {urls}}` (an empty object when none). */
+  webhooks?: Record<string, { urls?: unknown } | undefined>
+  /** Frogmail returns the project's new signing key once. Never logged or stored. */
+  mailgun_signing_key?: unknown
 }
 
 /** A Frogmail forward destination, as route responses and `/api/v1/forward-destinations` return it. */
@@ -72,6 +77,9 @@ interface FrogmailNativeBody {
 
 /** Frogmail's limit on email forwards per route. */
 export const MAX_ROUTE_FORWARDS = 5
+
+/** Frogmail's (and Mailgun's) limit on URLs per webhook event. */
+export const MAX_WEBHOOK_URLS = 3
 
 const RECEIVING_STATUSES: ReceivingStatus[] = ['disabled', 'pending_verification', 'pending_mx', 'active']
 const DESTINATION_STATUSES: ForwardDestinationStatus[] = ['pending', 'verified', 'revoked', 'suspended']
@@ -462,6 +470,64 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
       forwardSkipped: count(body.totals?.forward_skipped),
       blocked: count(body.totals?.blocked),
     }
+  }
+
+  /**
+   * One `GET`, then per event: nothing when it already has `url`, `POST` when it has
+   * no URL (Frogmail refuses `POST` for an event that has URLs), `PUT` with the
+   * existing URLs plus ours otherwise. An event at `MAX_WEBHOOK_URLS` is reported
+   * as `full` and left alone. On Frogmail the webhooks belong to the project, so
+   * every domain of it reads the same set.
+   */
+  async ensureDeliveryWebhooks(
+    domain: string,
+    url: string,
+    events: readonly string[]
+  ): Promise<DeliveryWebhooksResult> {
+    const name = normalizeDomainName(domain)
+    const target = url.trim()
+    const base = `/v3/domains/${encodeURIComponent(name)}/webhooks`
+    const result: DeliveryWebhooksResult = {
+      created: [],
+      updated: [],
+      unchanged: [],
+      full: [],
+      signingKeyIssued: false,
+    }
+
+    const listed = await this.request('GET', base)
+    const webhooks = listed.webhooks && typeof listed.webhooks === 'object' ? listed.webhooks : {}
+    for (const event of events) {
+      const raw = webhooks[event]?.urls
+      const urls = Array.isArray(raw) ? raw.map((item) => String(item).trim()).filter(Boolean) : []
+      if (urls.includes(target)) {
+        result.unchanged.push(event)
+        continue
+      }
+      if (urls.length >= MAX_WEBHOOK_URLS) {
+        result.full.push(event)
+        continue
+      }
+      let body: MailgunResponseBody
+      if (urls.length === 0) {
+        body = await this.request('POST', base, {
+          form: new URLSearchParams([
+            ['id', event],
+            ['url', target],
+          ]),
+        })
+        result.created.push(event)
+      } else {
+        const form = new URLSearchParams()
+        for (const existing of [...urls, target]) form.append('url', existing)
+        body = await this.request('PUT', `${base}/${encodeURIComponent(event)}`, { form })
+        result.updated.push(event)
+      }
+      if (body.mailgun_signing_key !== undefined && body.mailgun_signing_key !== null) {
+        result.signingKeyIssued = true
+      }
+    }
+    return result
   }
 
   private destinationFrom(body: FrogmailNativeBody): ProviderForwardDestination {

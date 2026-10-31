@@ -757,6 +757,7 @@ describe('runSendingDomainPoll', () => {
       }),
       detach: vi.fn(async () => 0),
       reconcileRoutes: vi.fn(async () => ({ created: 0, failed: 0, misconfigured: false })),
+      syncWebhooks: vi.fn(async (): Promise<unknown> => ({ status: 'unsupported' })),
       deleteRoutes: vi.fn(async () => undefined),
       checkOwnership: vi.fn(async () => 'valid' as const),
       checkDmarcRecord: vi.fn(async () => null),
@@ -1070,6 +1071,59 @@ describe('runSendingDomainPoll', () => {
         }
       )
       expect(await runSendingDomainPoll(h.deps)).toMatchObject({ processed: 1, failed: 0 })
+    })
+  })
+
+  describe('delivery webhooks', () => {
+    it('ensures them for a claim that verifies and for an already verified claim', async () => {
+      const verifying = harness([row()], {}, { syncWebhooks: vi.fn(async () => ({ status: 'ensured' })) })
+      await runSendingDomainPoll(verifying.deps)
+      expect(verifying.deps.syncWebhooks).toHaveBeenCalledTimes(1)
+      expect(verifying.deps.syncWebhooks).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sd-1' }),
+        verifying.provider
+      )
+
+      const verified = harness(
+        [row({ status: 'verified', verifiedAt: NOW, expiresAt: null })],
+        {},
+        {
+          syncWebhooks: vi.fn(async () => ({ status: 'unchanged' })),
+        }
+      )
+      await runSendingDomainPoll(verified.deps)
+      expect(verified.deps.syncWebhooks).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips claims that are not verified', async () => {
+      const h = harness(
+        [row()],
+        { get: vi.fn(async () => ({ ...activeResult, state: 'unverified' })) },
+        {
+          syncWebhooks: vi.fn(async () => ({ status: 'ensured' })),
+        }
+      )
+      await runSendingDomainPoll(h.deps)
+      expect(h.deps.syncWebhooks).not.toHaveBeenCalled()
+    })
+
+    it('never fails the row or the pass when the sync throws', async () => {
+      const h = harness(
+        [row({ status: 'verified', verifiedAt: NOW, expiresAt: null }), row({ id: 'b', domain: 'b.com' })],
+        {},
+        {
+          syncWebhooks: vi.fn(async () => {
+            throw new Error('boom')
+          }),
+        }
+      )
+      expect(await runSendingDomainPoll(h.deps)).toMatchObject({ processed: 2, failed: 0, aborted: null })
+      expect(h.deps.syncWebhooks).toHaveBeenCalledTimes(2)
+    })
+
+    it('clears the marker when a claim is registered again', async () => {
+      const outcome = await registerSendingDomainClaim(row({ status: 'provisioning' }), makeProvider(), { now: NOW })
+      expect(outcome).toMatchObject({ kind: 'ok', patch: { deliveryWebhooksKey: null } })
     })
   })
 

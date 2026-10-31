@@ -108,18 +108,19 @@ The variables below cover inbound, delivery events, domain checks and the SMTP g
 the HTTP API above, the `SMTP_*` rows are not needed for support mail and keep pointing at the system
 mail provider.
 
-| Variable                       | Value                                                                                                                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SMTP_HOST`                    | The Frogmail SMTP submission gateway host (TLS, on a private network or tailnet)                                                                                                     |
-| `SMTP_PORT`, `SMTP_SECURE`     | `587` + `false` (STARTTLS), or `465` + `true`                                                                                                                                        |
-| `SMTP_USER`                    | `api`                                                                                                                                                                                |
-| `SMTP_PASS`                    | A Frogmail API key of the Veerify project with only the `emails:send` scope                                                                                                          |
-| `MAIL_FROM`                    | Unchanged; its domain must be a verified Frogmail domain of the project (or a subdomain of one)                                                                                      |
-| `SUPPORT_CHANNEL_PROVIDER`     | `mailgun` (inbound stage)                                                                                                                                                            |
-| `SUPPORT_MAILGUN_SIGNING_KEY`  | The project's Mailgun signing key, returned once by the first `POST /v3/routes` or `POST /v3/domains/{domain}/webhooks` (or a key rotation)                                          |
-| `SUPPORT_MAILGUN_API_BASE_URL` | The Frogmail origin, e.g. `https://mail.example.com` (no path). Empty means `https://api.mailgun.net`.                                                                               |
-| `SUPPORT_MAILGUN_API_KEY`      | A Frogmail API key with `domains:read` (From-address check), plus `domains:manage` for customer sending domains and `routes:manage` for direct receiving. Never the `SMTP_PASS` key. |
-| `SUPPORT_MAILGUN_ACCOUNT_KEY`  | The sending domain, e.g. `veerify.io`                                                                                                                                                |
+| Variable                       | Value                                                                                                                                                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SMTP_HOST`                    | The Frogmail SMTP submission gateway host (TLS, on a private network or tailnet)                                                                                                                           |
+| `SMTP_PORT`, `SMTP_SECURE`     | `587` + `false` (STARTTLS), or `465` + `true`                                                                                                                                                              |
+| `SMTP_USER`                    | `api`                                                                                                                                                                                                      |
+| `SMTP_PASS`                    | A Frogmail API key of the Veerify project with only the `emails:send` scope                                                                                                                                |
+| `MAIL_FROM`                    | Unchanged; its domain must be a verified Frogmail domain of the project (or a subdomain of one)                                                                                                            |
+| `SUPPORT_CHANNEL_PROVIDER`     | `mailgun` (inbound stage)                                                                                                                                                                                  |
+| `SUPPORT_MAILGUN_SIGNING_KEY`  | The project's Mailgun signing key, returned once by the first `POST /v3/routes` or `POST /v3/domains/{domain}/webhooks` (or a key rotation)                                                                |
+| `SUPPORT_MAILGUN_API_BASE_URL` | The Frogmail origin, e.g. `https://mail.example.com` (no path). Empty means `https://api.mailgun.net`.                                                                                                     |
+| `SUPPORT_MAILGUN_API_KEY`      | A Frogmail API key with `domains:read` (From-address check), plus `domains:manage` and `webhooks:manage` for customer sending domains and `routes:manage` for direct receiving. Never the `SMTP_PASS` key. |
+| `SUPPORT_DELIVERY_WEBHOOK_URL` | Optional. Where the delivery webhooks Veerify creates point. Empty means `${BETTER_AUTH_URL}/api/support/delivery/mailgun`.                                                                                |
+| `SUPPORT_MAILGUN_ACCOUNT_KEY`  | The sending domain, e.g. `veerify.io`                                                                                                                                                                      |
 
 For a Coolify image, the primary transport is configured at runtime through
 `NUXT_NODEMAILER_HOST`, `_PORT`, `_SECURE`, `_FROM`, `_AUTH_USER` and `_AUTH_PASS` (see the
@@ -147,10 +148,10 @@ blocks sign-in, verification or password recovery.
 
 Create these with the Veerify project's Frogmail key (Mailgun API shapes):
 
-| Purpose                    | Frogmail call                                                                                                                                                         |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Delivery and bounce status | `POST /v3/domains/<domain>/webhooks` for `delivered`, `permanent_fail` and `temporary_fail` → `https://<veerify-host>/api/support/delivery/mailgun`                   |
-| Inbound support mail       | `POST /v3/routes` with `match_recipient("<support address>")`, `forward("https://<veerify-host>/api/support/inbound/mailgun")`, `stop()`; one route per inbox address |
+| Purpose                    | Frogmail call                                                                                                                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Delivery and bounce status | Automatic with customer sending domains (see below). Without them, once by hand: `POST /v3/domains/<domain>/webhooks` for `delivered`, `permanent_fail`, `temporary_fail` and `complained` → `https://<veerify-host>/api/support/delivery/mailgun` |
+| Inbound support mail       | `POST /v3/routes` with `match_recipient("<support address>")`, `forward("https://<veerify-host>/api/support/inbound/mailgun")`, `stop()`; one route per inbox address                                                                              |
 
 Delivery events correlate through the `X-Mailgun-Variables` header the outbox adds to every support
 reply, so `SUPPORT_MAILGUN_SIGNING_KEY` is needed from the outbound stage onwards even while inbound
@@ -172,7 +173,18 @@ Designs: `docs/plans/2026-10-22-custom-sending-domains/design.md` (sending) and
    a domain, so every claim needs its own TXT proof.
 3. A poller (every 5 minutes, `support:sending-domains-poll`) checks the pending claims. The domain becomes
    Verified once the TXT resolves and Frogmail reports it `active`. Admins can click Verify now.
-4. Only then may inbox From addresses on that domain send. Pending claims expire after 7 days. Domain and address
+4. Once a claim is verified, the poll (or Verify now) makes sure the domain's delivery webhooks exist:
+   `delivered`, `permanent_fail`, `temporary_fail` and `complained`, each pointing at
+   `SUPPORT_DELIVERY_WEBHOOK_URL` (empty: `${BETTER_AUTH_URL}/api/support/delivery/mailgun`). It reads
+   `GET /v3/domains/<domain>/webhooks`, creates missing events with `POST`, and adds Veerify's URL with `PUT` to an
+   event that already has other URLs (never removing them; an event already at Frogmail's limit of 3 URLs is logged
+   and left alone). The claim then stores a marker (`delivery_webhooks_key`, a hash of provider, URL and events), so
+   later checks make no webhook call until the URL changes or the domain is registered again. A failure (for example
+   a key without `webhooks:manage`) is logged as `Could not ensure delivery webhooks` and retried on the next check;
+   it never affects verification. On Frogmail the webhooks belong to the project, so every domain reads the same set.
+   If Frogmail ever answers with a new `mailgun_signing_key` (only when the project had none), Veerify drops it and
+   logs a warning: rotate the key in Frogmail and update `SUPPORT_MAILGUN_SIGNING_KEY`.
+5. Only then may inbox From addresses on that domain send. Pending claims expire after 7 days. Domain and address
    limits count per workspace (`lib/mail-plans.ts`): `standard` 3 domains and 20 addresses, `owner` 69 and 420,
    at most 3 domains pending. Set a workspace's tier with `yarn mail:set-tier <workspace-slug> standard|owner`.
 
@@ -184,8 +196,8 @@ from this domain"; publishing DNS does not fix that, so use a subdomain.
 
 ### The separate-key rule
 
-`SUPPORT_MAILGUN_API_KEY` needs `domains:read` and `domains:manage`, plus `routes:manage` if direct receiving
-is used. It must be a different Frogmail key from `SMTP_PASS`, which keeps only `emails:send`. Frogmail limits
+`SUPPORT_MAILGUN_API_KEY` needs `domains:read`, `domains:manage` and `webhooks:manage`, plus `routes:manage` if
+direct receiving is used. It must be a different Frogmail key from `SMTP_PASS`, which keeps only `emails:send`. Frogmail limits
 each key to 120 requests per minute, and a separate key keeps domain polling from competing with sending.
 
 ### Platform forwarding domain
@@ -260,8 +272,9 @@ Before turning it on:
    `https://<veerify-host>/api/support/frogmail/events`. Put its signing secret in `FROGMAIL_WEBHOOK_SECRET`
    (comma-separate two secrets while rotating). Unset, the endpoint answers 404; the 5-minute domain poll still
    reconciles destination status, only later.
-4. Add `complained` to the delivery webhook subscriptions (`/api/support/delivery/mailgun`).
-5. Set `MAIL_FORWARDING_ENABLED=true` and redeploy.
+4. Set `MAIL_FORWARDING_ENABLED=true` and redeploy.
+
+The delivery webhooks, including `complained`, are ensured by the domain poll (see [Flow](#flow)); no manual step.
 
 What Veerify then does:
 
