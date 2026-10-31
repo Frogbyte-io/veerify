@@ -14,7 +14,19 @@
           <Icon name="lucide:panel-left" class="h-4 w-4" />
         </Button>
         <h2 class="min-w-0 truncate text-[15px] font-semibold text-foreground" data-testid="support-list-title">
-          {{ title }}
+          <!-- On phones the title opens the views drawer too (Resolved, Snoozed, …) -->
+          <button
+            v-if="showDrawerButton"
+            type="button"
+            data-testid="support-list-title-views"
+            class="-mx-1 inline-flex max-w-full items-center gap-1 rounded-md px-1 hover:bg-accent"
+            aria-label="Switch view"
+            @click="$emit('open-inboxes')"
+          >
+            <span class="truncate">{{ title }}</span>
+            <Icon name="lucide:chevron-down" class="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+          <template v-else>{{ title }}</template>
         </h2>
         <span v-if="!isLoading && conversations.length" class="text-sm tabular-nums text-muted-foreground">
           {{ conversations.length }}{{ hasMore ? '+' : '' }}

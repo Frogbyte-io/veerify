@@ -68,6 +68,10 @@ test.describe.serial('support inbox responsive layout', () => {
     await shot(page, 'phone-list')
 
     await expect(page.getByTestId('support-view-unassigned')).toBeHidden()
+    await expect(page.getByTestId('support-view-rail')).toBeHidden()
+    await page.getByTestId('support-list-title-views').click()
+    await expect(page.getByTestId('support-inbox-sheet').getByTestId('support-view-resolved')).toBeVisible()
+    await page.keyboard.press('Escape')
     await page.getByTestId('support-open-inboxes').click()
     const sheet = page.getByTestId('support-inbox-sheet')
     await expect(sheet.getByTestId('support-view-unassigned')).toBeVisible()
@@ -96,6 +100,18 @@ test.describe.serial('support inbox responsive layout', () => {
     await expect(page.getByTestId('support-thread-back')).toBeHidden()
     await expect(page.getByTestId('support-open-inboxes')).toBeVisible()
     await shot(page, 'tablet-thread')
+  })
+
+  test('unfolded foldable keeps the views in a rail beside list and thread', async ({ browser }) => {
+    const page = await openInbox(browser, { width: 720, height: 800 })
+    await expect(page.getByTestId('support-view-rail')).toBeVisible()
+    await page.getByTestId('support-rail-view-resolved').click()
+    await expect(page.getByTestId('support-list-title')).toHaveText('Resolved')
+    await page.getByTestId('support-rail-view-all').click()
+    await page.getByTestId(`support-conversation-${conversationId}`).click()
+    await expect(page.getByTestId('support-conversation-search')).toBeVisible()
+    await expect(page.getByTestId('support-thread-back')).toBeHidden()
+    await shot(page, 'foldable-thread')
   })
 
   test('desktop keeps the inbox sidebar with a settings link', async ({ browser }) => {

@@ -199,6 +199,7 @@
 
 <script>
 import { supportTagColor } from '~/lib/support-tags'
+import { SUPPORT_FOLDER_VIEW_ITEMS, SUPPORT_WORKING_VIEW_ITEMS } from '~/lib/support-views'
 
 export default {
   name: 'SupportInboxSidebar',
@@ -246,29 +247,11 @@ export default {
     },
 
     fixedViews() {
-      return [
-        { value: 'inbox', label: 'Inbox', icon: 'lucide:inbox', badgeKey: 'inbox' },
-        { value: 'assigned-to-me', label: 'Assigned to me', icon: 'lucide:user-round', badgeKey: 'assignedToMe' },
-        { value: 'unassigned', label: 'Unassigned', icon: 'lucide:user-round-x', badgeKey: 'unassigned' },
-        {
-          value: 'breaching-soon',
-          label: 'Breaching soon',
-          icon: 'lucide:alarm-clock',
-          badgeKey: 'breachingSoon',
-          urgent: true,
-        },
-        { value: 'snoozed', label: 'Snoozed', icon: 'lucide:clock' },
-        { value: 'resolved', label: 'Resolved', icon: 'lucide:check-circle-2' },
-      ]
+      return SUPPORT_WORKING_VIEW_ITEMS
     },
 
     folderViews() {
-      return [
-        { value: 'all', label: 'All conversations', icon: 'lucide:layers-3' },
-        { value: 'archived', label: 'Archived', icon: 'lucide:archive' },
-        { value: 'spam', label: 'Spam', icon: 'lucide:shield-alert' },
-        { value: 'trash', label: 'Trash', icon: 'lucide:trash-2' },
-      ]
+      return SUPPORT_FOLDER_VIEW_ITEMS
     },
   },
 
