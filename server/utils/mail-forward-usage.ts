@@ -4,9 +4,10 @@
  * Per workspace with receiving domains: sum Frogmail's `forwarded` for the calendar month (UTC), compare with the
  * tier's `forwardsPerMonth`. At or over the limit every domain is paused (`setForwardingPaused(true)`,
  * `forwarding_paused_at`). Below it (new month, or a tier change) only domains Veerify paused are resumed.
+ * The admins of each project whose domains changed get one email per change (paused, resumed).
  * A failure for one domain or workspace is logged and does not stop the pass.
  */
-import { and, eq, isNotNull, ne } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import { projectMailDomain } from '~/server/database/schema/support'
@@ -15,6 +16,7 @@ import { getSendingDomainProvider, type SendingDomainProvider } from '~/server/s
 import { fetchForwardCount, listReceivingDomains, setCachedForwardCount } from '~/server/utils/mail-forward-count'
 import { getMailTier } from '~/server/utils/mail-limits'
 import { createLogger } from '~/server/utils/logger'
+import { notifyForwardingChange } from '~/server/utils/mail-setup-notifications'
 
 const logger = createLogger('mail-forward-usage')
 
@@ -25,10 +27,16 @@ export interface MailForwardUsageResult {
   errors: number
 }
 
+export interface EnforceForwardLimitDeps {
+  /** Emails the admins of the projects whose domains just changed. */
+  notify?: typeof notifyForwardingChange
+}
+
 export async function enforceForwardLimit(
   provider: SendingDomainProvider,
   organizationId: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  deps: EnforceForwardLimitDeps = {}
 ): Promise<{ paused: number; resumed: number; errors: number }> {
   const outcome = { paused: 0, resumed: 0, errors: 0 }
   const domains = await listReceivingDomains(organizationId)
@@ -43,23 +51,31 @@ export async function enforceForwardLimit(
 
   const limit = mailLimitsFor(await getMailTier(organizationId)).forwardsPerMonth
   const overLimit = forwarded >= limit
+  // Projects whose domains this pass actually changed. The updates are guarded on the
+  // previous state, so a concurrent pass cannot notify the same change twice.
+  const pausedProjects: string[] = []
+  const resumedProjects: string[] = []
 
   for (const domain of domains) {
     try {
       if (overLimit && !domain.forwardingPausedAt) {
         await provider.setForwardingPaused!(domain.domain, true)
-        await db
+        const changed = await db
           .update(projectMailDomain)
           .set({ forwardingPausedAt: now, updatedAt: now })
-          .where(eq(projectMailDomain.id, domain.id))
+          .where(and(eq(projectMailDomain.id, domain.id), isNull(projectMailDomain.forwardingPausedAt)))
+          .returning({ projectId: projectMailDomain.projectId })
         outcome.paused += 1
+        pausedProjects.push(...changed.map((row) => row.projectId))
       } else if (!overLimit && domain.forwardingPausedAt) {
         await provider.setForwardingPaused!(domain.domain, false)
-        await db
+        const changed = await db
           .update(projectMailDomain)
           .set({ forwardingPausedAt: null, updatedAt: now })
-          .where(eq(projectMailDomain.id, domain.id))
+          .where(and(eq(projectMailDomain.id, domain.id), isNotNull(projectMailDomain.forwardingPausedAt)))
+          .returning({ projectId: projectMailDomain.projectId })
         outcome.resumed += 1
+        resumedProjects.push(...changed.map((row) => row.projectId))
       }
     } catch (error) {
       outcome.errors += 1
@@ -70,6 +86,10 @@ export async function enforceForwardLimit(
       })
     }
   }
+
+  const notify = deps.notify ?? notifyForwardingChange
+  if (pausedProjects.length > 0) await notify('paused', pausedProjects, { forwardsPerMonth: limit })
+  if (resumedProjects.length > 0) await notify('resumed', resumedProjects, { forwardsPerMonth: limit })
   return outcome
 }
 

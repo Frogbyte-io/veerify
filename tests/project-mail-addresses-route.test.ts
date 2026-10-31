@@ -57,6 +57,31 @@ describe('GET /api/projects/[slug]/mail/addresses (E3 fields)', () => {
     expect(Array.isArray(res.data.domains)).toBe(true)
     expect(typeof res.data.forwarding).toBe('boolean')
   })
+
+  it('returns lastReceivedAt and existingMxHosts per domain', async () => {
+    state.rows = [
+      row('hello@b.com', {
+        domain: 'b.com',
+        receivingStatus: 'active',
+        forwardingPausedAt: null,
+        lastReceivedAt: new Date('2026-10-31T09:00:00Z'),
+        existingMxHosts: ['aspmx.l.google.com'],
+      }),
+    ]
+    const res = await call({})
+    expect(res.data.domains[0]).toMatchObject({
+      domain: 'b.com',
+      receivingStatus: 'active',
+      lastReceivedAt: '2026-10-31T09:00:00.000Z',
+      existingMxHosts: ['aspmx.l.google.com'],
+    })
+  })
+
+  it('reports null for a domain that never received mail and was not looked up', async () => {
+    state.rows = [row('hello@b.com', { domain: 'b.com', receivingStatus: 'pending_mx', forwardingPausedAt: null })]
+    const res = await call({})
+    expect(res.data.domains[0]).toMatchObject({ lastReceivedAt: null, existingMxHosts: null })
+  })
 })
 
 describe('GET /api/projects/[slug]/mail/addresses', () => {

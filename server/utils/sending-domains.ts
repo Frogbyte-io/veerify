@@ -361,8 +361,17 @@ export function toSendingDomainView(
         ? (row.providerOwnership as SendingDomainProviderOwnership)
         : null,
     providerMismatch: row.provider !== current.name || row.providerAccountKey !== current.accountKey,
+    receivingStatus: RECEIVING_STATUSES.includes(row.receivingStatus as ReceivingStatusValue)
+      ? (row.receivingStatus as ReceivingStatusValue)
+      : null,
+    lastReceivedAt: iso(row.lastReceivedAt ?? null),
+    existingMxHosts: Array.isArray(row.existingMxHosts) ? row.existingMxHosts : null,
+    existingMxCheckedAt: iso(row.existingMxCheckedAt ?? null),
   }
 }
+
+type ReceivingStatusValue = NonNullable<SendingDomainView['receivingStatus']>
+const RECEIVING_STATUSES: ReceivingStatusValue[] = ['pending_verification', 'pending_mx', 'active', 'disabled']
 
 // ---------------------------------------------------------------------------
 // Sender authorization
@@ -522,7 +531,7 @@ export async function assertSenderAddressAllowedForInbox(projectId: string, addr
       'Unprocessable Entity',
       'SENDER_DOMAIN_NOT_OWNED',
       domain
-        ? `${domain} is not a sending domain of this project. Add and verify it in Support settings first.`
+        ? `${domain} is not a sending domain of this project. Add and verify it in Project settings → Email first.`
         : 'Enter a valid From address.'
     )
   if (!domain) throw denied()
@@ -620,7 +629,7 @@ export async function assertReceivingAddressAllowed(projectId: string, address: 
         422,
         'Unprocessable Entity',
         'ADDRESS_DOMAIN_UNVERIFIED',
-        'With this mail provider, a receiving address must be on one of your verified sending domains. Verify the domain in Support settings, or forward to the inbox platform address instead.'
+        'With this mail provider, a receiving address must be on one of your verified domains. Verify the domain in Project settings → Email, or forward to the inbox platform address instead.'
       )
     }
   }

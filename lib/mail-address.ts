@@ -110,6 +110,10 @@ export interface ProjectMailDomainItem {
   /** Null until receiving is enabled. */
   receivingStatus: 'pending_verification' | 'pending_mx' | 'active' | 'disabled' | null
   forwardingPaused: boolean
+  /** When the domain last received a message (Frogmail `last_received_at`), or null. */
+  lastReceivedAt: string | null
+  /** MX hosts other than the SES inbound host the domain had at the last lookup; null when not looked up. */
+  existingMxHosts: string[] | null
 }
 
 /** Response of `GET /api/projects/{slug}/mail/addresses`. */

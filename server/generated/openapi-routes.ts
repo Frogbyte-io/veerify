@@ -8977,7 +8977,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "List the project's email addresses",
-      "description": "Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the project's domains with their receiving status, whether the deployment forwards mail (`forwarding`) and the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the project's domains with their receiving status, when each last received a message (`lastReceivedAt`) and the mail hosts it already uses (`existingMxHosts`, other than the SES inbound host), whether the deployment forwards mail (`forwarding`) and the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "listProjectMailAddresses",
       "security": [
         {
@@ -9000,7 +9000,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox, inboxFallback (forward-only address still delivering to the inbox because no forward is confirmed yet) and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }"
+          "description": "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox, inboxFallback (forward-only address still delivering to the inbox because no forward is confirmed yet) and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused, lastReceivedAt, existingMxHosts }], forwarding: boolean, usage: MailUsage }"
         },
         "401": {
           "description": "Not authenticated"
@@ -13300,7 +13300,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "List the project's customer sending domains",
-      "description": "Returns the project's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list. `limits.maxDomains` and `limits.maxPending` are the workspace mail limits (shared by every project of the workspace), and `usage` is the workspace's mail tier, limits and current usage (domains, pending domains, custom addresses; `forwardsThisMonth` is null until forwarding ships).\n",
+      "description": "Returns the project's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list. `limits.maxDomains` and `limits.maxPending` are the workspace mail limits (shared by every project of the workspace), and `usage` is the workspace's mail tier, limits and current usage (domains, pending domains, custom addresses; `forwardsThisMonth` is null until forwarding ships). Each domain also carries `receivingStatus`, `lastReceivedAt` (when it last received a message) and `existingMxHosts` (mail hosts it already uses, other than the SES inbound host; the receiving MX would move all of its mail away from them). `missingEnvVars` is always empty: missing provider settings are logged on the server instead.\n",
       "operationId": "listSupportSendingDomains",
       "parameters": [
         {
@@ -13329,7 +13329,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Claim a sending domain and register it with the mail provider",
-      "description": "Project administrators only. Returns 201 once the domain is registered and waiting for DNS, or 202 when the provider was temporarily unavailable and registration will be retried in the background.\n",
+      "description": "Project administrators only. Returns 201 once the domain is registered and waiting for DNS, or 202 when the provider was temporarily unavailable and registration will be retried in the background. Where the deployment receives mail (forwarding), the domain's current MX hosts are looked up so `existingMxHosts` can warn that the receiving MX moves all of the domain's mail; a DNS failure leaves it null.\n",
       "operationId": "createSupportSendingDomain",
       "parameters": [
         {
@@ -13492,13 +13492,62 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/projects/{projectId}/sending-domains/{id}/receiving-check": {
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Refresh a domain's receiving status now",
+      "description": "Project administrators only. Asks the mail provider for the domain's receiving status and stores it: `receivingStatus`, `lastReceivedAt` (when the domain last received a message), the receiving MX record and, while receiving is not active, the domain's existing MX hosts (`existingMxHosts`). Cheaper than a full verify: no DKIM or ownership re-check. The Email tab calls it while it waits for a test email. Returns the updated domain in the same shape as the list.\n",
+      "operationId": "checkSupportSendingDomainReceiving",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated sending domain (SendingDomainView with receivingStatus, lastReceivedAt, existingMxHosts)"
+        },
+        "403": {
+          "description": "Project administrator required"
+        },
+        "404": {
+          "description": "Feature disabled",
+          "or the domain does not belong to this project": null
+        },
+        "409": {
+          "description": "Domain is being removed (CONFLICT), or this deployment does not receive mail (RECEIVING_UNAVAILABLE)"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "503": {
+          "description": "Provider not configured"
+        }
+      }
+    }
+  },
   "/api/support/projects/{projectId}/sending-domains/{id}/verify": {
     "post": {
       "tags": [
         "Support"
       ],
       "summary": "Re-check a sending domain now",
-      "description": "Project administrators only. For failed, provisioning or provider-mismatched claims this registers the domain again; otherwise it asks the provider to re-verify and re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.\n",
+      "description": "Project administrators only. For failed, provisioning or provider-mismatched claims this registers the domain again; otherwise it asks the provider to re-verify and re-checks the Veerify ownership TXT record and DMARC. Where the deployment receives mail, it also refreshes the receiving status, `lastReceivedAt` and the MX record. Returns the updated claim.\n",
       "operationId": "verifySupportSendingDomain",
       "parameters": [
         {

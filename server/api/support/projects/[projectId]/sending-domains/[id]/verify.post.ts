@@ -7,7 +7,9 @@
  *     description: >
  *       Project administrators only. For failed, provisioning or provider-mismatched claims
  *       this registers the domain again; otherwise it asks the provider to re-verify and
- *       re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.
+ *       re-checks the Veerify ownership TXT record and DMARC. Where the deployment receives
+ *       mail, it also refreshes the receiving status, `lastReceivedAt` and the MX record.
+ *       Returns the updated claim.
  *     operationId: verifySupportSendingDomain
  *     parameters:
  *       - in: path
@@ -43,6 +45,7 @@ import {
   isProviderMismatch,
   registerSendingDomainClaim,
   saveSendingDomainPatch,
+  syncDomainReceiving,
   type SendingDomainRow,
 } from '~/server/utils/sending-domain-poller'
 import {
@@ -154,6 +157,9 @@ async function verifyClaim(
   const saved = await saveSendingDomainPatch(claim, outcome.patch)
   // Best effort and skipped when already done; the domain poll retries a failure.
   if (saved && outcome.patch.status === 'verified') await syncDeliveryWebhooks(claim, provider)
+  // Receiving status, last message, MX record and the MX takeover lookup, as the poll does.
+  // Never throws.
+  if (saved) await syncDomainReceiving({ ...claim, ...outcome.patch } as SendingDomainRow, provider)
   if (outcome.transition === 'verified') {
     recordSupportMetric('support.sending_domain.verified', {
       domainId: claim.id,

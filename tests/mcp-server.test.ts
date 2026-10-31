@@ -110,6 +110,7 @@ describe('createVeerifyMcpServer', () => {
         'mail_list_domains',
         'mail_add_domain',
         'mail_verify_domain',
+        'mail_check_receiving',
         'mail_remove_domain',
         'mail_list_addresses',
         'mail_list_inboxes',

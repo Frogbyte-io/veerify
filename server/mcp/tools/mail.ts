@@ -77,7 +77,7 @@ export const mailTools: VeerifyTool[] = [
     name: 'mail_list_domains',
     title: 'List email domains',
     description:
-      "Lists the project's email domains with status (provisioning, pending, verified, suspended, failed, deleting), receiving status and every DNS record to publish (ownership TXT, DKIM, SPF, MX for receiving, optional DMARC) with a live status. Also returns the workspace limits.",
+      "Lists the project's email domains with status (provisioning, pending, verified, suspended, failed, deleting) and every DNS record to publish with a live status: the ownership TXT and DKIM records first (no SPF change is needed: replies are DKIM-signed), then, once the domain verifies, the MX record for receiving, plus an optional DMARC record. Each domain also has `receivingStatus` (pending_verification, pending_mx = the MX is the one record left, active, disabled), `lastReceivedAt` (last inbound message, null if none) and `existingMxHosts`: mail hosts the domain already uses. When that list is non-empty, warn the user that adding the MX moves ALL mail for the domain to Veerify and suggest a subdomain (mail.example.com) to keep their current mailbox. Also returns the workspace limits and usage.",
     inputSchema: { project: projectField },
     annotations: { readOnlyHint: true },
     handler: async (ctx, input) => getData(ctx, { method: 'GET', path: await domainsBase(ctx, input.project) }),
@@ -87,7 +87,7 @@ export const mailTools: VeerifyTool[] = [
     name: 'mail_add_domain',
     title: 'Connect an email domain',
     description:
-      'Connects a domain (or subdomain, e.g. mail.example.com) to the project (project admin). Returns the DNS records the user must add at their DNS host; then call mail_verify_domain. A subdomain keeps an existing mail system on the apex untouched. Counts toward the workspace domain limit (409 MAIL_DOMAIN_LIMIT_REACHED / MAIL_PENDING_LIMIT_REACHED).',
+      'Connects a domain (or subdomain, e.g. mail.example.com) to the project (project admin). Returns the ownership TXT and DKIM records the user must add at their DNS host; then call mail_verify_domain. The receiving MX record appears after verification (usually a few minutes). The MX moves all mail for that exact domain to Veerify: if `existingMxHosts` is non-empty the domain already has a mailbox, so suggest a subdomain, which keeps an existing mail system on the apex untouched. Counts toward the workspace domain limit (409 MAIL_DOMAIN_LIMIT_REACHED / MAIL_PENDING_LIMIT_REACHED).',
     inputSchema: {
       project: projectField,
       domain: z.string().trim().min(1).max(253).describe('The domain, e.g. "newsite.com" or "mail.newsite.com"'),
@@ -100,12 +100,25 @@ export const mailTools: VeerifyTool[] = [
     name: 'mail_verify_domain',
     title: 'Check an email domain now',
     description:
-      "Re-checks the DNS records of a domain immediately instead of waiting for the background check (project admin). Returns the domain with each record's status.",
+      "Re-checks the DNS records of a domain immediately instead of waiting for the background check (project admin). Returns the domain with each record's status, its receiving status and, once verified, the MX record to add.",
     inputSchema: { project: projectField, domainId: domainIdField },
     handler: async (ctx, input) =>
       getData(ctx, {
         method: 'POST',
         path: `${await domainsBase(ctx, input.project)}/${encodeURIComponent(input.domainId)}/verify`,
+      }),
+  }),
+
+  defineTool({
+    name: 'mail_check_receiving',
+    title: 'Check whether a domain receives mail',
+    description:
+      "Asks the mail provider for a domain's receiving status now (project admin): `receivingStatus` and `lastReceivedAt` (when its last message arrived). Use it after the user publishes the MX record, or to confirm a test email arrived: ask them to send one from any mailbox to an address on the domain, then call this until `lastReceivedAt` changes. 409 RECEIVING_UNAVAILABLE when the deployment does not receive mail.",
+    inputSchema: { project: projectField, domainId: domainIdField },
+    handler: async (ctx, input) =>
+      getData(ctx, {
+        method: 'POST',
+        path: `${await domainsBase(ctx, input.project)}/${encodeURIComponent(input.domainId)}/receiving-check`,
       }),
   }),
 
@@ -132,7 +145,7 @@ export const mailTools: VeerifyTool[] = [
     name: 'mail_list_addresses',
     title: 'List email addresses',
     description:
-      "Lists the project's email addresses: the inbox each delivers to, whether it delivers to the inbox (`inboxFallback: true` when a forward-only address still delivers to the inbox because no forward is confirmed yet), its forwards with confirmation status (pending, verified, revoked, suspended), behaviour (helpdesk or mail), product, and route status. Also returns the domains with receiving status, whether forwarding is available (`forwarding`), and workspace usage against the limits (addresses, domains, forwards this month).",
+      "Lists the project's email addresses: the inbox each delivers to, whether it delivers to the inbox (`inboxFallback: true` when a forward-only address still delivers to the inbox because no forward is confirmed yet), its forwards with confirmation status (pending, verified, revoked, suspended), behaviour (helpdesk or mail), product, and route status. Also returns the domains with receiving status, `lastReceivedAt` and `existingMxHosts`, whether forwarding is available (`forwarding`), and workspace usage against the limits (addresses, domains, forwards this month; forwarding pauses for the rest of the month at the limit).",
     inputSchema: { project: projectField },
     annotations: { readOnlyHint: true },
     handler: async (ctx, input) =>

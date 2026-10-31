@@ -49,7 +49,10 @@ const claims = vi.hoisted(() => ({
 const poller = vi.hoisted(() => ({
   saveSendingDomainPatch: vi.fn(async () => true),
   deleteSendingDomainRow: vi.fn(async () => undefined),
+  syncDomainReceiving: vi.fn(async () => ({ enabled: false, status: null, lastReceivedAt: null })),
 }))
+
+const mx = vi.hoisted(() => ({ refreshExistingMxHosts: vi.fn(async () => [] as string[]) }))
 
 const webhooks = vi.hoisted(() => ({ syncDeliveryWebhooks: vi.fn(async () => ({ status: 'ensured' })) }))
 
@@ -174,6 +177,7 @@ vi.mock('~/server/utils/sending-domain-poller', async () => {
   return { ...actual, ...poller }
 })
 vi.mock('~/server/utils/sending-domain-webhooks', () => webhooks)
+vi.mock('~/server/utils/mail-domain-mx', () => mx)
 vi.mock('~/server/utils/sending-domain-api', async () => {
   const actual = await vi.importActual<typeof import('~/server/utils/sending-domain-api')>(
     '~/server/utils/sending-domain-api'
@@ -187,6 +191,9 @@ const create = (await import('~/server/api/support/projects/[projectId]/sending-
 const detail = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].get')).default
 const verify = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id]/verify.post')).default
 const remove = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].delete')).default
+const receivingCheck = (
+  await import('~/server/api/support/projects/[projectId]/sending-domains/[id]/receiving-check.post')
+).default
 const { filterInboxesUsingDomain } = await import('~/server/utils/sending-domain-api')
 
 const event = {} as never
@@ -267,10 +274,10 @@ describe('GET sending-domains', () => {
     expect(claims.listProjectSendingDomains).not.toHaveBeenCalled()
   })
 
-  it('names missing provider settings only', async () => {
+  it('reports an unconfigured provider without naming its settings to the customer', async () => {
     provider.isConfigured.mockReturnValue({ configured: false, missing: ['SUPPORT_MAILGUN_API_KEY'] })
     const res = await call(list)
-    expect(res.data).toMatchObject({ providerConfigured: false, missingEnvVars: ['SUPPORT_MAILGUN_API_KEY'] })
+    expect(res.data).toMatchObject({ providerConfigured: false, missingEnvVars: [] })
   })
 })
 
@@ -593,6 +600,80 @@ describe('POST sending-domains/[id]/verify', () => {
       expect.anything(),
       expect.objectContaining({ status: 'failed', lastErrorCode: 'owned_elsewhere' })
     )
+  })
+})
+
+describe('setup UX: MX lookup, receiving refresh', () => {
+  const withForwarding = (on: boolean) => {
+    ;(provider.capabilities as Record<string, boolean>).forwarding = on
+  }
+
+  it('looks up the existing MX hosts when a domain is added on a receiving deployment', async () => {
+    withForwarding(true)
+    try {
+      await call(create)
+      expect(mx.refreshExistingMxHosts).toHaveBeenCalledWith({ id: 'sd-1', domain: 'acme.com', receivingStatus: null })
+    } finally {
+      withForwarding(false)
+    }
+  })
+
+  it('skips the MX lookup without forwarding', async () => {
+    await call(create)
+    expect(mx.refreshExistingMxHosts).not.toHaveBeenCalled()
+  })
+
+  it('verify refreshes receiving after a saved check', async () => {
+    state.row = { ...NOW_ROW, status: 'pending' }
+    await call(verify)
+    expect(poller.syncDomainReceiving).toHaveBeenCalledWith(expect.objectContaining({ id: 'sd-1' }), provider)
+  })
+
+  describe('POST sending-domains/[id]/receiving-check', () => {
+    it('requires a project admin and is rate limited per domain', async () => {
+      access.requireProjectAdmin.mockImplementationOnce(forbidden)
+      await expect(call(receivingCheck)).rejects.toMatchObject({ statusCode: 403 })
+
+      withForwarding(true)
+      try {
+        state.row = { ...NOW_ROW, status: 'verified', receivingStatus: 'active' }
+        await call(receivingCheck)
+        expect(rateLimit.requireRateLimit).toHaveBeenCalledWith(
+          event,
+          expect.objectContaining({
+            identifier: 'sending-domain-receiving-check',
+            subject: 'domain:sd-1',
+            maxRequests: 1,
+            windowSeconds: 10,
+          })
+        )
+      } finally {
+        withForwarding(false)
+      }
+    })
+
+    it('syncs receiving and returns the reloaded domain', async () => {
+      withForwarding(true)
+      try {
+        state.row = { ...NOW_ROW, status: 'verified' }
+        const res = await call(receivingCheck)
+        expect(poller.syncDomainReceiving).toHaveBeenCalledWith(expect.objectContaining({ id: 'sd-1' }), provider)
+        expect(res.data).toMatchObject({ id: 'sd-1', domain: 'acme.com' })
+      } finally {
+        withForwarding(false)
+      }
+    })
+
+    it('is 409 when the deployment does not receive mail, or the domain is being removed', async () => {
+      state.row = { ...NOW_ROW, status: 'verified' }
+      await expect(call(receivingCheck)).rejects.toMatchObject({
+        statusCode: 409,
+        data: { error: { code: 'RECEIVING_UNAVAILABLE' } },
+      })
+      state.row = { ...NOW_ROW, status: 'deleting' }
+      await expect(call(receivingCheck)).rejects.toMatchObject({ statusCode: 409 })
+      expect(poller.syncDomainReceiving).not.toHaveBeenCalled()
+    })
   })
 })
 

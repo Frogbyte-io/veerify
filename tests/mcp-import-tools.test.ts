@@ -63,7 +63,7 @@ describe('import tools', () => {
     ]) {
       expect(byName[n], n).toBeDefined()
     }
-    expect(tools).toHaveLength(24)
+    expect(tools).toHaveLength(25)
     expect(byName.import_commit!.annotations?.destructiveHint).toBe(true)
     expect(byName.import_cancel!.annotations?.destructiveHint).toBe(true)
     for (const n of ['import_preview', 'import_status', 'import_get_format']) {
