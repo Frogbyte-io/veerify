@@ -47,8 +47,35 @@ export interface SendingDomainView {
   verifiedAt: string | null
   lastErrorCode: string | null
   lastError: string | null
+  /** Why a `suspended` claim is suspended; null for every other status. See `sendingDomainSuspendedReason`. */
+  suspendedReason: SendingDomainSuspendedReason | null
   providerOwnership: SendingDomainProviderOwnership | null
   providerMismatch: boolean
+}
+
+/**
+ * Why a claim is suspended, for the UI to pick its copy:
+ *
+ * - `sender_rejected`: the mail provider refused to send from the domain
+ *   although it was verified (`lastErrorCode: 'sender_rejected'`, set by the
+ *   outbox; the provider's text is in `lastError`). Usually the provider's own
+ *   verification lapsed: re-verify the domain with the provider.
+ * - `dns_missing`: the DNS records stopped verifying (`ownership_missing`,
+ *   `provider_unverified`). Publish the records again.
+ * - `other`: anything else.
+ */
+export type SendingDomainSuspendedReason = 'sender_rejected' | 'dns_missing' | 'other'
+
+const DNS_SUSPENSION_CODES = new Set(['ownership_missing', 'provider_unverified'])
+
+export function sendingDomainSuspendedReason(
+  status: string,
+  lastErrorCode: string | null
+): SendingDomainSuspendedReason | null {
+  if (status !== 'suspended') return null
+  if (lastErrorCode === 'sender_rejected') return 'sender_rejected'
+  if (lastErrorCode && DNS_SUSPENSION_CODES.has(lastErrorCode)) return 'dns_missing'
+  return 'other'
 }
 
 export interface SendingDomainCapabilities {

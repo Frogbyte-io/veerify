@@ -3,6 +3,7 @@ import type { EmailAddress, SendEmailOptions, SendEmailResult } from '~/lib/emai
 import { emailDomain, type FetchImpl } from '~/server/services/support-channels/types'
 import { sanitizeProviderMessage } from '~/server/services/sending-domains/util'
 import { createLogger } from '~/server/utils/logger'
+import { isSenderRefusalText } from '~/lib/support-delivery-errors'
 
 const logger = createLogger('support-mail-transport')
 
@@ -187,13 +188,25 @@ function errorMessage(body: string): string {
 /**
  * Whether an error response says the provider will not send as this From:
  * the path domain is not a verified domain of the key's project (`404 Domain
- * not found`, `400 Domain … is not verified for sending yet`) or the sender
- * itself is refused (`400 The sender domain …`).
+ * not found`, `400 Domain … is not verified for sending yet`), the sender
+ * itself is refused (`400 The sender domain …`), or the body or
+ * `X-Frogmail-Error` carries the code `sender_not_authorized` (any 4xx).
  */
-function isSenderRefusal(status: number, message: string): boolean {
+export function isSenderRefusal(status: number, message: string, code: string | null = null): boolean {
+  if (status < 400 || status >= 500 || status === 429) return false
+  if (code?.trim().toLowerCase() === 'sender_not_authorized') return true
   if (status === 404) return /^domain not found/i.test(message.trim())
-  if (status === 400) return /sender domain|not verified for sending|sender_not_authorized/i.test(message)
-  return false
+  return /sender domain|not verified for sending/i.test(message) || isSenderRefusalText(message)
+}
+
+/** `code` of a JSON error body (Frogmail's native and policy errors carry one). */
+function errorCode(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown }
+    return typeof parsed?.code === 'string' ? parsed.code : null
+  } catch {
+    return null
+  }
 }
 
 export interface MailgunSendDeps {
@@ -278,7 +291,9 @@ export async function sendSupportEmailViaMailgun(
   const detail = `Mailgun API returned ${response.status}${reason ? ` (${redact(reason)})` : ''}: ${message || 'no message'}`
   return {
     accepted: false,
-    response: isSenderRefusal(response.status, message) ? `sender_not_authorized: ${detail}` : detail,
+    response: isSenderRefusal(response.status, message, reason ?? errorCode(body))
+      ? `sender_not_authorized: ${detail}`
+      : detail,
   }
 }
 

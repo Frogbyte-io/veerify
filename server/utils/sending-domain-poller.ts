@@ -26,7 +26,8 @@ import {
   resolveSenderPolicy,
   resolveProjectSenderAuthorization,
 } from '~/server/utils/sending-domains'
-import { syncAddressRoute } from '~/server/utils/inbound-routes'
+import { resyncForwardOnlyRoutes, syncAddressRoute } from '~/server/utils/inbound-routes'
+import { forwardingBrandForDomain, syncForwardingBrand } from '~/server/utils/forwarding-brand'
 import { syncDeliveryWebhooks } from '~/server/utils/sending-domain-webhooks'
 import { recordSupportMetric, type SupportMetricName } from '~/server/utils/support-observability'
 import { createLogger } from '~/server/utils/logger'
@@ -839,12 +840,14 @@ export async function syncDomainReceiving(
   }
 
   try {
+    const brandName = await forwardingBrandForDomain(row.id)
     let state =
       row.receivingStatus && row.receivingStatus !== 'disabled' ? await provider.getReceiving(row.domain) : null
     if (!state || state.status === 'disabled') {
-      state = await provider.enableReceiving(row.domain)
+      state = await provider.enableReceiving(row.domain, { brandName })
       result.enabled = true
     }
+    await syncForwardingBrand({ provider, domain: row.domain, brandName, reported: state })
 
     const [current] = await db
       .select({ dnsRecords: projectMailDomain.dnsRecords })
@@ -860,6 +863,8 @@ export async function syncDomainReceiving(
     result.status = state.status
 
     result.destinationsUpdated = await reconcileForwardDestinations(row, provider)
+    // Forward-only addresses: inbox fallback on until a forward is confirmed (idempotent).
+    await resyncForwardOnlyRoutes({ domainId: row.id }, { provider })
   } catch (raw) {
     const error = toProviderError(raw)
     if (error.code === 'receiving_provider_conflict') result.skipped = 'provider_conflict'

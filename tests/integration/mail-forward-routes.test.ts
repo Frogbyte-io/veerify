@@ -14,11 +14,14 @@ import {
 } from '../../server/database/schema/support'
 import {
   FakeSendingDomainProvider,
+  fakeForwardDestinations,
   fakeInboundRoutes,
   resetFakeSendingDomainState,
 } from '../../server/services/sending-domains/providers/fake'
 import { SendingDomainProviderError } from '../../server/services/sending-domains/types'
-import { syncAddressRoute } from '../../server/utils/inbound-routes'
+import { resyncForwardOnlyRoutes, syncAddressRoute } from '../../server/utils/inbound-routes'
+import { applyForwardDestinationEvent } from '../../server/utils/frogmail-destination-events'
+import { syncProjectForwardingBrand } from '../../server/utils/forwarding-brand'
 import { runSendingDomainPoll, syncDomainReceiving } from '../../server/utils/sending-domain-poller'
 
 const stubs = vi.hoisted(() => ({ provider: null as unknown }))
@@ -281,6 +284,139 @@ describe('E3 domain receiving and address routes', () => {
       ).rejects.toMatchObject({
         code: 'forward_would_loop',
       })
+    })
+  })
+
+  describe('forward-only inbox fallback', () => {
+    const addressRow = async (id: string) =>
+      (await db.select().from(projectMailAddress).where(eq(projectMailAddress.id, id)))[0]!
+    const destinationEvent = (type: string, email: string) => {
+      const remote = fakeForwardDestinations().find((item) => item.email === email)!
+      return { type: `forward_destination.${type}`, data: { id: remote.id, status_reason: 'unsubscribed' } }
+    }
+    const setRemoteStatus = (email: string, status: 'verified' | 'revoked') =>
+      Object.assign(fakeForwardDestinations().find((item) => item.email === email)!, { status })
+
+    async function receivingDomain() {
+      const { id: claimId } = await addClaim({ receivingStatus: 'active' })
+      const { domain } = await claimRow(claimId)
+      await provider.enableReceiving(domain)
+      return { claimId, domain }
+    }
+
+    it('delivers to the inbox until a forward is confirmed, then re-syncs to forward-only and back', async () => {
+      const { claimId, domain } = await receivingDomain()
+      const address = await addAddress(`hello@${domain}`, { deliverToInbox: false })
+
+      const created = await syncAddressRoute(address, {
+        deliverToInbox: false,
+        forwardTo: ['you@example.org'],
+        strict: true,
+      })
+      expect(created).toMatchObject({ status: 'active', inboxFallback: true })
+      expect(fakeInboundRoutes()[0]).toMatchObject({
+        forwardUrl: expect.stringContaining('/api/support/inbound/fake'),
+        forwardTo: ['you@example.org'],
+      })
+      expect(await addressRow(address)).toMatchObject({ providerRouteInboxFallback: true })
+
+      // Idempotent: nothing changed, so no provider call.
+      const update = vi.spyOn(provider, 'updateInboundRoute')
+      expect(await resyncForwardOnlyRoutes({ domainId: claimId })).toBe(0)
+      expect(update).not.toHaveBeenCalled()
+
+      // The recipient confirms (Frogmail webhook): the inbox action goes away.
+      setRemoteStatus('you@example.org', 'verified')
+      expect(await applyForwardDestinationEvent(destinationEvent('verified', 'you@example.org'))).toBe(true)
+      expect(update).toHaveBeenCalledTimes(1)
+      expect(fakeInboundRoutes()).toHaveLength(1)
+      expect(fakeInboundRoutes()[0]).toMatchObject({ forwardUrl: null, forwardTo: ['you@example.org'] })
+      expect(await addressRow(address)).toMatchObject({ providerRouteInboxFallback: false })
+
+      // A redelivered webhook changes nothing at the provider.
+      await applyForwardDestinationEvent(destinationEvent('verified', 'you@example.org'))
+      expect(update).toHaveBeenCalledTimes(1)
+
+      // The only confirmed recipient stops forwarding: back to the inbox, so no mail is lost.
+      setRemoteStatus('you@example.org', 'revoked')
+      await applyForwardDestinationEvent(destinationEvent('revoked', 'you@example.org'))
+      expect(fakeInboundRoutes()[0]).toMatchObject({ forwardUrl: expect.stringContaining('/api/support/inbound/') })
+      expect(await addressRow(address)).toMatchObject({ providerRouteInboxFallback: true })
+      update.mockRestore()
+    })
+
+    it('skips the fallback when the forward is already confirmed for the domain', async () => {
+      const { domain } = await receivingDomain()
+      const address = await addAddress(`sales@${domain}`, { deliverToInbox: false })
+      // `confirmed*` is verified by the fake on creation: the route response, not the local view, decides.
+      const result = await syncAddressRoute(address, {
+        deliverToInbox: false,
+        forwardTo: ['confirmed-owner@example.org'],
+        strict: true,
+      })
+      expect(result).toMatchObject({ status: 'active', inboxFallback: false })
+      expect(fakeInboundRoutes()[0]).toMatchObject({ forwardUrl: null })
+    })
+
+    it('heals a forward-only route built before the fallback on the daily receiving sync', async () => {
+      const { claimId, domain } = await receivingDomain()
+      const address = await addAddress(`old@${domain}`, { deliverToInbox: false })
+      await syncAddressRoute(address, { deliverToInbox: false, forwardTo: ['late@example.org'], strict: true })
+      // Simulate the pre-fallback state: a route without the inbox action, marker off.
+      await provider.updateInboundRoute((await addressRow(address)).providerRouteId!, {
+        address: `old@${domain}`,
+        forwardUrl: null,
+        forwardTo: ['late@example.org'],
+        description: 'pre-fallback',
+      })
+      await db
+        .update(projectMailAddress)
+        .set({ providerRouteInboxFallback: false })
+        .where(eq(projectMailAddress.id, address))
+
+      await syncDomainReceiving(await claimRow(claimId), provider)
+
+      expect(fakeInboundRoutes()[0]).toMatchObject({ forwardUrl: expect.stringContaining('/api/support/inbound/') })
+      expect(await addressRow(address)).toMatchObject({ providerRouteInboxFallback: true })
+    })
+  })
+
+  describe('forwarding brand name', () => {
+    it('sends the project name when receiving is enabled and again after a rename', async () => {
+      const { id: claimId, domain } = await addClaim()
+      await syncDomainReceiving(await claimRow(claimId), provider)
+      expect((await provider.getReceiving(domain))?.forwardingBrandName).toBe('FR')
+
+      await db.update(project).set({ name: 'FR\nRenamed  Co' }).where(eq(project.id, projectId))
+      try {
+        expect(await syncProjectForwardingBrand(projectId, { provider })).toBe(1)
+        expect((await provider.getReceiving(domain))?.forwardingBrandName).toBe('FR Renamed Co')
+
+        // Drift (e.g. a missed rename) is corrected by the poller, which compares with what Frogmail reports.
+        await provider.setForwardingBrandName(domain, 'Stale')
+        await syncDomainReceiving(await claimRow(claimId), provider)
+        expect((await provider.getReceiving(domain))?.forwardingBrandName).toBe('FR Renamed Co')
+      } finally {
+        await db.update(project).set({ name: 'FR' }).where(eq(project.id, projectId))
+      }
+    })
+
+    it('keeps working against a Frogmail that refuses the brand PATCH', async () => {
+      const { id: claimId, domain } = await addClaim({ receivingStatus: 'active' })
+      await provider.enableReceiving(domain)
+      const older = Object.assign(Object.create(provider), {
+        capabilities: provider.capabilities,
+        // An older Frogmail: no brand field in GET, 422 on a PATCH without forwarding_paused.
+        getReceiving: async (name: string) => {
+          const { forwardingBrandName: _ignored, ...state } = (await provider.getReceiving(name))!
+          return state
+        },
+        setForwardingBrandName: async () => {
+          throw new SendingDomainProviderError('invalid_domain', 'The forwarding paused field is required.', false)
+        },
+      })
+      expect(await syncDomainReceiving(await claimRow(claimId), older)).toMatchObject({ skipped: null })
+      expect(await syncProjectForwardingBrand(projectId, { provider: older })).toBe(0)
     })
   })
 })

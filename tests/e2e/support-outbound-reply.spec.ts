@@ -646,24 +646,24 @@ test.describe.serial('outbound attachment contract', () => {
         'download',
         'contract.txt'
       )
-      page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toBe(
-          'The previous attempt may already have been accepted. Retrying could send a duplicate.'
-        )
+      // Retry asks in the app's dialog (never window.confirm) because the failed attempt may have been accepted.
+      let nativeDialogs = 0
+      page.on('dialog', async (dialog) => {
+        nativeDialogs += 1
         await dialog.dismiss()
       })
       await page.getByTestId('support-message-retry').click()
+      const retryDialog = page.getByRole('dialog')
+      await expect(retryDialog).toContainText('the customer gets this reply twice')
+      await page.getByTestId('support-message-retry-cancel').click()
+      await expect(retryDialog).toBeHidden()
       expect(deliveryRetryCount).toBe(0)
       await expect(page.getByTestId('support-message-delivery-failed')).toBeVisible()
 
-      page.once('dialog', async (dialog) => {
-        expect(dialog.message()).toBe(
-          'The previous attempt may already have been accepted. Retrying could send a duplicate.'
-        )
-        await dialog.accept()
-      })
       await page.getByTestId('support-message-retry').click()
+      await page.getByTestId('support-message-retry-confirm').click()
       await expect.poll(() => deliveryRetryCount).toBe(1)
+      expect(nativeDialogs).toBe(0)
       await page.getByTestId('support-composer-mode-note').click()
       await expect(page.locator('[data-testid="support-composer-note"]')).toBeVisible()
       await expect(page.getByTestId('support-composer-attach')).toBeHidden()

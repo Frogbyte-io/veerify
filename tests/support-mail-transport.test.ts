@@ -214,6 +214,8 @@ describe('sendSupportEmailViaMailgun', () => {
       },
     ],
     [400, { message: 'The sender domain is not verified for this project.' }],
+    [422, { message: 'Sending from this address is refused.', code: 'sender_not_authorized' }],
+    [403, { message: 'The acme.example domain is not verified. Please, add and verify your domain.' }],
   ])('reports a %i sender refusal so the outbox treats it as a sender rejection', async (status, body) => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(status, body))
 

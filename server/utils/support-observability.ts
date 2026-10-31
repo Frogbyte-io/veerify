@@ -34,6 +34,7 @@ export const SUPPORT_METRIC_NAMES = [
   'support.delivery.delivered',
   'support.delivery.failed',
   'support.delivery.bounced',
+  'support.delivery.delayed',
   'support.delivery.uncorrelated',
   'support.attachment.expired',
   'support.attachment.cleanup_failed',

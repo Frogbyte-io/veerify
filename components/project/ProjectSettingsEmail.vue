@@ -158,31 +158,49 @@
                     </div>
                   </td>
                   <td class="px-3 py-2.5">
-                    <template v-if="row.deliverToInbox !== false">
+                    <template v-if="row.deliverToInbox !== false || row.inboxFallback">
                       {{ row.inboxName }}
                       <span class="text-muted-foreground">· {{ row.behaviour }}</span>
                     </template>
+                    <p
+                      v-if="row.inboxFallback"
+                      class="text-xs text-muted-foreground"
+                      data-testid="mail-address-inbox-fallback"
+                    >
+                      {{ INBOX_FALLBACK_NOTE }}
+                    </p>
                     <div
                       v-if="row.forwards && row.forwards.length > 0"
-                      class="space-y-0.5"
+                      class="space-y-1"
                       data-testid="mail-address-forwards"
                     >
                       <div
                         v-for="forward in row.forwards"
                         :key="forward.id"
-                        class="flex items-center gap-1.5"
-                        :title="forwardMeta(forward).label"
+                        class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
                         data-testid="mail-address-forward"
                         :data-status="forward.status"
                       >
-                        <span class="text-muted-foreground">→</span>
+                        <span class="text-muted-foreground" aria-hidden="true">→</span>
                         <span class="break-all font-mono text-xs">{{ forward.email }}</span>
                         <span
-                          class="inline-block h-2 w-2 shrink-0 rounded-full"
-                          :class="forwardMeta(forward).dot"
-                          aria-hidden="true"
-                        />
-                        <span class="sr-only">{{ forwardMeta(forward).label }}</span>
+                          class="whitespace-nowrap rounded px-1.5 py-px text-[11px] font-medium"
+                          :class="forwardMeta(forward).classes"
+                          data-testid="mail-address-forward-status"
+                        >
+                          {{ forwardMeta(forward).label }}
+                        </span>
+                        <button
+                          v-if="canAdmin && canResend(forward)"
+                          type="button"
+                          class="whitespace-nowrap text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                          :disabled="resendingForwards[forward.id] === true"
+                          :aria-label="`Resend confirmation to ${forward.email}`"
+                          data-testid="mail-address-forward-resend-inline"
+                          @click="resendForward(forward)"
+                        >
+                          {{ resendingForwards[forward.id] ? 'Sending…' : 'Resend confirmation' }}
+                        </button>
                       </div>
                     </div>
                   </td>
@@ -281,6 +299,7 @@
 <script>
 import { toast } from 'vue-sonner'
 import { resolveProjectModules } from '~/lib/modules'
+import { INBOX_FALLBACK_NOTE, canResendForwardConfirmation, forwardStatusLabel } from '~/lib/mail-address'
 
 const RECEIVING_META = {
   pending_verification: {
@@ -302,10 +321,10 @@ const RECEIVING_META = {
 }
 
 const FORWARD_META = {
-  pending: { label: 'Waiting for confirmation', dot: 'bg-amber-500' },
-  verified: { label: 'Confirmed', dot: 'bg-emerald-500' },
-  suspended: { label: 'Bounced', dot: 'bg-destructive' },
-  revoked: { label: 'Stopped', dot: 'bg-muted-foreground' },
+  pending: { classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
+  verified: { classes: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' },
+  suspended: { classes: 'bg-destructive/10 text-destructive' },
+  revoked: { classes: 'bg-muted text-muted-foreground' },
 }
 
 const STATUS_META = {
@@ -352,6 +371,9 @@ export default {
       isDeleting: false,
 
       isEnablingInbox: false,
+      INBOX_FALLBACK_NOTE,
+      /** Destination id -> a resend is in flight. */
+      resendingForwards: {},
     }
   },
 
@@ -432,7 +454,42 @@ export default {
     },
 
     forwardMeta(forward) {
-      return FORWARD_META[forward.status] || FORWARD_META.pending
+      return { ...(FORWARD_META[forward.status] || FORWARD_META.pending), label: forwardStatusLabel(forward) }
+    },
+
+    canResend(forward) {
+      return canResendForwardConfirmation(forward)
+    },
+
+    /** Same endpoint as the editor's Resend (and MCP `mail_resend_forward_confirmation`). */
+    async resendForward(forward) {
+      if (this.resendingForwards[forward.id]) return
+      this.resendingForwards = { ...this.resendingForwards, [forward.id]: true }
+      try {
+        await $fetch(
+          `/api/projects/${encodeURIComponent(this.project.slug)}/mail/destinations/${encodeURIComponent(forward.id)}/resend`,
+          { method: 'POST' }
+        )
+        toast.success(`Confirmation email sent to ${forward.email}`)
+        await this.load({ silent: true })
+      } catch (err) {
+        const status = err?.statusCode || err?.status
+        const seconds = Number.parseInt(err?.response?.headers?.get?.('retry-after') ?? '', 10)
+        if (status === 429) {
+          toast.error(
+            Number.isFinite(seconds) && seconds > 0
+              ? `Too many requests. Try again in ${Math.ceil(seconds / 60)} min.`
+              : 'Too many requests. Try again in a little while.'
+          )
+        } else if (status === 409) {
+          toast.error('This address has already confirmed.')
+          await this.load({ silent: true })
+        } else {
+          toast.error(this.errorMessage(err, 'Could not resend the confirmation email'))
+        }
+      } finally {
+        this.resendingForwards = { ...this.resendingForwards, [forward.id]: false }
+      }
     },
 
     /** The receiving MX record of a domain, from the sending-domain list's DNS records. */

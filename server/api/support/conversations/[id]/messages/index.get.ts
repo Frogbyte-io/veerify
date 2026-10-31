@@ -16,7 +16,14 @@
  *       (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message
  *       was never submitted to the provider) and `retryable` (true only for a
  *       failed reply that has an email outbox entry; CSAT survey deliveries are
- *       never retryable).
+ *       never retryable). `deliveryStatus` is pending, sent, delayed (the
+ *       recipient's server deferred it and the provider is retrying),
+ *       delivered, failed or bounced. `failureReason` classifies a failed,
+ *       bounced or delayed reply's `deliveryError` (sender_rejected,
+ *       recipient_rejected, mailbox_full, provider_unavailable, configuration,
+ *       abandoned, unknown; null otherwise). `deliveryAttempt` is set while the
+ *       outbox retries a pending reply after a failed attempt:
+ *       `{ current, max, nextAttemptAt }` (null otherwise).
  *     operationId: listSupportConversationMessages
  *     parameters:
  *       - in: path
@@ -39,7 +46,8 @@ import { requireConversationAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { conversationAttachment, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
-import { SENDER_DOMAIN_NOT_AUTHORIZED } from '~/server/utils/outbound-delivery'
+import { MAX_DELIVERY_ATTEMPTS, SENDER_DOMAIN_NOT_AUTHORIZED } from '~/server/utils/outbound-delivery'
+import { classifyDeliveryError } from '~/lib/support-delivery-errors'
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
@@ -103,11 +111,33 @@ export default defineEventHandler(async (event) => {
   }
   const emailDeliveries = messageIds.length
     ? await db
-        .select({ messageId: supportOutboundDelivery.messageId })
+        .select({
+          messageId: supportOutboundDelivery.messageId,
+          status: supportOutboundDelivery.status,
+          attemptCount: supportOutboundDelivery.attemptCount,
+          leaseExpiresAt: supportOutboundDelivery.leaseExpiresAt,
+          nextAttemptAt: supportOutboundDelivery.nextAttemptAt,
+        })
         .from(supportOutboundDelivery)
         .where(and(inArray(supportOutboundDelivery.messageId, messageIds), eq(supportOutboundDelivery.kind, 'email')))
     : []
   const hasEmailDelivery = new Set(emailDeliveries.map((delivery) => delivery.messageId))
+  const deliveryByMessage = new Map(emailDeliveries.map((delivery) => [delivery.messageId, delivery]))
+  const now = Date.now()
+  /** "Attempt n of 5" for a pending reply the outbox is retrying; null on the first attempt. */
+  const attemptOf = (messageId: string, deliveryStatus: string) => {
+    const delivery = deliveryByMessage.get(messageId)
+    if (deliveryStatus !== 'pending' || delivery?.status !== 'pending' || delivery.attemptCount < 1) return null
+    const inFlight = delivery.leaseExpiresAt !== null && new Date(delivery.leaseExpiresAt).getTime() > now
+    // Below the cap a failed attempt leaves the row pending with no lease until the next one.
+    if (!inFlight && delivery.attemptCount >= MAX_DELIVERY_ATTEMPTS) return null
+    if (inFlight && delivery.attemptCount === 1) return null
+    return {
+      current: inFlight ? delivery.attemptCount : delivery.attemptCount + 1,
+      max: MAX_DELIVERY_ATTEMPTS,
+      nextAttemptAt: !inFlight && delivery.nextAttemptAt ? new Date(delivery.nextAttemptAt).toISOString() : null,
+    }
+  }
   const enrichedItems = items.map(({ metadata, ...item }) => ({
     ...item,
     // Only the mail-forwarding notes; the message metadata itself stays internal.
@@ -116,6 +146,11 @@ export default defineEventHandler(async (event) => {
       ...(metadata?.attachmentsRemoved === true ? { attachmentsRemoved: true } : {}),
     },
     senderBlocked: item.deliveryStatus === 'failed' && item.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED,
+    failureReason:
+      item.kind === 'outgoing' && ['failed', 'bounced', 'delayed'].includes(item.deliveryStatus)
+        ? classifyDeliveryError(item.deliveryError)
+        : null,
+    deliveryAttempt: item.kind === 'outgoing' ? attemptOf(item.id, item.deliveryStatus) : null,
     retryable: item.kind === 'outgoing' && item.deliveryStatus === 'failed' && hasEmailDelivery.has(item.id),
     attachments: (attachmentsByMessage.get(item.id) ?? []).map((attachment) => ({
       id: attachment.id,

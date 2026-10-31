@@ -365,6 +365,20 @@ describe('processOutboundDelivery', () => {
         expect(isProviderSenderRejection('queued as 1553.22 id 5530')).toBe(false)
         expect(isProviderSenderRejection('421 busy')).toBe(false)
       })
+
+      it('recognizes Resend and Frogmail sender refusals as terminal', () => {
+        // Production: Resend's 550 was retried five times as a generic failure.
+        expect(
+          isProviderSenderRejection(
+            new Error(
+              'Message failed: 550 The acme.example domain is not verified. Please, add and verify your domain on https://resend.com/domains'
+            )
+          )
+        ).toBe(true)
+        expect(isProviderSenderRejection('The sender domain is not verified for this project.')).toBe(true)
+        expect(isProviderSenderRejection('Domain mail.acme.example is not verified for sending yet.')).toBe(true)
+        expect(isProviderSenderRejection('550 5.1.1 user unknown')).toBe(false)
+      })
     })
 
     it('treats a throwing check as a retryable failure, not as authorization', async () => {

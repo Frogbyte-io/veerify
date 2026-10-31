@@ -284,6 +284,10 @@ export const projectMailAddress = pgTable(
     // False for a forward-only address: its route has no inbox `forward(url)`
     // action, so nothing reaches the inbox. Needs at least one forward.
     deliverToInbox: boolean('deliver_to_inbox').default(true).notNull(),
+    // True while the provider route of a forward-only address also delivers to
+    // the inbox because none of its forwards is confirmed yet (no mail is lost
+    // while recipients confirm). Mirrors the route as last synced.
+    providerRouteInboxFallback: boolean('provider_route_inbox_fallback').default(false).notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),

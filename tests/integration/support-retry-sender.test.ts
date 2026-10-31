@@ -186,5 +186,29 @@ describe('thread delivery flags', () => {
       retryable: true,
     })
     expect(byId.get(pending.messageId)).toMatchObject({ senderBlocked: false, retryable: false })
+    expect(byId.get(blocked.messageId)).toMatchObject({ failureReason: 'sender_rejected', deliveryAttempt: null })
+    expect(byId.get(maybeAccepted.messageId)).toMatchObject({ failureReason: 'abandoned' })
+    expect(byId.get(pending.messageId)).toMatchObject({ failureReason: null, deliveryAttempt: null })
+  })
+
+  it('reports the retry attempt of a pending reply after a failed attempt', async () => {
+    const retrying = await seedQueuedDelivery(projectB, 'support@projectb.example.net')
+    const nextAttemptAt = new Date(Date.now() + 120_000)
+    await db
+      .update(supportOutboundDelivery)
+      .set({ attemptCount: 2, leaseExpiresAt: null, nextAttemptAt, lastError: 'Connection timeout' })
+      .where(eq(supportOutboundDelivery.id, retrying.deliveryId))
+    await db
+      .update(conversationMessage)
+      .set({ deliveryStatus: 'pending', deliveryError: 'Connection timeout' })
+      .where(eq(conversationMessage.id, retrying.messageId))
+    actAs(projectB)
+
+    const response = (await list(event)) as { data: { messages: Array<Record<string, unknown>> } }
+    const message = response.data.messages.find((m) => m.id === retrying.messageId)
+    expect(message).toMatchObject({
+      deliveryStatus: 'pending',
+      deliveryAttempt: { current: 3, max: 5, nextAttemptAt: nextAttemptAt.toISOString() },
+    })
   })
 })

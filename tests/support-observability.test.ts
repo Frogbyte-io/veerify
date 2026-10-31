@@ -34,6 +34,7 @@ describe('support metric names', () => {
       'support.delivery.delivered',
       'support.delivery.failed',
       'support.delivery.bounced',
+      'support.delivery.delayed',
       'support.delivery.uncorrelated',
       'support.attachment.expired',
       'support.attachment.cleanup_failed',

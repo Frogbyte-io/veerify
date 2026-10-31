@@ -93,14 +93,26 @@ Behaviour:
   over SMTP either.
 - **Retries.** The outbox's idempotency key is sent as the `Idempotency-Key` request header, so a
   retry after a timeout returns the original id instead of sending twice.
-- **Failures.** `404 Domain not found`, `400 Domain … is not verified for sending yet` and
-  `400 The sender domain …` are sender rejections: the delivery fails terminally with
-  `SENDER_DOMAIN_NOT_AUTHORIZED` and the project's domain claim is suspended, as for an SMTP 553.
+- **Failures.** `404 Domain not found`, `400 Domain … is not verified for sending yet`,
+  `400 The sender domain …` and any `4xx` (but `429`) whose body or `X-Frogmail-Error` carries
+  `sender_not_authorized` are sender rejections: the delivery fails terminally with
+  `SENDER_DOMAIN_NOT_AUTHORIZED` and the project's domain claim is suspended (`lastErrorCode:
+sender_rejected`, `suspendedReason: sender_rejected` in the sending-domain API), as for an SMTP 553.
+  Over SMTP the same applies to provider text such as Resend's `550 The <domain> domain is not
+verified`, which used to be retried five times as a generic failure.
   Everything else (other `4xx`, `401` with the `X-Frogmail-Error` reason, `429`, `5xx`, network
   errors and timeouts) is a retryable failure. A missing key is a configuration error that fails
   (and retries) the delivery rather than falling back to SMTP. The API key is never logged.
 
 Roll back by setting `SUPPORT_SEND_TRANSPORT=smtp` (or clearing it).
+
+What agents see in the thread (any transport): `Sending…`, `Sending… (attempt n of 5)` while the outbox retries,
+`Sent`, `Delivered`, `Delayed – retrying` when a `temporary_fail` (soft bounce) arrives for a sent reply (never
+overriding `delivered`, `bounced` or `failed`), and for a failed or bounced reply a plain reason (sender not
+authorized, recipient rejected, mailbox full, provider unavailable, configuration error) with the provider's text
+under "Details". The thread API returns these as `failureReason` and `deliveryAttempt`. When a reply finally fails
+(outbox gave up, abandoned final attempt, or hard bounce) the agent who wrote it gets one in-app notification
+(`reply_failed`); a manual Retry re-arms it.
 
 ### Veerify environment
 
@@ -284,8 +296,23 @@ What Veerify then does:
 - Each address is one route: `match_recipient("^addr$")` at priority 10, or `match_recipient("^.*@domain$")` at
   priority 100 for a catch-all, with `forward("<inbox URL>")` when it delivers to the Inbox, `forward("<mailbox>")`
   per forward, then `stop()`. Never `catch_all()`: all customers share one Frogmail project.
-- Every forward mailbox confirms once per domain through an email from Frogmail. Status shows in the address editor;
-  admins can resend or stop it. Spam and virus mail is never forwarded; it lands in the Inbox Spam folder.
+- Every forward mailbox confirms once per domain through an email from Frogmail. Forwarding starts at the
+  confirmation; mail received before it is not forwarded later. Status shows as text in the address table and
+  editor ("Waiting for confirmation", "Forwarding", "Stopped by recipient", "Suspended – bounced"); admins can
+  resend the confirmation inline or stop it. Spam and virus mail is never forwarded; it lands in the Inbox Spam
+  folder.
+- A forward-only address (`deliverToInbox: false`) also delivers to the Inbox while none of its forwards is
+  confirmed, so nothing is lost while recipients confirm (shown as "Delivering to the Inbox until a forwarding
+  address is confirmed."). When the first forward is confirmed (`forward_destination.verified` webhook, or the
+  poll's destination reconcile) the route is re-synced to forward-only; when the last confirmed one is revoked or
+  suspended it falls back to the Inbox again. The route's state is stored as
+  `project_mail_address.provider_route_inbox_fallback`, so the re-sync is idempotent and skips addresses already
+  in the right state. Routes created before this change are healed by the next domain poll.
+- Confirmation emails carry the Veerify project's name as their sender brand (`forwarding_brand_name`, one line, at
+  most 80 characters): sent with `PUT …/receiving` when receiving is enabled, with `PATCH …/receiving` after a
+  project rename, and by the poll when Frogmail reports another value. A Frogmail without brand support ignores the
+  field on `PUT`, reports no field on `GET` (the poll then does nothing) and answers 422 to the `PATCH`, which is
+  logged and ignored.
 - `mail:forward-usage` (hourly, minute 15) sums `forwarded` from `GET /api/v1/domain-usage` over each workspace's
   receiving domains for the calendar month (UTC). At the tier limit (`standard` 5,000, `owner` 80,085) it pauses
   forwarding on those domains (`PATCH …/receiving {"forwarding_paused": true}`); mail still reaches the Inbox. It

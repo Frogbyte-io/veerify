@@ -34,12 +34,20 @@
               aria-label="Domain"
               data-testid="mail-address-domain"
             >
-              <option v-for="domain in domains" :key="domain.id" :value="domain.id">
+              <option v-for="domain in domains" :key="domain.id" :value="domain.id" :disabled="!isDomainUsable(domain)">
                 {{ domainOptionLabel(domain) }}
               </option>
               <option :value="OTHER">Another domain…</option>
             </select>
           </div>
+          <p
+            v-if="!isOtherDomain && hasUnusableDomains"
+            class="text-xs text-muted-foreground"
+            data-testid="mail-address-domain-hint"
+          >
+            Domains waiting for DNS can't take addresses yet. Publish their DNS records under Domains above; they become
+            available once verified.
+          </p>
           <div v-else class="flex items-center gap-2">
             <Input
               id="mail-address-local"
@@ -53,12 +61,12 @@
               data-testid="mail-address-full"
             />
             <Button
-              v-if="domains.length > 0"
+              v-if="firstUsableDomain"
               type="button"
               variant="ghost"
               size="sm"
               :disabled="isSaving"
-              @click="domainChoice = domains[0].id"
+              @click="domainChoice = firstUsableDomain.id"
             >
               Use a project domain
             </Button>
@@ -67,17 +75,27 @@
             Addresses on a domain that is not connected here only receive mail you forward in, for example from Google
             Workspace.
           </p>
-          <label v-if="!isOtherDomain" class="flex items-center gap-2 pt-1 text-sm">
-            <input
-              v-model="isCatchAll"
-              type="checkbox"
-              class="h-4 w-4 rounded border-input"
-              :disabled="isSaving || domains.length === 0"
-              data-testid="mail-address-catch-all"
-            />
-            Catch-all
-            <span class="text-xs text-muted-foreground">Takes mail to any address on the domain without its own.</span>
-          </label>
+          <div v-if="!isOtherDomain" class="space-y-1 pt-1">
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                v-model="isCatchAll"
+                type="checkbox"
+                class="h-4 w-4 rounded border-input"
+                aria-describedby="mail-address-catch-all-help"
+                :disabled="isSaving || !firstUsableDomain"
+                data-testid="mail-address-catch-all"
+              />
+              Catch-all
+            </label>
+            <p
+              id="mail-address-catch-all-help"
+              class="text-xs text-muted-foreground"
+              data-testid="mail-address-catch-all-help"
+            >
+              Specific addresses always win. A catch-all receives everything else, including typos and spam sent to
+              made-up addresses; spam goes to the Spam folder.
+            </p>
+          </div>
         </div>
 
         <!-- Inbox -->
@@ -163,6 +181,15 @@
             </label>
           </div>
 
+          <p
+            v-if="showsInboxFallback"
+            class="flex items-start gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted-foreground"
+            data-testid="mail-address-inbox-fallback"
+          >
+            <Icon name="lucide:inbox" class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>{{ INBOX_FALLBACK_NOTE }}</span>
+          </p>
+
           <div v-if="forwardsEnabled" class="space-y-2" data-testid="mail-address-forwards">
             <Label>Forward to</Label>
             <ul v-if="keptForwards.length > 0" class="space-y-2">
@@ -184,7 +211,7 @@
                     {{ forwardMeta(forward).label }}
                   </span>
                   <Button
-                    v-if="forward.status !== 'verified' && forward.status !== 'revoked'"
+                    v-if="canResend(forward)"
                     type="button"
                     variant="ghost"
                     size="sm"
@@ -262,9 +289,13 @@
             <p v-else class="text-xs text-muted-foreground">
               An address can forward to at most {{ MAX_FORWARDS }} addresses.
             </p>
+            <p class="text-xs text-muted-foreground" data-testid="mail-address-forward-confirm-help">
+              Forwarding starts once the recipient confirms. Mail received before that is not forwarded later (it stays
+              in the Inbox).
+            </p>
             <p class="text-xs text-muted-foreground">
-              Each recipient gets one confirmation email and must confirm once per domain before mail is forwarded. Spam
-              and viruses are never forwarded.
+              Each recipient gets one confirmation email and confirms once per domain. Spam and viruses are never
+              forwarded.
             </p>
           </div>
         </fieldset>
@@ -288,7 +319,13 @@
 <script>
 import { toast } from 'vue-sonner'
 import { cn } from '~/lib/utils'
-import { CATCH_ALL_LOCAL_PART, DEFAULT_MAIL_ADDRESS_BEHAVIOUR } from '~/lib/mail-address'
+import {
+  CATCH_ALL_LOCAL_PART,
+  DEFAULT_MAIL_ADDRESS_BEHAVIOUR,
+  INBOX_FALLBACK_NOTE,
+  canResendForwardConfirmation,
+  forwardStatusLabel,
+} from '~/lib/mail-address'
 
 const OTHER = '__other__'
 const MAX_FORWARDS = 5
@@ -296,18 +333,13 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 let rowCounter = 0
 
 const FORWARD_META = {
-  pending: {
-    label: 'Waiting for confirmation',
-    icon: 'lucide:clock',
-    classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  },
+  pending: { icon: 'lucide:clock', classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
   verified: {
-    label: 'Confirmed',
     icon: 'lucide:check-circle-2',
     classes: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   },
-  suspended: { label: 'Bounced', icon: 'lucide:alert-triangle', classes: 'bg-destructive/10 text-destructive' },
-  revoked: { label: 'Stopped', icon: 'lucide:ban', classes: 'bg-muted text-muted-foreground' },
+  suspended: { icon: 'lucide:alert-triangle', classes: 'bg-destructive/10 text-destructive' },
+  revoked: { icon: 'lucide:ban', classes: 'bg-muted text-muted-foreground' },
 }
 
 const REVOKE_REASONS = {
@@ -318,7 +350,7 @@ const REVOKE_REASONS = {
 }
 
 const STATUS_LABELS = {
-  provisioning: 'provisioning',
+  provisioning: 'waiting for DNS',
   pending: 'waiting for DNS',
   verified: 'verified',
   suspended: 'suspended',
@@ -358,6 +390,7 @@ export default {
   data() {
     return {
       OTHER,
+      INBOX_FALLBACK_NOTE,
       localPart: '',
       domainChoice: '',
       fullAddress: '',
@@ -408,6 +441,20 @@ export default {
     selectedDomain() {
       return this.domains.find((domain) => domain.id === this.domainChoice) || null
     },
+    firstUsableDomain() {
+      return this.domains.find((domain) => this.isDomainUsable(domain)) || null
+    },
+    hasUnusableDomains() {
+      return this.domains.some((domain) => !this.isDomainUsable(domain))
+    },
+    /**
+     * A forward-only address keeps delivering to the inbox until one of its
+     * forwards is confirmed (the server builds the route that way).
+     */
+    showsInboxFallback() {
+      if (!this.forwarding || this.deliveryMode !== 'forward') return false
+      return !this.keptForwards.some((forward) => forward.status === 'verified')
+    },
     /** The full address this dialog would create. */
     composedAddress() {
       if (this.isOtherDomain) return this.fullAddress.trim().toLowerCase()
@@ -446,7 +493,9 @@ export default {
     canSubmit() {
       if (!this.inboxId) return false
       if (this.forwardsEnabled && (this.forwardTargets.length === 0 || this.forwardError)) return false
-      return this.isEdit || Boolean(this.composedAddress)
+      if (this.isEdit) return true
+      if (!this.isOtherDomain && !this.isDomainUsable(this.selectedDomain)) return false
+      return Boolean(this.composedAddress)
     },
   },
 
@@ -494,7 +543,7 @@ export default {
       this.localPart = ''
       this.fullAddress = ''
       this.isCatchAll = false
-      this.domainChoice = this.domains[0]?.id || OTHER
+      this.domainChoice = this.firstUsableDomain?.id || OTHER
       this.inboxId = this.inboxes[0]?.id || ''
       this.behaviour = DEFAULT_MAIL_ADDRESS_BEHAVIOUR
       this.productId = ''
@@ -529,7 +578,16 @@ export default {
     },
 
     forwardMeta(forward) {
-      return FORWARD_META[forward.status] || FORWARD_META.pending
+      return { ...(FORWARD_META[forward.status] || FORWARD_META.pending), label: forwardStatusLabel(forward) }
+    },
+
+    canResend(forward) {
+      return canResendForwardConfirmation(forward)
+    },
+
+    /** Addresses can only be created on a verified domain (the API refuses others). */
+    isDomainUsable(domain) {
+      return domain?.status === 'verified'
     },
 
     forwardNote(forward) {
@@ -585,7 +643,7 @@ export default {
     },
 
     domainOptionLabel(domain) {
-      if (domain.status === 'verified') return domain.domain
+      if (this.isDomainUsable(domain)) return domain.domain
       return `${domain.domain} (${STATUS_LABELS[domain.status] || domain.status})`
     },
 

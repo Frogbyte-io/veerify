@@ -498,6 +498,13 @@
       "when": 1793455838647,
       "tag": "0070_delivery_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1793487385631,
+      "tag": "0071_forward_only_inbox_fallback",
+      "breakpoints": true
     }
   ]
 }

@@ -27,7 +27,7 @@ const forwardToField = z
   .array(z.string().trim().email())
   .max(5)
   .describe(
-    'External mailboxes to forward to, at most 5. Each must confirm once per domain (an email from Frogmail) before mail is forwarded. Needs forwarding on (mail_list_addresses → forwarding) and a verified domain'
+    'External mailboxes to forward to, at most 5. Each must confirm once per domain (an email from Frogmail) before mail is forwarded; mail received before that is not forwarded later. Needs forwarding on (mail_list_addresses → forwarding) and a verified domain'
   )
 
 interface ProjectRef {
@@ -132,7 +132,7 @@ export const mailTools: VeerifyTool[] = [
     name: 'mail_list_addresses',
     title: 'List email addresses',
     description:
-      "Lists the project's email addresses: the inbox each delivers to, whether it delivers to the inbox, its forwards with confirmation status (pending, verified, revoked, suspended), behaviour (helpdesk or mail), product, and route status. Also returns the domains with receiving status, whether forwarding is available (`forwarding`), and workspace usage against the limits (addresses, domains, forwards this month).",
+      "Lists the project's email addresses: the inbox each delivers to, whether it delivers to the inbox (`inboxFallback: true` when a forward-only address still delivers to the inbox because no forward is confirmed yet), its forwards with confirmation status (pending, verified, revoked, suspended), behaviour (helpdesk or mail), product, and route status. Also returns the domains with receiving status, whether forwarding is available (`forwarding`), and workspace usage against the limits (addresses, domains, forwards this month).",
     inputSchema: { project: projectField },
     annotations: { readOnlyHint: true },
     handler: async (ctx, input) =>
@@ -155,7 +155,7 @@ export const mailTools: VeerifyTool[] = [
     name: 'mail_create_address',
     title: 'Create an email address',
     description:
-      'Creates an address on one of the project\'s domains, e.g. hello@newsite.com, or a catch-all `*@newsite.com` for every address on the domain no other address takes. Mail goes to the inbox, to `forwardTo` mailboxes, or both (`deliverToInbox: false` makes it forward-only). `behaviour`: "helpdesk" (default; auto-reply, SLA, CSAT and automation apply) or "mail" (plain mail). Counts toward the workspace address limit (409 MAIL_ADDRESS_LIMIT_REACHED).',
+      'Creates an address on one of the project\'s domains, e.g. hello@newsite.com, or a catch-all `*@newsite.com` for every address on the domain no other address takes. Mail goes to the inbox, to `forwardTo` mailboxes, or both (`deliverToInbox: false` makes it forward-only; until one forward is confirmed it still delivers to the inbox, so nothing is lost). `behaviour`: "helpdesk" (default; auto-reply, SLA, CSAT and automation apply) or "mail" (plain mail). Counts toward the workspace address limit (409 MAIL_ADDRESS_LIMIT_REACHED).',
     inputSchema: {
       inboxId: inboxIdField,
       address: z.string().trim().min(3).max(320).describe('The address, or *@domain for a catch-all'),
