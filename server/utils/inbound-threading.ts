@@ -81,6 +81,66 @@ export function normalizeSubject(subject: string | null): string {
   return out.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+/** A stored message found by `resolveThread`'s exact header lookup. */
+export interface MessageIdMatch {
+  conversationId: string
+  channelMessageId: string | null
+  providerChannelMessageId: string | null
+}
+
+/**
+ * Decide a thread from the stored messages the referenced RFC ids matched.
+ *
+ * Rows are attributed to the referenced id they were matched by, with the same
+ * exact string comparison the SQL `IN` used, so one stored message may be
+ * matched through either its own id or the provider-rewritten one.
+ *
+ * - A single referenced id naming more than one stored message is ambiguous,
+ *   even when those rows share a conversation: the identity itself is no
+ *   longer trustworthy, so weaker fallbacks must not run either.
+ * - Distinct ids each naming one message is normal. A reply's `References`
+ *   lists the customer's original and our reply (Frogmail even appends our
+ *   original id next to the SES-rewritten one). When they all sit in one
+ *   conversation, that conversation wins.
+ * - When they span conversations, the direct parent (`In-Reply-To`) decides,
+ *   then the newest matching `References` entry (the header is ordered
+ *   oldest to newest). Anything still undecided stays ambiguous.
+ *
+ * Returns `null` when nothing matched, so the caller moves on to the thread
+ * key. Exported for unit tests.
+ */
+export function resolveMessageIdMatches(
+  message: Pick<ThreadableMessage, 'inReplyTo' | 'references'>,
+  matches: MessageIdMatch[]
+): ThreadResolution | null {
+  if (matches.length === 0) return null
+
+  const ambiguous: ThreadResolution = { conversationId: null, matchedBy: 'ambiguous-message-id' }
+  const referenced = new Set([message.inReplyTo, ...message.references].filter((id): id is string => Boolean(id)))
+
+  const conversationByMessageId = new Map<string, string>()
+  for (const messageId of referenced) {
+    const rows = matches.filter(
+      (row) => row.channelMessageId === messageId || row.providerChannelMessageId === messageId
+    )
+    if (rows.length > 1) return ambiguous
+    if (rows[0]) conversationByMessageId.set(messageId, rows[0].conversationId)
+  }
+
+  const conversationIds = new Set(matches.map((row) => row.conversationId))
+  if (conversationIds.size === 1) return { conversationId: [...conversationIds][0] ?? null, matchedBy: 'message-id' }
+
+  const parentConversationId = message.inReplyTo ? conversationByMessageId.get(message.inReplyTo) : undefined
+  if (parentConversationId) return { conversationId: parentConversationId, matchedBy: 'message-id' }
+
+  for (const messageId of [...message.references].reverse()) {
+    const conversationId = conversationByMessageId.get(messageId)
+    if (conversationId) return { conversationId, matchedBy: 'message-id' }
+  }
+
+  return ambiguous
+}
+
 export async function resolveThread(
   tx: Tx,
   inbox: { id: string; projectId: string },
@@ -98,11 +158,20 @@ export async function resolveThread(
   //    Both the Message-ID Veerify generated and the one the provider reports
   //    having sent under are matched: SES (behind Frogmail) rewrites it, and a
   //    reply carrying only `In-Reply-To` then references the rewritten id.
-  const referenced = [message.inReplyTo, ...message.references].filter((id): id is string => Boolean(id))
+  const referenced = [...new Set([message.inReplyTo, ...message.references].filter((id): id is string => Boolean(id)))]
 
   if (referenced.length > 0) {
+    // One row more than the number of distinct ids referenced: without a
+    // duplicated identity every stored row is claimed by at least one id and
+    // no id claims two, so at most `referenced.length` rows exist. Reaching the
+    // limit therefore already proves a duplicate, and anything under it is the
+    // complete set needed to attribute rows to ids.
     const messageIdMatches = await tx
-      .select({ conversationId: conversationMessage.conversationId })
+      .select({
+        conversationId: conversationMessage.conversationId,
+        channelMessageId: conversationMessage.channelMessageId,
+        providerChannelMessageId: conversationMessage.providerChannelMessageId,
+      })
       .from(conversationMessage)
       .innerJoin(conversation, eq(conversationMessage.conversationId, conversation.id))
       .where(
@@ -115,16 +184,14 @@ export async function resolveThread(
         )
       )
       .orderBy(desc(conversationMessage.createdAt))
-      .limit(2)
+      .limit(referenced.length + 1)
 
-    // Never guess when an RFC ID identifies more than one stored message in
-    // the receiving inbox. This remains ambiguous even when both rows happen
-    // to belong to the same conversation: the identity itself is no longer
-    // trustworthy, so weaker thread-key and subject fallbacks must not run.
-    if (messageIdMatches.length > 1) return { conversationId: null, matchedBy: 'ambiguous-message-id' }
-    if (messageIdMatches[0]) {
-      return { conversationId: messageIdMatches[0].conversationId, matchedBy: 'message-id' }
+    if (messageIdMatches.length > referenced.length) {
+      return { conversationId: null, matchedBy: 'ambiguous-message-id' }
     }
+
+    const byMessageId = resolveMessageIdMatches(message, messageIdMatches)
+    if (byMessageId) return byMessageId
 
     // 2. The root of the References chain against a stored thread key. Catches
     //    a reply whose immediate parent we never stored — a customer replying
