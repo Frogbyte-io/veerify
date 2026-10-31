@@ -1109,5 +1109,262 @@ test.describe('support sending domains', () => {
         'Forwarding starts once the recipient confirms.'
       )
     })
+
+    // --- Setup UX: two-step checklist, MX takeover warning, receiving confirmation, limits ---
+
+    const forwardingCapabilities = {
+      register: true,
+      verifyNow: true,
+      remove: true,
+      inboundRoutes: true,
+      authorizesSubdomains: true,
+      forwarding: true,
+    }
+    const mxRecord = record({
+      purpose: 'receiving',
+      type: 'MX',
+      name: 'stub.example.com',
+      value: 'inbound-smtp.us-east-1.amazonaws.com',
+      priority: '10',
+    })
+
+    test('a pending domain explains that the MX appears after verification', async ({ browser }) => {
+      const page = await openStubbed(
+        browser,
+        { list: () => ok(listPayload({ capabilities: forwardingCapabilities })) },
+        domainsPath()
+      )
+      const row = rowFor(page, 'stub.example.com')
+      await expect(row.getByTestId('support-domain-step-ownership')).toHaveAttribute('data-state', 'waiting', {
+        timeout: 20_000,
+      })
+      await expect(row.getByTestId('support-domain-step-ownership-status')).toContainText(
+        'one more record — the MX — appears here'
+      )
+      await expect(row.getByTestId('support-domain-step-receiving')).toHaveAttribute('data-state', 'locked')
+      await row.getByTestId('support-sending-domain-expand').click()
+      await expect(row.getByTestId('support-dns-spf-note')).toHaveCount(0)
+    })
+
+    test('the MX step warns when the domain already has mail and hides the value until acknowledged', async ({
+      browser,
+    }) => {
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                capabilities: forwardingCapabilities,
+                domains: [
+                  domainRow({
+                    status: 'verified',
+                    receivingStatus: 'pending_mx',
+                    existingMxHosts: ['aspmx.l.google.com', 'alt1.aspmx.l.google.com'],
+                    records: [
+                      record({ status: 'valid' }),
+                      record({
+                        purpose: 'sending',
+                        type: 'CNAME',
+                        name: 'k1._domainkey.stub.example.com',
+                        value: 'k1.dkim.amazonses.com',
+                        status: 'valid',
+                      }),
+                      mxRecord,
+                    ],
+                  }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+      const row = rowFor(page, 'stub.example.com')
+      const step = row.getByTestId('support-domain-step-receiving')
+      await expect(step).toHaveAttribute('data-state', 'waiting_mx', { timeout: 20_000 })
+      await step.getByTestId('support-domain-show-mx').click()
+
+      const warning = row.getByTestId('support-dns-mx-warning')
+      await expect(warning).toContainText(
+        'stub.example.com currently receives mail at aspmx.l.google.com, alt1.aspmx.l.google.com'
+      )
+      await expect(warning).toContainText('Adding this MX moves all mail for @stub.example.com to Veerify')
+      await expect(warning).toContainText('mail.stub.example.com')
+      const mxRow = step.locator('[data-testid="support-dns-record-row"][data-purpose="receiving"]')
+      await expect(mxRow.getByTestId('support-dns-record-value-hidden')).toBeVisible()
+      await expect(mxRow.getByTestId('support-dns-record-copy-value')).toHaveCount(0)
+
+      await warning.getByTestId('support-dns-mx-acknowledge').check()
+      await expect(mxRow.getByTestId('support-dns-record-value')).toHaveText('inbound-smtp.us-east-1.amazonaws.com')
+      await mxRow.getByTestId('support-dns-record-copy-value').click()
+      await expect(page.getByText('MX value copied')).toBeVisible()
+
+      // Step 1's records carry the SPF guidance.
+      await expect(row.getByTestId('support-dns-spf-note')).toContainText('No SPF change needed')
+    })
+
+    test('a domain without other mail hosts shows the MX value without a warning', async ({ browser }) => {
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                capabilities: forwardingCapabilities,
+                domains: [
+                  domainRow({
+                    status: 'verified',
+                    receivingStatus: 'pending_mx',
+                    existingMxHosts: [],
+                    records: [record({ status: 'valid' }), mxRecord],
+                  }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
+      const row = rowFor(page, 'stub.example.com')
+      await row.getByTestId('support-domain-show-mx').click({ timeout: 20_000 })
+      await expect(row.getByTestId('support-dns-mx-warning')).toHaveCount(0)
+      await expect(
+        row.locator(
+          '[data-testid="support-dns-record-row"][data-purpose="receiving"] [data-testid="support-dns-record-value"]'
+        )
+      ).toHaveText('inbound-smtp.us-east-1.amazonaws.com')
+    })
+
+    test('active receiving shows the last message, and a test email is confirmed when it arrives', async ({
+      browser,
+    }) => {
+      const lastReceivedAt = new Date(Date.now() - 3 * 3_600_000).toISOString()
+      let checkedReceivedAt = lastReceivedAt
+      const activeRow = () =>
+        domainRow({ status: 'verified', receivingStatus: 'active', lastReceivedAt, records: [record(), mxRecord] })
+      const page = await openStubbed(
+        browser,
+        { list: () => ok(listPayload({ capabilities: forwardingCapabilities, domains: [activeRow()] })) },
+        domainsPath()
+      )
+      await page.route(/\/api\/projects\/[^/]+\/mail\/addresses(\?.*)?$/, async (route) => {
+        const response = await route.fetch()
+        const payload = await response.json()
+        payload.data = {
+          ...payload.data,
+          addresses: [
+            {
+              id: 'a1',
+              address: 'hello@stub.example.com',
+              isCatchAll: false,
+              kind: 'custom',
+              isPrimary: false,
+              behaviour: 'mail',
+              inboxId: fixture.primaryInboxId,
+              inboxName: 'Support',
+              productId: null,
+              productName: null,
+              domainId: 'stub-domain-1',
+              routeStatus: 'active',
+              deliverToInbox: true,
+              forwards: [],
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        }
+        await route.fulfill({ response, json: payload })
+      })
+      await page.route(/\/sending-domains\/[^/]+\/receiving-check$/, (route) =>
+        route.fulfill(ok({ ...activeRow(), lastReceivedAt: checkedReceivedAt }) as never)
+      )
+      await page.reload({ waitUntil: 'domcontentloaded' })
+
+      const row = rowFor(page, 'stub.example.com')
+      await expect(row.getByTestId('support-domain-step-receiving-status')).toContainText(
+        'Receiving active · last message 3 h ago',
+        { timeout: 20_000 }
+      )
+      const testStep = row.getByTestId('support-domain-step-test')
+      await expect(testStep.getByTestId('support-domain-test-address')).toHaveText('hello@stub.example.com')
+
+      checkedReceivedAt = new Date().toISOString()
+      await testStep.getByTestId('support-domain-test-start').click()
+      await expect(testStep.getByTestId('support-domain-test-done')).toContainText('Receiving works ✓')
+    })
+
+    test('customers never see provider names or missing settings', async ({ browser }) => {
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(listPayload({ providerConfigured: false, missingEnvVars: ['SUPPORT_MAILGUN_API_KEY'], domains: [] })),
+        },
+        domainsPath()
+      )
+      await expect(page.getByTestId('support-sending-domains-unconfigured')).toHaveText(
+        "Email isn't available right now. Contact support.",
+        { timeout: 20_000 }
+      )
+      const card = page.getByTestId('support-sending-domains')
+      await expect(card).not.toContainText('SUPPORT_MAILGUN_API_KEY')
+      await expect(card).not.toContainText('Mailgun')
+    })
+
+    test('Add domain is disabled at the limit with the reason, and pending usage is shown', async ({ browser }) => {
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                usage: {
+                  tier: 'standard',
+                  limits: { domains: 3, pendingDomains: 3, addresses: 20, forwardsPerMonth: 5000 },
+                  used: { domains: 3, pendingDomains: 1, addresses: 1, forwardsThisMonth: null },
+                },
+              })
+            ),
+        },
+        domainsPath()
+      )
+      await expect(page.getByTestId('support-sending-domain-add')).toBeDisabled({ timeout: 20_000 })
+      await expect(page.getByTestId('support-sending-domain-add-reason')).toContainText('uses all 3 domains')
+      await expect(page.getByTestId('support-sending-domains-pending-usage')).toContainText('1 of 3 waiting for DNS')
+    })
+
+    test('the Email tab warns from 80 % of forwards and disables New address at the limit', async ({ browser }) => {
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) }, domainsPath())
+      await page.route(/\/api\/projects\/[^/]+\/mail\/addresses(\?.*)?$/, async (route) => {
+        const response = await route.fetch()
+        const payload = await response.json()
+        payload.data = {
+          ...payload.data,
+          forwarding: true,
+          usage: {
+            tier: 'standard',
+            limits: { domains: 3, pendingDomains: 3, addresses: 20, forwardsPerMonth: 5000 },
+            used: { domains: 1, pendingDomains: 0, addresses: 20, forwardsThisMonth: 4200 },
+          },
+        }
+        await route.fulfill({ response, json: payload })
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(page.getByTestId('mail-forwards-warning')).toContainText('4200 of 5000 forwards', {
+        timeout: 20_000,
+      })
+      await expect(page.getByTestId('mail-address-add')).toBeDisabled()
+      await expect(page.getByTestId('mail-address-add-reason')).toContainText('all 20 addresses')
+    })
+
+    test('the DNS records stack into cards on a phone instead of scrolling sideways', async ({ browser }) => {
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) }, domainsPath())
+      await page.setViewportSize({ width: 390, height: 844 })
+      const row = rowFor(page, 'stub.example.com')
+      await row.getByTestId('support-sending-domain-expand').click({ timeout: 20_000 })
+      const table = row.getByTestId('support-dns-record-table')
+      await expect(table.getByTestId('support-dns-record-row')).toBeVisible()
+      const overflow = await table.evaluate((el) => el.scrollWidth - el.clientWidth)
+      expect(overflow).toBeLessThanOrEqual(1)
+    })
   })
 })

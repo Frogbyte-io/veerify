@@ -776,8 +776,9 @@
               >
                 <Icon name="lucide:clock" class="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
-                  Replies are blocked until {{ sendingStatus.authorization.domain.domain }} is verified. Publish the DNS
-                  records in Sending domains above.
+                  Replies are blocked until {{ sendingStatus.authorization.domain.domain }} is verified. Publish its DNS
+                  records in
+                  <NuxtLink to="/project/settings?tab=email" class="underline">Project settings → Email</NuxtLink>.
                 </span>
               </div>
               <div
@@ -1558,15 +1559,15 @@ export default {
       }
       const reason = status.authorization.reason
       if (reason === 'suspended') {
-        return `The domain for "${address}" is suspended because its DNS records were no longer found. Replies are blocked until you publish them again and verify the domain in Sending domains above.`
+        return `The domain for "${address}" is suspended because its DNS records were no longer found. Replies are blocked until you publish them again and verify the domain in Project settings → Email.`
       }
       if (reason === 'provider_mismatch') {
-        return `"${address}" was verified with a different mail provider configuration. Register the domain again in Sending domains above.`
+        return `"${address}" was verified with a different mail provider configuration. Register the domain again in Project settings → Email.`
       }
       const owned = status.authorization.projectDomains || status.authorization.teamDomains || []
       return owned.length
         ? `"${address}" is not on a domain your project has verified. Replies are blocked. Use an address on ${owned.join(', ')}.`
-        : `"${address}" is not on a domain your project has verified. Replies are blocked. Add and verify the domain in Sending domains above.`
+        : `"${address}" is not on a domain your project has verified. Replies are blocked. Add and verify the domain in Project settings → Email.`
     },
 
     slaWeekdays() {
