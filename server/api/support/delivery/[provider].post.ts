@@ -10,7 +10,10 @@
  *       message this app sent, or an engagement event (open/click/complaint)
  *       Stage 04 only records - because a 4xx makes a provider retry
  *       indefinitely. Processing failures return a retryable 500. Only a
- *       failed signature is a 401.
+ *       failed signature is a 401. `delivered` marks a reply delivered, a
+ *       hard bounce marks it `bounced` (and notifies the replying agent once),
+ *       and a soft bounce (Mailgun `temporary_fail`) marks a sent reply
+ *       `delayed` without ever overriding a final state.
  *     operationId: receiveSupportDeliveryEvent
  *     security: []
  *     parameters:
@@ -44,6 +47,7 @@ import { checkRateLimit } from '~/server/utils/rate-limit'
 import { recordSupportMetric } from '~/server/utils/support-observability'
 import { db } from '~/server/database/drizzle'
 import { touchForwardDestination } from '~/server/utils/frogmail-destination-events'
+import { notifyReplyFailed } from '~/server/utils/reply-failure-notifications'
 
 const logger = createLogger('support-delivery')
 
@@ -199,36 +203,32 @@ export default defineEventHandler(async (event) => {
         await completeDeliveryEvent(eventId, attemptCount, tx)
       })
     } else if (deliveryEvent.recordType === 'bounced') {
-      // Only a HARD bounce is a delivery failure worth showing as one. A soft
-      // bounce is the provider's own SMTP retry still in flight - the message
-      // already left our outbox successfully, and `deliveryStatus` would
-      // mislead an agent into thinking it needs a resend it does not need.
-      if (deliveryEvent.bounceType === 'hard') {
-        // One transaction: the status flip and the activity line that
-        // explains it must never observably disagree.
-        await db.transaction(async (tx) => {
-          statusChanged = await applyDeliveryEventStatus(tx, {
-            ...deliveryEvent,
-            messageId: resolvedMessage.id,
-            conversationId: resolvedMessage.conversationId,
-          })
-          await completeDeliveryEvent(eventId, attemptCount, tx)
+      // A HARD bounce is a delivery failure. A soft bounce (`temporary_fail`)
+      // is the provider's own SMTP retry still in flight: it is shown as
+      // `delayed` ("Delayed – retrying"), never as failed, and never overrides
+      // delivered/bounced (`markDeliveryMessageDelayed` only moves `sent`).
+      // One transaction: the status flip and the activity line that explains
+      // it must never observably disagree.
+      await db.transaction(async (tx) => {
+        statusChanged = await applyDeliveryEventStatus(tx, {
+          ...deliveryEvent,
+          messageId: resolvedMessage.id,
+          conversationId: resolvedMessage.conversationId,
         })
-      }
-      // A soft bounce is still recorded via completeDeliveryEvent below, just
-      // with no status change and no activity line.
+        await completeDeliveryEvent(eventId, attemptCount, tx)
+      })
     }
     // 'opened' | 'clicked' | 'spam_complaint': recorded for audit/future
     // stages, no deliveryStatus change - out of this stage's acceptance
     // criteria.
 
-    if (
-      deliveryEvent.recordType !== 'delivered' &&
-      !(deliveryEvent.recordType === 'bounced' && deliveryEvent.bounceType === 'hard')
-    ) {
+    if (deliveryEvent.recordType !== 'delivered' && deliveryEvent.recordType !== 'bounced') {
       await db.transaction((tx) => completeDeliveryEvent(eventId, attemptCount, tx))
     }
     if (statusChanged) await publishDeliveryStatusChanged(resolvedMessage.id)
+    if (statusChanged && deliveryEvent.recordType === 'bounced' && deliveryEvent.bounceType === 'hard') {
+      await notifyReplyFailed(resolvedMessage.id)
+    }
     return accepted('processed')
   } catch (error) {
     const recorded = await failDeliveryEvent(eventId, attemptCount, error)

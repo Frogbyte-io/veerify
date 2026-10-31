@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import {
   mailForwardDestination,
@@ -57,6 +57,35 @@ export interface SyncAddressRouteResult {
   routeId: string | null
   /** Provider error code of a failed non-strict sync. */
   errorCode: SendingDomainErrorCode | null
+  /** The synced route delivers to the inbox only because no forward is confirmed yet. */
+  inboxFallback?: boolean
+}
+
+export interface RouteDeliveryPlan {
+  /** The route carries the inbox `forward(url)` action. */
+  toInbox: boolean
+  /** True when `toInbox` comes only from the forward-only fallback. */
+  inboxFallback: boolean
+  /** Email forwards the route carries. */
+  forwardTo: string[]
+}
+
+/**
+ * What a route delivers to. A forward-only address keeps delivering to the
+ * inbox until at least one of its forwards is confirmed (verified): Frogmail
+ * forwards only to confirmed mailboxes, so without the inbox action mail sent
+ * before the first confirmation would reach nobody. The fallback also covers
+ * forwarding being unavailable (no forwards on the route at all).
+ */
+export function planRouteDelivery(input: {
+  deliverToInbox: boolean
+  forwardTo: string[]
+  verifiedEmails: Iterable<string>
+}): RouteDeliveryPlan {
+  const verified = new Set([...input.verifiedEmails].map((email) => email.trim().toLowerCase()))
+  const anyConfirmed = input.forwardTo.some((email) => verified.has(email.trim().toLowerCase()))
+  const inboxFallback = !input.deliverToInbox && !anyConfirmed
+  return { toInbox: input.deliverToInbox || inboxFallback, inboxFallback, forwardTo: input.forwardTo }
 }
 
 const NOT_APPLICABLE: SyncAddressRouteResult = { status: null, routeId: null, errorCode: null }
@@ -132,21 +161,27 @@ export async function syncAddressRoute(
     )
   }
   const forwardTo = forwardingOn ? emails : []
-  // A forward-only address with nothing to forward to has no route to build.
-  if (!deliverToInbox && forwardTo.length === 0) return NOT_APPLICABLE
+  let plan = planRouteDelivery({
+    deliverToInbox,
+    forwardTo,
+    verifiedEmails: await loadVerifiedEmails(claim.id, forwardTo),
+  })
+  // Nothing to deliver to (cannot happen with the fallback, kept as a guard).
+  if (!plan.toInbox && plan.forwardTo.length === 0) return NOT_APPLICABLE
 
-  const input: InboundRouteInput = {
+  const inputFor = (next: RouteDeliveryPlan): InboundRouteInput => ({
     address: address.address,
-    forwardUrl: deliverToInbox ? inboundForwardUrl(provider.name) : null,
-    ...(forwardTo.length > 0 || provider.capabilities.forwarding ? { forwardTo } : {}),
+    forwardUrl: next.toInbox ? inboundForwardUrl(provider.name) : null,
+    ...(next.forwardTo.length > 0 || provider.capabilities.forwarding ? { forwardTo: next.forwardTo } : {}),
     description: `veerify:${address.inboxId}:${address.id}`,
-  }
+  })
 
   let routeId: string | null = null
   let destinations: ProviderForwardDestination[] = []
   let failure: SendingDomainProviderError | null = null
   try {
     let route: InboundRouteResult
+    const input = inputFor(plan)
     if (address.providerRouteId && provider.updateInboundRoute) {
       try {
         route = await provider.updateInboundRoute(address.providerRouteId, input)
@@ -159,6 +194,22 @@ export async function syncAddressRoute(
     }
     routeId = route.routeId
     destinations = route.forwardDestinations ?? []
+
+    // The provider's answer is the authority on confirmation (consent is per
+    // domain, so a new forward can already be confirmed). When it disagrees with
+    // the local view, rebuild once with the provider's statuses.
+    if (!deliverToInbox && destinations.length > 0 && provider.updateInboundRoute) {
+      const confirmed = planRouteDelivery({
+        deliverToInbox,
+        forwardTo,
+        verifiedEmails: destinations.filter((item) => item.status === 'verified').map((item) => item.email),
+      })
+      if (confirmed.inboxFallback !== plan.inboxFallback) {
+        plan = confirmed
+        route = await provider.updateInboundRoute(route.routeId, inputFor(plan))
+        destinations = route.forwardDestinations?.length ? route.forwardDestinations : destinations
+      }
+    }
   } catch (raw) {
     failure = toProviderError(raw)
     if (options.strict && FORWARD_ERROR_CODES.includes(failure.code)) throw failure
@@ -179,7 +230,7 @@ export async function syncAddressRoute(
 
   await db
     .update(projectMailAddress)
-    .set({ providerRouteId: routeId, providerRouteStatus: 'active' })
+    .set({ providerRouteId: routeId, providerRouteStatus: 'active', providerRouteInboxFallback: plan.inboxFallback })
     .where(eq(projectMailAddress.id, addressId))
   await storeRouteDestinations({
     projectId: address.projectId,
@@ -188,7 +239,105 @@ export async function syncAddressRoute(
     destinations,
     replaceLinks: options.forwardTo !== undefined,
   })
-  return { status: 'active', routeId, errorCode: null }
+  return { status: 'active', routeId, errorCode: null, inboxFallback: plan.inboxFallback }
+}
+
+/** The subset of `emails` confirmed (verified) as forward destinations on the domain claim. */
+async function loadVerifiedEmails(domainId: string, emails: string[]): Promise<string[]> {
+  if (emails.length === 0) return []
+  const rows = await db
+    .select({ email: mailForwardDestination.email })
+    .from(mailForwardDestination)
+    .where(
+      and(
+        eq(mailForwardDestination.domainId, domainId),
+        eq(mailForwardDestination.status, 'verified'),
+        inArray(mailForwardDestination.email, emails)
+      )
+    )
+  return rows.map((row) => row.email)
+}
+
+/**
+ * Rebuild the routes of forward-only addresses whose inbox fallback no longer
+ * matches their forwards: the first forward got confirmed (drop the inbox
+ * action) or the last confirmed one was revoked or suspended (deliver to the
+ * inbox again). Scoped to the addresses linked to `destinationIds`, or to every
+ * forward-only address on the domain claim `domainId`.
+ *
+ * Idempotent and cheap: an address whose stored fallback already matches is
+ * skipped without a provider call, so it runs after every destination status
+ * change (Frogmail webhook, the poller's reconcile, resend and revoke). Never
+ * throws; returns the number of addresses re-synced.
+ */
+export async function resyncForwardOnlyRoutes(
+  scope: { destinationIds?: string[]; domainId?: string },
+  options: { provider?: SendingDomainProvider | null } = {}
+): Promise<number> {
+  try {
+    const destinationIds = scope.destinationIds ?? []
+    if (destinationIds.length === 0 && !scope.domainId) return 0
+
+    const linked = (ids: string[]) =>
+      db
+        .select({ addressId: projectMailAddressForward.addressId })
+        .from(projectMailAddressForward)
+        .where(inArray(projectMailAddressForward.destinationId, ids))
+    const onDomain = scope.domainId
+      ? db
+          .select({ addressId: projectMailAddressForward.addressId })
+          .from(projectMailAddressForward)
+          .innerJoin(mailForwardDestination, eq(mailForwardDestination.id, projectMailAddressForward.destinationId))
+          .where(eq(mailForwardDestination.domainId, scope.domainId))
+      : null
+
+    const conditions = [
+      ...(destinationIds.length > 0 ? [inArray(projectMailAddress.id, linked(destinationIds))] : []),
+      ...(scope.domainId && onDomain
+        ? [eq(projectMailAddress.domainId, scope.domainId), inArray(projectMailAddress.id, onDomain)]
+        : []),
+    ]
+    const candidates = await db
+      .select({ id: projectMailAddress.id, inboxFallback: projectMailAddress.providerRouteInboxFallback })
+      .from(projectMailAddress)
+      .where(
+        and(
+          eq(projectMailAddress.deliverToInbox, false),
+          eq(projectMailAddress.kind, 'custom'),
+          conditions.length === 1 ? conditions[0] : or(...conditions)
+        )
+      )
+    if (candidates.length === 0) return 0
+
+    const statuses = await db
+      .select({ addressId: projectMailAddressForward.addressId, status: mailForwardDestination.status })
+      .from(projectMailAddressForward)
+      .innerJoin(mailForwardDestination, eq(mailForwardDestination.id, projectMailAddressForward.destinationId))
+      .where(
+        inArray(
+          projectMailAddressForward.addressId,
+          candidates.map((candidate) => candidate.id)
+        )
+      )
+    const confirmed = new Set(statuses.filter((row) => row.status === 'verified').map((row) => row.addressId))
+
+    let resynced = 0
+    for (const candidate of candidates) {
+      const wantsFallback = !confirmed.has(candidate.id)
+      if (wantsFallback === candidate.inboxFallback) continue
+      const result = await syncAddressRoute(
+        candidate.id,
+        options.provider !== undefined ? { provider: options.provider } : {}
+      )
+      if (result.status === 'active') resynced++
+    }
+    return resynced
+  } catch (error) {
+    logger.warn('Forward-only route resync failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return 0
+  }
 }
 
 /** Provider errors a user can fix by changing the forwards. */

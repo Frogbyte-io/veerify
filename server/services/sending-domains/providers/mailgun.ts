@@ -67,6 +67,8 @@ interface FrogmailReceiving {
   forwarding_paused?: boolean
   records?: Array<{ type?: string; name?: string; priority?: number | string; value?: string; status?: string }>
   last_received_at?: string | null
+  /** Absent on a Frogmail without brand support. */
+  forwarding_brand_name?: string | null
 }
 
 /** Native Frogmail (`/api/v1`) bodies: `{data}` or `{data: [], next_cursor}`. */
@@ -126,6 +128,9 @@ function toReceiving(domain: string, raw: FrogmailReceiving | undefined): Provid
             : ('unknown' as const),
     })),
     lastReceivedAt: toDate(raw?.last_received_at),
+    ...(raw && Object.prototype.hasOwnProperty.call(raw, 'forwarding_brand_name')
+      ? { forwardingBrandName: typeof raw.forwarding_brand_name === 'string' ? raw.forwarding_brand_name : null }
+      : {}),
   }
 }
 
@@ -377,9 +382,16 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     }
   }
 
-  async enableReceiving(domain: string): Promise<ProviderReceivingState> {
+  /**
+   * `forwarding_brand_name` rides along when given: Frogmail validates only
+   * `provider` on this call, so a version without brand support ignores it.
+   */
+  async enableReceiving(domain: string, options?: { brandName?: string | null }): Promise<ProviderReceivingState> {
     const name = normalizeDomainName(domain)
-    const body = await this.native('PUT', `/api/v1/domains/${encodeURIComponent(name)}/receiving`, { provider: 'ses' })
+    const body = await this.native('PUT', `/api/v1/domains/${encodeURIComponent(name)}/receiving`, {
+      provider: 'ses',
+      ...(options?.brandName !== undefined ? { forwarding_brand_name: options.brandName } : {}),
+    })
     return toReceiving(name, body.data as FrogmailReceiving)
   }
 
@@ -398,6 +410,19 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     const name = normalizeDomainName(domain)
     const body = await this.native('PATCH', `/api/v1/domains/${encodeURIComponent(name)}/receiving`, {
       forwarding_paused: paused,
+    })
+    return toReceiving(name, body.data as FrogmailReceiving)
+  }
+
+  /**
+   * A separate PATCH carrying only the brand. A Frogmail without brand support
+   * answers 422 (`forwarding_paused` is required there); callers log and ignore
+   * the failure (`server/utils/forwarding-brand.ts`).
+   */
+  async setForwardingBrandName(domain: string, brandName: string | null): Promise<ProviderReceivingState> {
+    const name = normalizeDomainName(domain)
+    const body = await this.native('PATCH', `/api/v1/domains/${encodeURIComponent(name)}/receiving`, {
+      forwarding_brand_name: brandName,
     })
     return toReceiving(name, body.data as FrogmailReceiving)
   }

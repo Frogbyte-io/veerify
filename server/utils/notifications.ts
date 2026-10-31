@@ -17,6 +17,8 @@ export type NotificationType =
   | 'sla_breach'
   | 'conversation_assigned'
   | 'conversation_mention'
+  /** A support reply the user wrote finally failed or bounced (`reply-failure-notifications.ts`). */
+  | 'reply_failed'
 
 /**
  * Which user preference key gates each notification type.

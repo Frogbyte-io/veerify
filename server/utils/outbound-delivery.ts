@@ -22,6 +22,12 @@ import { recordSupportMetric } from '~/server/utils/support-observability'
 import { isSenderAllowedForProject } from '~/server/utils/sender-enforcement'
 import { resolveEffectiveSenderPolicy } from '~/server/utils/sending-domains'
 import { createSupportSendEmail } from '~/server/utils/support-mail-transport'
+import { clearReplyFailureNotification, notifyReplyFailed } from '~/server/utils/reply-failure-notifications'
+import {
+  DELIVERY_ABANDONED,
+  SENDER_DOMAIN_NOT_AUTHORIZED as SENDER_DOMAIN_NOT_AUTHORIZED_MARKER,
+  isSenderRefusalText,
+} from '~/lib/support-delivery-errors'
 
 const logger = createLogger('outbound-delivery')
 
@@ -466,9 +472,9 @@ export async function completeOutboundDelivery(
  *
  * `conversationMessage.deliveryStatus` mirrors the same pending/failed split:
  * a below-cap failure is not yet visible to the agent as "failed" (it will
- * auto-retry), so only a terminal failure changes what the UI shows - and
- * only a terminal failure is worth a realtime publish, since a non-terminal
- * one leaves `deliveryStatus` unchanged.
+ * auto-retry), so only a terminal failure changes `deliveryStatus`. Every
+ * owned failure is still published, because the thread shows the retry
+ * progress ("attempt n of 5"), and a terminal one notifies the replying agent.
  */
 export async function failOutboundDelivery(
   id: string,
@@ -519,7 +525,10 @@ export async function failOutboundDelivery(
       reason: 'send-failed',
     })
   }
-  if (failed && terminal) await publishDeliveryStatusChanged(messageId)
+  // Every owned failure is published: the thread shows "attempt n of 5" while
+  // the outbox retries, not only the final outcome.
+  if (failed) await publishDeliveryStatusChanged(messageId)
+  if (failed && terminal) await notifyReplyFailed(messageId)
   return failed
 }
 
@@ -547,7 +556,10 @@ export async function resetOutboundDeliveryForRetry(id: string, messageId: strin
     },
     messagePatch: { deliveryStatus: 'pending', deliveryError: null },
   })
-  if (reset) await publishDeliveryStatusChanged(messageId)
+  if (reset) {
+    await clearReplyFailureNotification(messageId)
+    await publishDeliveryStatusChanged(messageId)
+  }
   return reset
 }
 
@@ -611,7 +623,7 @@ export interface ProcessOutboundDeliveryDeps {
 }
 
 /** `lastError` recorded when the final sender check refuses a delivery. */
-export const SENDER_DOMAIN_NOT_AUTHORIZED = 'SENDER_DOMAIN_NOT_AUTHORIZED'
+export const SENDER_DOMAIN_NOT_AUTHORIZED = SENDER_DOMAIN_NOT_AUTHORIZED_MARKER
 
 async function resolveDeliveryProjectId(messageId: string): Promise<string | null> {
   const [owner] = await db
@@ -644,11 +656,14 @@ async function defaultAuthorizeSender(claim: OutboundClaim): Promise<boolean> {
 
 /**
  * True when a failed send says the provider refused the sender itself: SMTP
- * 553 (mailbox/sender not allowed) or a `sender_not_authorized` response code.
+ * 553 (mailbox/sender not allowed), a `sender_not_authorized` response code, or
+ * provider text such as Resend's `550 The example.com domain is not verified`
+ * and Frogmail's `The sender domain is not verified for this project.` (see
+ * `isSenderRefusalText`). Retrying cannot fix these, so they fail terminally.
  */
 export function isProviderSenderRejection(response: unknown): boolean {
   const text = response instanceof Error ? response.message : typeof response === 'string' ? response : ''
-  return /sender_not_authorized/i.test(text) || /(^|[^\w.])553(?=[\s-]|$)/.test(text)
+  return isSenderRefusalText(text) || /(^|[^\w.])553(?=[\s-]|$)/.test(text)
 }
 
 async function defaultOnSenderRejected(claim: OutboundClaim, reason: string): Promise<void> {
@@ -840,7 +855,7 @@ export async function reapAbandonedOutboundDeliveries(options: { now?: Date } = 
       status: 'failed',
       leaseExpiresAt: null,
       nextAttemptAt: null,
-      lastError: 'DELIVERY_ABANDONED',
+      lastError: DELIVERY_ABANDONED,
       updatedAt: now,
     })
     .where(
@@ -856,7 +871,7 @@ export async function reapAbandonedOutboundDeliveries(options: { now?: Date } = 
   for (const row of abandoned) {
     await db
       .update(conversationMessage)
-      .set({ deliveryStatus: 'failed', deliveryError: 'DELIVERY_ABANDONED' })
+      .set({ deliveryStatus: 'failed', deliveryError: DELIVERY_ABANDONED })
       .where(and(eq(conversationMessage.id, row.messageId), eq(conversationMessage.deliveryStatus, 'pending')))
     recordSupportMetric('support.delivery.failed', {
       deliveryId: row.id,
@@ -866,6 +881,7 @@ export async function reapAbandonedOutboundDeliveries(options: { now?: Date } = 
       reason: 'abandoned',
     })
     await publishDeliveryStatusChanged(row.messageId)
+    await notifyReplyFailed(row.messageId)
   }
 
   return abandoned.length

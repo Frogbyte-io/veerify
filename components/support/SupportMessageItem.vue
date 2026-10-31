@@ -85,29 +85,44 @@
           </a>
         </div>
       </div>
-      <div class="flex items-center gap-1.5 mt-1 px-1">
+      <div class="flex flex-wrap items-center gap-1.5 mt-1 px-1" :class="isOutgoing ? 'justify-end' : ''">
         <span class="text-xs text-muted-foreground">{{ formattedTime }}</span>
         <template v-if="isOutgoing">
-          <Icon
+          <span
             v-if="message.deliveryStatus === 'pending'"
-            name="lucide:clock"
-            class="w-3 h-3 text-muted-foreground"
-            title="Sending…"
+            class="flex items-center gap-1 text-xs text-muted-foreground"
             data-testid="support-message-delivery-pending"
-          />
-          <Icon
+          >
+            <Icon name="lucide:clock" class="w-3 h-3 shrink-0" aria-hidden="true" />
+            {{ pendingLabel }}
+          </span>
+          <span
             v-else-if="message.deliveryStatus === 'sent' || message.deliveryStatus === 'delivered'"
-            name="lucide:check"
-            class="w-3 h-3 text-muted-foreground"
-            :title="message.deliveryStatus === 'delivered' ? 'Delivered' : 'Sent'"
+            class="flex items-center gap-1 text-xs text-muted-foreground"
             data-testid="support-message-delivery-sent"
-          />
+            :data-status="message.deliveryStatus"
+          >
+            <Icon
+              :name="message.deliveryStatus === 'delivered' ? 'lucide:check-check' : 'lucide:check'"
+              class="w-3 h-3 shrink-0"
+              aria-hidden="true"
+            />
+            {{ message.deliveryStatus === 'delivered' ? 'Delivered' : 'Sent' }}
+          </span>
+          <span
+            v-else-if="message.deliveryStatus === 'delayed'"
+            class="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400"
+            data-testid="support-message-delivery-delayed"
+          >
+            <Icon name="lucide:hourglass" class="w-3 h-3 shrink-0" aria-hidden="true" />
+            Delayed – retrying
+          </span>
           <span
             v-else-if="message.deliveryStatus === 'failed' || message.deliveryStatus === 'bounced'"
-            class="flex items-center gap-1"
+            class="flex flex-wrap items-center gap-1"
             data-testid="support-message-delivery-failed"
           >
-            <Icon name="lucide:alert-circle" class="w-3 h-3 text-destructive shrink-0" />
+            <Icon name="lucide:alert-circle" class="w-3 h-3 text-destructive shrink-0" aria-hidden="true" />
             <span v-if="isSenderBlocked" class="text-xs text-destructive" data-testid="support-message-sender-blocked">
               Not sent: the From address isn't verified for your project.
               <NuxtLink
@@ -117,30 +132,62 @@
                 >Verify the domain in Project settings → Email.</NuxtLink
               >
             </span>
-            <span v-else class="text-xs text-destructive">{{
-              message.deliveryStatus === 'bounced' ? 'Bounced' : 'Failed to send'
-            }}</span>
+            <span v-else class="text-xs text-destructive" data-testid="support-message-failure-reason">
+              {{ failureLabel }}
+            </span>
             <button
               v-if="message.deliveryStatus === 'failed' && message.retryable !== false"
               type="button"
               class="text-xs text-destructive underline hover:no-underline disabled:opacity-50 disabled:no-underline"
               data-testid="support-message-retry"
               :disabled="retrying"
-              @click="retryDelivery"
+              @click="requestRetry"
             >
               {{ retrying ? 'Retrying…' : 'Retry' }}
             </button>
           </span>
         </template>
       </div>
+      <details
+        v-if="isOutgoing && deliveryDetail"
+        class="mt-0.5 max-w-full px-1 text-xs text-muted-foreground"
+        data-testid="support-message-delivery-details"
+      >
+        <summary class="cursor-pointer select-none underline-offset-2 hover:underline">Details</summary>
+        <p class="mt-1 whitespace-pre-wrap break-words font-mono text-[11px]">{{ deliveryDetail }}</p>
+      </details>
     </div>
+
+    <Dialog :open="isRetryDialogOpen" @update:open="isRetryDialogOpen = $event">
+      <DialogContent class="sm:max-w-[440px]" data-testid="support-message-retry-dialog">
+        <DialogHeader>
+          <DialogTitle>Send this reply again?</DialogTitle>
+          <DialogDescription>
+            The last attempt failed, but the mail provider may have accepted it anyway. If it did, the customer gets
+            this reply twice.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" data-testid="support-message-retry-cancel" @click="isRetryDialogOpen = false">
+            Cancel
+          </Button>
+          <Button data-testid="support-message-retry-confirm" @click="confirmRetry">Send again</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script>
 import { toast } from 'vue-sonner'
+import {
+  DELIVERY_FAILURE_MESSAGES,
+  SENDER_DOMAIN_NOT_AUTHORIZED,
+  classifyDeliveryError,
+} from '~/lib/support-delivery-errors'
 
-const SENDER_DOMAIN_NOT_AUTHORIZED = 'SENDER_DOMAIN_NOT_AUTHORIZED'
+/** Outbox markers are shown as their sentence; only provider text goes behind "Details". */
+const MARKERS = new Set([SENDER_DOMAIN_NOT_AUTHORIZED, 'DELIVERY_ABANDONED'])
 
 // Frogmail `skip_reason` values (Frogmail design §6.2).
 const FORWARD_REASONS = {
@@ -193,6 +240,7 @@ export default {
     return {
       retrying: false,
       senderRetryBlocked: false,
+      isRetryDialogOpen: false,
     }
   },
 
@@ -222,6 +270,37 @@ export default {
         this.message.senderBlocked === true ||
         this.message.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED
       )
+    },
+
+    /** "Sending…", or "Sending… (attempt n of 5)" while the outbox retries. */
+    pendingLabel() {
+      const attempt = this.message.deliveryAttempt
+      if (attempt && attempt.current > 1) return `Sending… (attempt ${attempt.current} of ${attempt.max})`
+      return 'Sending…'
+    },
+
+    failureReason() {
+      return this.message.failureReason || classifyDeliveryError(this.message.deliveryError)
+    },
+
+    /** Plain-language reason; the provider's own text stays behind "Details". */
+    failureLabel() {
+      const reason = this.failureReason
+      if (this.message.deliveryStatus === 'bounced') {
+        if (reason === 'unknown' && this.message.deliveryError) return `Bounced: ${this.message.deliveryError}`
+        return reason === 'unknown' ? 'Bounced' : `Bounced: ${DELIVERY_FAILURE_MESSAGES[reason]}`
+      }
+      return `Not sent: ${DELIVERY_FAILURE_MESSAGES[reason] || DELIVERY_FAILURE_MESSAGES.unknown}`
+    },
+
+    /** Raw provider text for failed, bounced, delayed and retrying replies. */
+    deliveryDetail() {
+      const status = this.message.deliveryStatus
+      const error = this.message.deliveryError
+      if (!error || MARKERS.has(error)) return ''
+      if (status === 'pending') return this.message.deliveryAttempt ? `Last attempt: ${error}` : ''
+      if (status === 'bounced' && this.failureReason === 'unknown') return ''
+      return ['failed', 'bounced', 'delayed'].includes(status) ? error : ''
     },
 
     /** Notes from Frogmail about forwarding and attachment removal on inbound mail. */
@@ -296,15 +375,23 @@ export default {
       return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`
     },
 
-    async retryDelivery() {
+    /** A blocked sender never reached the provider, so there is no duplicate risk to confirm. */
+    requestRetry() {
       if (this.retrying || !this.conversationId) return
-      // A blocked sender never reached the provider, so there is no duplicate risk to confirm.
-      if (
-        !this.isSenderBlocked &&
-        !window.confirm('The previous attempt may already have been accepted. Retrying could send a duplicate.')
-      ) {
+      if (this.isSenderBlocked) {
+        this.retryDelivery()
         return
       }
+      this.isRetryDialogOpen = true
+    },
+
+    confirmRetry() {
+      this.isRetryDialogOpen = false
+      this.retryDelivery()
+    },
+
+    async retryDelivery() {
+      if (this.retrying || !this.conversationId) return
       this.retrying = true
 
       try {

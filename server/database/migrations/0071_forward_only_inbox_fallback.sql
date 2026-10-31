@@ -1,0 +1,1 @@
+ALTER TABLE "project_mail_address" ADD COLUMN "provider_route_inbox_fallback" boolean DEFAULT false NOT NULL;

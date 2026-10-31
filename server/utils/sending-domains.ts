@@ -22,6 +22,7 @@ import {
   getRegistrableDomain,
   isSameOrSubdomain,
   normalizeSendingDomain,
+  sendingDomainSuspendedReason,
   validateSendingDomain,
   type SendingDomainDnsRecord,
   type SendingDomainProviderOwnership,
@@ -354,6 +355,7 @@ export function toSendingDomainView(
     verifiedAt: iso(row.verifiedAt),
     lastErrorCode: row.lastErrorCode,
     lastError: row.lastError,
+    suspendedReason: sendingDomainSuspendedReason(row.status, row.lastErrorCode),
     providerOwnership:
       row.providerOwnership === 'created' || row.providerOwnership === 'adopted'
         ? (row.providerOwnership as SendingDomainProviderOwnership)

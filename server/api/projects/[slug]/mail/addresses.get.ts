@@ -17,7 +17,7 @@
  *         description: "Project slug"
  *         schema: { type: string }
  *     responses:
- *       200: { description: "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }" }
+ *       200: { description: "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox, inboxFallback (forward-only address still delivering to the inbox because no forward is confirmed yet) and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }" }
  *       401: { description: "Not authenticated" }
  *       403: { description: "No access to the project" }
  *       404: { description: "Project not found in the active workspace" }
@@ -60,6 +60,7 @@ export default defineEventHandler(async (event) => {
       domainId: projectMailAddress.domainId,
       routeStatus: projectMailAddress.providerRouteStatus,
       deliverToInbox: projectMailAddress.deliverToInbox,
+      inboxFallback: projectMailAddress.providerRouteInboxFallback,
       createdAt: projectMailAddress.createdAt,
     })
     .from(projectMailAddress)
@@ -85,6 +86,8 @@ export default defineEventHandler(async (event) => {
       routeStatus:
         row.routeStatus === 'active' ? ('active' as const) : row.routeStatus === 'failed' ? ('failed' as const) : null,
       deliverToInbox: row.deliverToInbox,
+      // Only while the route that carries the fallback is live.
+      inboxFallback: !row.deliverToInbox && row.inboxFallback && row.routeStatus === 'active',
       forwards: forwardsByAddress.get(row.id) ?? [],
       createdAt: new Date(row.createdAt).toISOString(),
     }))

@@ -99,6 +99,7 @@ import {
 } from '~/server/utils/storage/media'
 import { verifyUploadToken } from '~/server/utils/upload-token'
 import { createLogger } from '~/server/utils/logger'
+import { syncProjectForwardingBrand } from '~/server/utils/forwarding-brand'
 import type { DomainProviderResult } from '~/server/services/domains/provider'
 
 const logger = createLogger('projects')
@@ -379,6 +380,13 @@ export default defineEventHandler(async (event) => {
         error: err instanceof Error ? err.message : err,
       })
     }
+  }
+
+  // Forward-confirmation emails carry the project's name as their brand. Best
+  // effort and off the request path: a failure is logged inside, and the poller
+  // corrects any drift on its next pass.
+  if (body.name !== undefined && updated.name !== currentProject.name) {
+    void syncProjectForwardingBrand(currentProject.id)
   }
 
   if (shouldNotifyConnected) {

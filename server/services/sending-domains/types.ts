@@ -70,6 +70,11 @@ export interface ProviderReceivingState {
   /** The SES MX record, purpose `receiving`. */
   records: SendingDomainDnsRecord[]
   lastReceivedAt: Date | null
+  /**
+   * Sender brand Frogmail uses in forward-confirmation emails. `undefined` when
+   * the provider does not report the field (a Frogmail without brand support).
+   */
+  forwardingBrandName?: string | null
 }
 
 export type ForwardDestinationStatus = 'pending' | 'verified' | 'revoked' | 'suspended'
@@ -154,10 +159,12 @@ export interface SendingDomainProvider {
    * SES receiving and email forwarding (Frogmail only; `capabilities.forwarding`).
    * See docs/plans/2026-10-28-email-addresses/design.md → Frogmail contract.
    */
-  enableReceiving?(domain: string): Promise<ProviderReceivingState>
+  enableReceiving?(domain: string, options?: { brandName?: string | null }): Promise<ProviderReceivingState>
   /** `null` when the provider does not know the domain. */
   getReceiving?(domain: string): Promise<ProviderReceivingState | null>
   setForwardingPaused?(domain: string, paused: boolean): Promise<ProviderReceivingState>
+  /** Sets the brand of forward-confirmation emails (`forwarding_brand_name`). */
+  setForwardingBrandName?(domain: string, brandName: string | null): Promise<ProviderReceivingState>
   disableReceiving?(domain: string): Promise<void>
   listForwardDestinations?(domain: string): Promise<ProviderForwardDestination[]>
   createForwardDestination?(domain: string, email: string): Promise<ProviderForwardDestination>

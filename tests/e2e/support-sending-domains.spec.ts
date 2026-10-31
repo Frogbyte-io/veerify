@@ -955,14 +955,159 @@ test.describe('support sending domains', () => {
         // retryable:false hides Retry, and a plain failure keeps the generic label.
         messages = [blocked({ deliveryError: null, senderBlocked: false, retryable: false })]
         await page.reload({ waitUntil: 'domcontentloaded' })
-        await expect(page.getByTestId('support-message-delivery-failed')).toContainText('Failed to send', {
+        await expect(page.getByTestId('support-message-delivery-failed')).toContainText(
+          'Not sent: The reply could not be sent.',
+          { timeout: 30_000 }
+        )
+        await expect(page.getByTestId('support-message-retry')).toHaveCount(0)
+
+        // Retrying, delayed and bounced replies say so in words, with the provider text behind Details.
+        messages = [
+          blocked({
+            id: 'retrying-msg',
+            deliveryStatus: 'pending',
+            deliveryError: 'Mailgun API returned 503: upstream timeout',
+            deliveryAttempt: { current: 3, max: 5, nextAttemptAt: new Date(Date.now() + 60_000).toISOString() },
+          }),
+        ]
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await expect(page.getByTestId('support-message-delivery-pending')).toHaveText('Sending… (attempt 3 of 5)', {
           timeout: 30_000,
         })
-        await expect(page.getByTestId('support-message-retry')).toHaveCount(0)
+        messages = [
+          blocked({
+            id: 'delayed-msg',
+            deliveryStatus: 'delayed',
+            deliveryError: '452 4.2.2 mailbox temporarily over quota',
+            failureReason: 'mailbox_full',
+          }),
+        ]
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await expect(page.getByTestId('support-message-delivery-delayed')).toHaveText('Delayed – retrying', {
+          timeout: 30_000,
+        })
+        const details = page.getByTestId('support-message-delivery-details')
+        await details.locator('summary').click()
+        await expect(details).toContainText('452 4.2.2 mailbox temporarily over quota')
+        messages = [
+          blocked({
+            id: 'bounced-msg',
+            deliveryStatus: 'bounced',
+            deliveryError: '550 5.1.1 The email account that you tried to reach does not exist',
+            failureReason: 'recipient_rejected',
+          }),
+        ]
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await expect(page.getByTestId('support-message-failure-reason')).toContainText(
+          'Bounced: The recipient’s mail server rejected the address.',
+          { timeout: 30_000 }
+        )
+        await expect(page.getByTestId('support-message-delivery-details')).toContainText('Details')
+        messages = [blocked({ id: 'delivered-msg', deliveryStatus: 'delivered', deliveryError: null })]
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await expect(page.getByTestId('support-message-delivery-sent')).toHaveText('Delivered', { timeout: 30_000 })
       } finally {
         if (conversationId) await db.delete(conversation).where(eq(conversation.id, conversationId))
         await db.delete(contact).where(eq(contact.email, customerEmail))
       }
+    })
+
+    test('the address table shows forward status in words, resends inline and explains the inbox fallback', async ({
+      browser,
+    }) => {
+      const forward = (overrides: Record<string, unknown>) => ({
+        id: 'fwd-pending',
+        email: 'owner@example.org',
+        status: 'pending',
+        statusReason: null,
+        verificationSentAt: new Date().toISOString(),
+        ...overrides,
+      })
+      const addresses = {
+        addresses: [
+          {
+            id: 'addr-forward-only',
+            address: 'hello@stub.example.com',
+            isCatchAll: false,
+            kind: 'custom',
+            isPrimary: false,
+            behaviour: 'mail',
+            inboxId: fixture.primaryInboxId,
+            inboxName: 'Primary',
+            productId: null,
+            productName: null,
+            domainId: 'stub-domain-1',
+            routeStatus: 'active',
+            deliverToInbox: false,
+            inboxFallback: true,
+            forwards: [
+              forward({}),
+              forward({ id: 'fwd-bounced', email: 'bounced@example.org', status: 'suspended' }),
+              forward({
+                id: 'fwd-stopped',
+                email: 'gone@example.org',
+                status: 'revoked',
+                statusReason: 'unsubscribed',
+              }),
+            ],
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        domains: [
+          { id: 'stub-domain-1', domain: 'stub.example.com', receivingStatus: 'active', forwardingPaused: false },
+        ],
+        forwarding: true,
+        usage: null,
+      }
+      let resent = 0
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                domains: [
+                  domainRow({ status: 'verified', verifiedAt: new Date().toISOString() }),
+                  domainRow({ id: 'stub-domain-2', domain: 'waiting.example.com' }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
+      await page.route(/\/api\/projects\/[^/]+\/mail\/addresses(\?.*)?$/, (route) =>
+        route.fulfill(ok(addresses) as never)
+      )
+      await page.route(/\/api\/projects\/[^/]+\/mail\/destinations\/fwd-pending\/resend$/, (route) => {
+        resent += 1
+        return route.fulfill(ok({ destination: forward({}) }) as never)
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+
+      const row = page.getByTestId('mail-address-row').first()
+      await expect(row.getByTestId('mail-address-inbox-fallback')).toHaveText(
+        'Delivering to the Inbox until a forwarding address is confirmed.',
+        { timeout: 30_000 }
+      )
+      const statuses = row.getByTestId('mail-address-forward-status')
+      await expect(statuses).toHaveText(['Waiting for confirmation', 'Suspended – bounced', 'Stopped by recipient'])
+      // Waiting and bounced can be resent; a recipient who stopped forwarding is not asked again.
+      await expect(row.getByTestId('mail-address-forward-resend-inline')).toHaveCount(2)
+      await row.getByTestId('mail-address-forward-resend-inline').first().click()
+      await expect.poll(() => resent).toBe(1)
+
+      await page.getByTestId('mail-address-add').click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByTestId('mail-address-catch-all-help')).toContainText(
+        'Specific addresses always win. A catch-all receives everything else'
+      )
+      await expect(dialog.locator('option', { hasText: 'waiting.example.com (waiting for DNS)' })).toBeDisabled()
+      await expect(dialog.getByTestId('mail-address-domain-hint')).toBeVisible()
+      await dialog.getByTestId('mail-address-delivery-forward').click()
+      await expect(dialog.getByTestId('mail-address-inbox-fallback')).toBeVisible()
+      await expect(dialog.getByTestId('mail-address-forward-confirm-help')).toContainText(
+        'Forwarding starts once the recipient confirms.'
+      )
     })
   })
 })

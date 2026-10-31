@@ -31,6 +31,8 @@ interface FakeDomainState {
   verifyCalls: number
   receiving: boolean
   forwardingPaused: boolean
+  /** `forwarding_brand_name`; null until set. */
+  brandName?: string | null
 }
 
 export interface FakeSendingDomainStore {
@@ -171,9 +173,16 @@ export class FakeSendingDomainProvider implements SendingDomainProvider {
     this.store.routes.delete(routeId)
   }
 
-  async enableReceiving(domain: string): Promise<ProviderReceivingState> {
+  async enableReceiving(domain: string, options?: { brandName?: string | null }): Promise<ProviderReceivingState> {
     const state = this.requireDomain(domain)
     state.receiving = true
+    if (options?.brandName !== undefined) state.brandName = options.brandName
+    return this.receiving(normalizeDomainName(domain))
+  }
+
+  async setForwardingBrandName(domain: string, brandName: string | null): Promise<ProviderReceivingState> {
+    const state = this.requireDomain(domain)
+    state.brandName = brandName
     return this.receiving(normalizeDomainName(domain))
   }
 
@@ -292,6 +301,7 @@ export class FakeSendingDomainProvider implements SendingDomainProvider {
     return {
       status: !state.receiving ? 'disabled' : active ? 'active' : 'pending_verification',
       forwardingPaused: state.forwardingPaused,
+      forwardingBrandName: state.brandName ?? null,
       records: [
         {
           purpose: 'receiving',

@@ -9000,7 +9000,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }"
+          "description": "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox, inboxFallback (forward-only address still delivering to the inbox because no forward is confirmed yet) and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }"
         },
         "401": {
           "description": "Not authenticated"
@@ -11894,7 +11894,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Get a conversation's message thread",
-      "description": "Returns the most recent window of messages in ascending (oldest-first) order, ready to render as a chat thread. `hasMore: true` means older history exists above the returned window - this endpoint always anchors to the newest messages, never to an arbitrary page. All kinds (`incoming`, `outgoing`, `note`, `activity`) are included, private notes too, since this is the agent-facing thread pane. Outgoing messages carry delivery detail for the retry UI: `deliveryError` (short sanitized text or null), `senderBlocked` (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message was never submitted to the provider) and `retryable` (true only for a failed reply that has an email outbox entry; CSAT survey deliveries are never retryable).\n",
+      "description": "Returns the most recent window of messages in ascending (oldest-first) order, ready to render as a chat thread. `hasMore: true` means older history exists above the returned window - this endpoint always anchors to the newest messages, never to an arbitrary page. All kinds (`incoming`, `outgoing`, `note`, `activity`) are included, private notes too, since this is the agent-facing thread pane. Outgoing messages carry delivery detail for the retry UI: `deliveryError` (short sanitized text or null), `senderBlocked` (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message was never submitted to the provider) and `retryable` (true only for a failed reply that has an email outbox entry; CSAT survey deliveries are never retryable). `deliveryStatus` is pending, sent, delayed (the recipient's server deferred it and the provider is retrying), delivered, failed or bounced. `failureReason` classifies a failed, bounced or delayed reply's `deliveryError` (sender_rejected, recipient_rejected, mailbox_full, provider_unavailable, configuration, abandoned, unknown; null otherwise). `deliveryAttempt` is set while the outbox retries a pending reply after a failed attempt: `{ current, max, nextAttemptAt }` (null otherwise).\n",
       "operationId": "listSupportConversationMessages",
       "parameters": [
         {
@@ -12265,7 +12265,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Delivery, bounce, and engagement webhook",
-      "description": "Provider-agnostic. Returns 200 for everything it deliberately did not act on - a duplicate event, one that cannot be correlated to a message this app sent, or an engagement event (open/click/complaint) Stage 04 only records - because a 4xx makes a provider retry indefinitely. Processing failures return a retryable 500. Only a failed signature is a 401.\n",
+      "description": "Provider-agnostic. Returns 200 for everything it deliberately did not act on - a duplicate event, one that cannot be correlated to a message this app sent, or an engagement event (open/click/complaint) Stage 04 only records - because a 4xx makes a provider retry indefinitely. Processing failures return a retryable 500. Only a failed signature is a 401. `delivered` marks a reply delivered, a hard bounce marks it `bounced` (and notifies the replying agent once), and a soft bounce (Mailgun `temporary_fail`) marks a sent reply `delayed` without ever overriding a final state.\n",
       "operationId": "receiveSupportDeliveryEvent",
       "security": [],
       "parameters": [

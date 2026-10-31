@@ -313,7 +313,35 @@ export default defineEventHandler(() => {
             isPrivate: { type: 'boolean', description: 'Derived from kind; notes and activity are private' },
             channelMessageId: { type: 'string', nullable: true },
             inReplyTo: { type: 'string', nullable: true },
-            deliveryStatus: { type: 'string', enum: ['pending', 'sent', 'delivered', 'failed', 'bounced'] },
+            deliveryStatus: {
+              type: 'string',
+              enum: ['pending', 'sent', 'delayed', 'delivered', 'failed', 'bounced'],
+              description: 'delayed: the recipient server deferred it and the provider is retrying (not final)',
+            },
+            failureReason: {
+              type: 'string',
+              nullable: true,
+              enum: [
+                'sender_rejected',
+                'recipient_rejected',
+                'mailbox_full',
+                'provider_unavailable',
+                'configuration',
+                'abandoned',
+                'unknown',
+              ],
+              description: 'Thread API only: the classified deliveryError of a failed, bounced or delayed reply',
+            },
+            deliveryAttempt: {
+              type: 'object',
+              nullable: true,
+              description: 'Thread API only: set while the outbox retries a pending reply after a failed attempt',
+              properties: {
+                current: { type: 'integer' },
+                max: { type: 'integer' },
+                nextAttemptAt: { type: 'string', format: 'date-time', nullable: true },
+              },
+            },
             createdAt: { type: 'string', format: 'date-time' },
             attachments: {
               type: 'array',
@@ -374,6 +402,13 @@ export default defineEventHandler(() => {
             verifiedAt: { type: 'string', format: 'date-time', nullable: true },
             lastErrorCode: { type: 'string', nullable: true },
             lastError: { type: 'string', nullable: true },
+            suspendedReason: {
+              type: 'string',
+              enum: ['sender_rejected', 'dns_missing', 'other'],
+              nullable: true,
+              description:
+                'Set while status is suspended: sender_rejected (the mail provider refused to send from the domain), dns_missing (the DNS records stopped verifying) or other',
+            },
             providerOwnership: { type: 'string', enum: ['created', 'adopted'], nullable: true },
             providerMismatch: {
               type: 'boolean',

@@ -133,7 +133,8 @@ The `mail_*` tools wrap Project settings → Email. Domains and forwards need a 
 3. `mail_list_inboxes`, then `mail_create_address` with `address: "hello@newsite.com"`, the inbox id, and
    `forwardTo: ["me@example.org"]` (add `deliverToInbox: false` to forward only).
 4. Tell the user to click the confirmation link Frogmail sends to `me@example.org`. `mail_list_addresses` shows
-   the forward as `verified` afterwards.
+   the forward as `verified` afterwards. Forwarding starts then; earlier mail is not forwarded later. Until a
+   forward is confirmed, a forward-only address also delivers to the Inbox (`inboxFallback: true`).
 
 `forwardTo` needs `forwarding: true` in `mail_list_addresses`; without it, addresses deliver to the Inbox only.
 

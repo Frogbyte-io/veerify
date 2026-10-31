@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { conversationMessage, supportDeliveryEvent } from '~/server/database/schema/support'
-import { markDeliveryMessageBounced, markDeliveryMessageDelivered } from '~/server/utils/delivery-status'
+import {
+  markDeliveryMessageBounced,
+  markDeliveryMessageDelayed,
+  markDeliveryMessageDelivered,
+} from '~/server/utils/delivery-status'
 
 /**
  * Claim/replay state for delivery, bounce, and engagement webhook events
@@ -119,7 +123,11 @@ export async function claimDeliveryEvent(input: {
 
 type DeliveryEventExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-/** Apply one correlated event; the guarded status update makes hard bounce terminal and activity idempotent. */
+/**
+ * Apply one correlated event; the guarded status update makes hard bounce terminal and activity idempotent. A
+ * soft bounce (Mailgun `failed` with severity `temporary`, i.e. `temporary_fail`) marks a sent reply `delayed`:
+ * the provider is still retrying, so it is shown but never overrides a final state.
+ */
 export async function applyDeliveryEventStatus(
   executor: DeliveryEventExecutor,
   input: {
@@ -131,6 +139,9 @@ export async function applyDeliveryEventStatus(
   }
 ): Promise<boolean> {
   if (input.recordType === 'delivered') return markDeliveryMessageDelivered(executor, input.messageId)
+  if (input.recordType === 'bounced' && input.bounceType === 'soft') {
+    return markDeliveryMessageDelayed(executor, input.messageId, input.description)
+  }
   if (input.recordType !== 'bounced' || input.bounceType !== 'hard') return false
 
   const changed = await markDeliveryMessageBounced(executor, input.messageId, input.description)

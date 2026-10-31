@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
 import { project } from '../../server/database/schema/feedback'
 import {
   contact,
@@ -19,7 +19,13 @@ import {
   failDeliveryEvent,
   type DeliveryEventClaimOutcome,
 } from '../../server/utils/delivery-events'
-import { markDeliveryMessageBounced, markDeliveryMessageDelivered } from '../../server/utils/delivery-status'
+import {
+  markDeliveryMessageBounced,
+  markDeliveryMessageDelayed,
+  markDeliveryMessageDelivered,
+} from '../../server/utils/delivery-status'
+import { notification } from '../../server/database/schema/notifications'
+import { clearReplyFailureNotification, notifyReplyFailed } from '../../server/utils/reply-failure-notifications'
 
 /**
  * The claim is an atomic conditional upsert, mirroring `claimInboundEvent` -
@@ -51,9 +57,17 @@ const inboxId = `inbox_delivery_${randomUUID()}`
 const contactId = `contact_delivery_${randomUUID()}`
 const conversationId = `conv_delivery_${randomUUID()}`
 const fixtureMessageId = `msg_delivery_${randomUUID()}`
+const agentId = `user_delivery_${randomUUID()}`
 const now = new Date()
 
 beforeAll(async () => {
+  await db.insert(user).values({
+    id: agentId,
+    name: 'Delivery agent',
+    email: `delivery-agent-${randomUUID()}@example.com`,
+    createdAt: now,
+    updatedAt: now,
+  })
   await db.insert(organization).values({ id: orgId, name: 'Delivery Org', slug: `delivery-org-${randomUUID()}` })
   await db.insert(project).values({
     id: projectId,
@@ -100,6 +114,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  await db.delete(user).where(eq(user.id, agentId))
   // organization → project → inbox/contact/conversation → messages cascade.
   // supportDeliveryEvent.messageId is `onDelete: 'set null'`, not cascade, so
   // rows created against fixtureMessageId are cleaned up explicitly below
@@ -421,5 +436,79 @@ describe('delivery message status transitions', () => {
       .where(eq(conversationMessage.body, `Delivery failed: ${description}`))
     expect(message.deliveryStatus).toBe('bounced')
     expect(activities).toHaveLength(1)
+  })
+})
+
+describe('delayed replies (temporary_fail)', () => {
+  async function status(value?: string) {
+    if (value) {
+      await db
+        .update(conversationMessage)
+        .set({ deliveryStatus: value, deliveryError: null })
+        .where(eq(conversationMessage.id, fixtureMessageId))
+    }
+    const [row] = await db
+      .select({ deliveryStatus: conversationMessage.deliveryStatus, deliveryError: conversationMessage.deliveryError })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.id, fixtureMessageId))
+    return row
+  }
+
+  it('marks a sent reply delayed and lets delivered or bounced follow', async () => {
+    await status('sent')
+    expect(await markDeliveryMessageDelayed(db, fixtureMessageId, '451 try later')).toBe(true)
+    expect(await status()).toEqual({ deliveryStatus: 'delayed', deliveryError: '451 try later' })
+
+    expect(await markDeliveryMessageDelivered(db, fixtureMessageId)).toBe(true)
+    expect(await status()).toEqual({ deliveryStatus: 'delivered', deliveryError: null })
+
+    await status('delayed')
+    expect(await markDeliveryMessageBounced(db, fixtureMessageId, '550 user unknown')).toBe(true)
+    expect((await status()).deliveryStatus).toBe('bounced')
+  })
+
+  it.each(['delivered', 'bounced', 'failed', 'pending'])('never regresses %s to delayed', async (value) => {
+    await status(value)
+    expect(await markDeliveryMessageDelayed(db, fixtureMessageId, '451 try later')).toBe(false)
+    expect((await status()).deliveryStatus).toBe(value)
+  })
+})
+
+describe('reply failure notifications', () => {
+  async function failed(deliveryStatus = 'failed') {
+    await db
+      .update(conversationMessage)
+      .set({ deliveryStatus, deliveryError: '552 5.2.2 mailbox full', senderUserId: agentId, metadata: null })
+      .where(eq(conversationMessage.id, fixtureMessageId))
+  }
+  const notifications = () => db.select().from(notification).where(eq(notification.userId, agentId))
+
+  afterEach(async () => {
+    await db.delete(notification).where(eq(notification.userId, agentId))
+  })
+
+  it('notifies the replying agent exactly once per failure, even when called concurrently', async () => {
+    await failed()
+    const results = await Promise.all([1, 2, 3].map(() => notifyReplyFailed(fixtureMessageId)))
+    expect(results.filter(Boolean)).toHaveLength(1)
+    expect(await notifications()).toEqual([
+      expect.objectContaining({
+        type: 'reply_failed',
+        title: 'Your reply in conversation #9201 was not sent',
+        link: `/inbox?conversationId=${conversationId}`,
+      }),
+    ])
+    expect(await notifyReplyFailed(fixtureMessageId)).toBe(false)
+
+    // An agent's retry clears the marker: a second final failure notifies again.
+    await clearReplyFailureNotification(fixtureMessageId)
+    expect(await notifyReplyFailed(fixtureMessageId)).toBe(true)
+    expect(await notifications()).toHaveLength(2)
+  })
+
+  it('does not notify for a reply that has not finally failed', async () => {
+    await failed('sent')
+    expect(await notifyReplyFailed(fixtureMessageId)).toBe(false)
+    expect(await notifications()).toHaveLength(0)
   })
 })

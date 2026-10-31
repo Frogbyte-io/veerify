@@ -12,6 +12,7 @@ import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { SendingDomainProviderError } from '~/server/services/sending-domains/types'
 import type { ProviderForwardDestination, SendingDomainProvider } from '~/server/services/sending-domains/types'
 import { isSendingDomainsEnabled } from '~/server/utils/sending-domains'
+import { resyncForwardOnlyRoutes } from '~/server/utils/inbound-routes'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import type { MailForwardStatus, ProjectMailAddressForward } from '~/lib/mail-address'
 
@@ -87,6 +88,8 @@ async function store(row: DestinationRow, remote: ProviderForwardDestination): P
     })
     .where(eq(mailForwardDestination.id, row.id))
     .returning()
+  // A status change can switch a forward-only address's inbox fallback on or off.
+  if (updated && updated.status !== row.status) await resyncForwardOnlyRoutes({ destinationIds: [row.id] })
   return updated ?? row
 }
 
@@ -121,6 +124,7 @@ export async function revokeForwardDestination(event: H3Event, projectId: string
         .set({ status: 'revoked', statusReason: 'api', updatedAt: new Date() })
         .where(eq(mailForwardDestination.id, row.id))
         .returning()
+      if (row.status !== 'revoked') await resyncForwardOnlyRoutes({ destinationIds: [row.id] })
       return updated ?? row
     }
     return await store(row, remote)
