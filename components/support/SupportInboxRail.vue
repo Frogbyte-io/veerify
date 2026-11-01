@@ -5,11 +5,12 @@
       type="button"
       data-testid="support-open-inboxes"
       class="mb-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground"
-      :aria-label="`${activeInboxName}: switch inbox, address or tag`"
+      :aria-label="combined ? 'All inboxes: views' : `${activeInboxName}: switch inbox, address or tag`"
       :title="activeInboxName"
       @click="$emit('open-inboxes')"
     >
-      {{ initial(activeInboxName) }}
+      <Icon v-if="combined" name="lucide:inbox" class="h-4 w-4" />
+      <template v-else>{{ initial(activeInboxName) }}</template>
     </button>
 
     <button
@@ -49,7 +50,13 @@
       >
         <Icon :name="view.icon" class="h-5 w-5" />
       </button>
-      <NuxtLink to="/inbox/settings" :class="itemClass(false)" aria-label="Inbox settings" title="Inbox settings">
+      <NuxtLink
+        v-if="!combined"
+        to="/inbox/settings"
+        :class="itemClass(false)"
+        aria-label="Inbox settings"
+        title="Inbox settings"
+      >
         <Icon name="lucide:settings" class="h-5 w-5" />
       </NuxtLink>
     </div>
@@ -66,6 +73,8 @@ export default {
     activeInboxName: { type: String, default: 'Inbox' },
     activeView: { type: String, default: 'inbox' },
     unreadCounts: { type: Object, default: () => ({}) },
+    // All projects: one combined list, no inbox to pick.
+    combined: { type: Boolean, default: false },
   },
 
   emits: ['select-view', 'open-inboxes'],

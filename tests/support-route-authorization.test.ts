@@ -992,6 +992,9 @@ describe('executable support route authorization inventory', () => {
       ...executableBoundaryCases.map((route) => route.name),
       'contacts/[id]/links/[linkId].delete',
       'channel-status.get',
+      // Combined list (All projects): the project scope and `listAccessibleInboxes` are the boundary;
+      // see tests/support-combined-conversations.test.ts.
+      'conversations/combined.get',
       'inbound/[provider].post',
       'delivery/[provider].post',
       // Native Frogmail webhook: HMAC-signed, no session; see tests/frogmail-webhook.test.ts.
