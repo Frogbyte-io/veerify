@@ -2,19 +2,8 @@
   <PageContainer>
     <PageHeader :title="headerTitle" :description="headerDescription" />
 
-    <!-- Loading state: shaped like the workspace dashboard (stat cards, then the content grid) -->
-    <div v-if="isLoading" key="loading" class="flex flex-col gap-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="dashboard-loading">
-        <Skeleton v-for="n in 4" :key="n" class="h-[90px] rounded-xl" />
-      </div>
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Skeleton class="h-96 rounded-xl lg:col-span-2" />
-        <div class="space-y-6">
-          <Skeleton class="h-44 rounded-xl" />
-          <Skeleton class="h-40 rounded-xl" />
-        </div>
-      </div>
-    </div>
+    <!-- Loading state: shaped like the workspace overview (needs you, numbers, projects) -->
+    <OverviewSkeleton v-if="isLoading" key="loading" data-testid="dashboard-loading" />
 
     <!-- Personal Dashboard (no workspace) -->
     <div v-else-if="!hasOrganization" key="personal" class="flex flex-col gap-6">
@@ -157,165 +146,77 @@
       </div>
     </div>
 
-    <!-- Workspace Dashboard (has organization) -->
-    <div v-else key="workspace" class="flex flex-col gap-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-card p-6 rounded-lg border border-border">
-          <div class="flex items-center">
-            <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/10 mr-4">
-              <Icon name="lucide:message-square" class="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <p class="text-sm font-medium text-muted-foreground">Total Feedback</p>
-              <p class="text-2xl font-bold text-card-foreground">{{ stats.totalFeedback }}</p>
-            </div>
-          </div>
-        </div>
+    <!-- Workspace Overview (has organization) -->
+    <div v-else key="workspace" class="flex flex-col gap-6" data-testid="dashboard-overview">
+      <ProjectScopeChips
+        v-if="allProjects"
+        :model-value="selectedIds"
+        :projects="scopeList"
+        page="overview"
+        @update:model-value="onSelectionChange"
+      />
 
-        <div class="bg-card p-6 rounded-lg border border-border">
-          <div class="flex items-center">
-            <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-orange-500/10 mr-4">
-              <Icon name="lucide:circle-dot" class="w-5 h-5 text-orange-600 dark:text-orange-400" />
-            </div>
-            <div>
-              <p class="text-sm font-medium text-muted-foreground">Open</p>
-              <p class="text-2xl font-bold text-card-foreground">{{ stats.openFeedback }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-card p-6 rounded-lg border border-border">
-          <div class="flex items-center">
-            <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/10 mr-4">
-              <Icon name="lucide:loader" class="w-5 h-5 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div>
-              <p class="text-sm font-medium text-muted-foreground">In Progress</p>
-              <p class="text-2xl font-bold text-card-foreground">{{ stats.inProgressFeedback }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-card p-6 rounded-lg border border-border">
-          <div class="flex items-center">
-            <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-green-500/10 mr-4">
-              <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <p class="text-sm font-medium text-muted-foreground">Completed</p>
-              <p class="text-2xl font-bold text-card-foreground">{{ stats.completedFeedback }}</p>
-            </div>
-          </div>
+      <div
+        v-if="overviewError"
+        key="error"
+        class="rounded-xl border bg-card p-6 text-center"
+        data-testid="overview-error"
+      >
+        <Icon name="lucide:circle-alert" class="mx-auto mb-2 h-6 w-6 text-destructive" />
+        <p class="text-sm font-medium">{{ overviewError }}</p>
+        <div class="mt-3 flex justify-center gap-2">
+          <Button v-if="noProject" size="sm" @click="navigateTo('/onboarding')">Create a project</Button>
+          <Button v-else size="sm" variant="outline" data-testid="overview-retry" @click="loadOverview">
+            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+            Try again
+          </Button>
         </div>
       </div>
 
-      <!-- Bottom section: recent feedback + project info -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Recent Feedback -->
-        <div class="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <div class="flex items-center justify-between">
-                <div>
-                  <CardTitle>Recent Feedback</CardTitle>
-                  <CardDescription>Latest submissions across your projects</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" @click="navigateTo('/feedback')">View all</Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div v-if="stats.recentFeedback.length === 0" class="text-center py-8">
-                <div class="flex justify-center mb-4">
-                  <div class="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
-                    <Icon name="lucide:inbox" class="w-6 h-6 text-muted-foreground" />
-                  </div>
-                </div>
-                <p class="font-medium mb-1">No feedback yet</p>
-                <p class="text-sm text-muted-foreground">Feedback submitted to your projects will appear here.</p>
-              </div>
-              <div v-else class="space-y-2">
-                <NuxtLink
-                  v-for="item in stats.recentFeedback"
-                  :key="item.id"
-                  :to="`/feedback/${item.id}`"
-                  prefetch-on="interaction"
-                  class="flex items-center justify-between rounded-lg border p-3 hover:bg-muted transition-colors"
-                >
-                  <div class="min-w-0 flex-1">
-                    <p class="font-medium truncate">{{ item.title }}</p>
-                    <p class="text-xs text-muted-foreground">
-                      {{ item.projectName || 'Unknown project' }} · {{ formatDate(item.createdAt) }}
-                    </p>
-                  </div>
-                  <div class="flex items-center gap-2 shrink-0 ml-3">
-                    <Badge :variant="getStatusVariant(item.status)" class="text-xs">
-                      {{ formatStatus(item.status) }}
-                    </Badge>
-                    <span class="text-xs text-muted-foreground flex items-center gap-1">
-                      <Icon name="lucide:arrow-up" class="w-3 h-3" />
-                      {{ item.voteCount }}
-                    </span>
-                  </div>
-                </NuxtLink>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <OverviewSkeleton v-else-if="!overview" key="overview-loading" :projects-table="allProjects" />
 
-        <!-- Project info -->
-        <div class="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-base">Project overview</CardTitle>
-            </CardHeader>
-            <CardContent class="space-y-4">
-              <div v-if="productCount > 1" class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Icon name="lucide:package" class="w-4 h-4" />
-                  Products
-                </div>
-                <span class="font-semibold">{{ productCount }}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Icon name="lucide:folder" class="w-4 h-4" />
-                  Projects you can open
-                </div>
-                <span class="font-semibold">{{ projectCount }}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Icon name="lucide:users" class="w-4 h-4" />
-                  People in this project
-                </div>
-                <span class="font-semibold">{{ stats.memberCount }}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle class="text-base">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent class="space-y-2">
-              <Button variant="outline" class="w-full justify-start" @click="navigateTo('/feedback')">
-                <Icon name="lucide:message-square" class="w-4 h-4 mr-2" />
-                View feedback
-              </Button>
-              <Button variant="outline" class="w-full justify-start" @click="navigateTo('/project/settings')">
-                <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
-                Project settings
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      <div
+        v-else
+        key="overview"
+        :class="['flex flex-col gap-6 transition-opacity', overviewLoading ? 'opacity-60' : '']"
+        :aria-busy="overviewLoading"
+      >
+        <OverviewNeedsYou
+          :todos="todos"
+          :projects="scopeList"
+          :all-projects="allProjects"
+          :busy-key="busyKey"
+          @action="handleTodoAction"
+        />
+        <OverviewWeek v-if="overview.week" :week="overview.week" :projects-in-view="projectsInView" />
+        <OverviewProjectsTable
+          v-if="showProjectsTable"
+          :rows="overview.projects"
+          :projects="scopeList"
+          @select="switchToProject"
+        />
       </div>
     </div>
   </PageContainer>
 </template>
 
 <script>
-import { fetchDashboardBootstrap, getCachedDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
+import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import { loadActiveProject } from '~/lib/active-project'
+import {
+  clearDashboardBootstrapCache,
+  fetchDashboardBootstrap,
+  getCachedDashboardBootstrap,
+} from '~/lib/dashboard-bootstrap-client'
+import { buildTodos } from '~/lib/overview'
+import {
+  findScopeProject,
+  isAllProjects,
+  parseProjectFilter,
+  projectFilterParam,
+  readRememberedProjectFilter,
+  scopeProjects,
+} from '~/lib/project-scope'
 
 export default {
   name: 'DashboardPage',
@@ -324,39 +225,68 @@ export default {
     return {
       isLoading: true,
       hasOrganization: false,
-      activeProject: null,
-      projectCount: 0,
       userName: '',
       recentSubmissions: [],
       submissionCount: 0,
       completedCount: 0,
       totalVotes: 0,
-      stats: {
-        totalFeedback: 0,
-        openFeedback: 0,
-        inProgressFeedback: 0,
-        completedFeedback: 0,
-        projectCount: 0,
-        memberCount: 0,
-        recentFeedback: [],
-      },
+      // The active project context (scope, projects with identity and tools)
+      context: null,
+      selectedIds: [],
+      overview: null,
+      overviewLoading: false,
+      overviewError: '',
+      noProject: false,
+      busyKey: '',
+      leaving: false,
+      overviewRequest: 0,
     }
   },
 
   computed: {
+    allProjects() {
+      return isAllProjects(this.context)
+    },
+    // Every project in the scope (not narrowed by the chips)
+    scopeList() {
+      return scopeProjects(this.context)
+    },
+    // The projects the numbers cover, in the order the server returned them
+    projectsInView() {
+      const rows = this.overview?.projects || []
+      return rows.map((row) => findScopeProject(this.context, row.project.id) || row.project)
+    },
+    showProjectsTable() {
+      return this.allProjects && this.projectsInView.length > 1
+    },
+    todos() {
+      if (!this.overview) return []
+      return buildTodos(this.overview.needsYou, {
+        allProjects: this.allProjects,
+        activeProjectId: this.context?.project?.id,
+      })
+    },
+    scopeName() {
+      if (!this.allProjects) return this.context?.project?.name || 'this project'
+      if (this.selectedIds.length === 0 || this.selectedIds.length === this.scopeList.length) {
+        return `your ${this.scopeList.length} projects`
+      }
+      return this.scopeList
+        .filter((p) => this.selectedIds.includes(p.id))
+        .map((p) => p.name)
+        .join(', ')
+    },
     headerTitle() {
       if (this.isLoading) return 'Dashboard'
       if (!this.hasOrganization) return `Welcome, ${this.userName}`
-      return this.activeProject?.project?.name || 'Dashboard'
+      return 'Overview'
     },
     headerDescription() {
       if (!this.isLoading && !this.hasOrganization) {
         return 'This is your personal dashboard. Track your feedback submissions and manage your account.'
       }
-      return "Overview of this project's feedback activity"
-    },
-    productCount() {
-      return this.activeProject?.products?.length || 0
+      if (!this.context) return ''
+      return `What needs attention in ${this.scopeName}, and how the last 7 days went.`
     },
   },
 
@@ -373,7 +303,12 @@ export default {
   },
 
   async mounted() {
+    if (import.meta.client) window.addEventListener('veerify:active-project-changed', this.onActiveProjectChanged)
     await this.initialize()
+  },
+
+  beforeUnmount() {
+    if (import.meta.client) window.removeEventListener('veerify:active-project-changed', this.onActiveProjectChanged)
   },
 
   methods: {
@@ -383,13 +318,12 @@ export default {
 
         const bootstrap = await fetchDashboardBootstrap()
         this.applyBootstrap(bootstrap)
-        if (this.hasOrganization && !bootstrap?.workspace?.stats) await this.loadWorkspaceStats()
       } catch (error) {
         console.error('Dashboard initialization error:', error)
       } finally {
-        // One skeleton for the whole page: it goes away only once everything is in
         this.isLoading = false
       }
+      if (this.hasOrganization) await this.loadOverview()
     },
 
     applyBootstrap(bootstrap) {
@@ -398,9 +332,7 @@ export default {
 
       this.hasOrganization = Boolean(bootstrap?.projectContext?.activeOrganization)
       if (this.hasOrganization) {
-        this.activeProject = bootstrap?.projectContext?.activeProject || null
-        this.projectCount = bootstrap?.projectContext?.projects?.length || 0
-        if (bootstrap?.workspace?.stats) this.stats = bootstrap.workspace.stats
+        this.applyContext(bootstrap?.projectContext?.activeProject || null)
       } else {
         const personal = bootstrap?.personal || {}
         this.recentSubmissions = personal.recentSubmissions || []
@@ -408,6 +340,98 @@ export default {
         this.completedCount = personal.completedCount || 0
         this.totalVotes = personal.totalVotes || 0
       }
+    },
+
+    applyContext(context) {
+      this.context = context
+      this.selectedIds = this.initialSelection(context)
+    },
+
+    // The chips' selection (URL first, then the one remembered for this page), so the first request
+    // already covers the right projects and the chips have nothing to correct.
+    initialSelection(context) {
+      if (!isAllProjects(context)) return []
+      const known = (context.projects || []).map((p) => p.id)
+      const valid = (ids) => ids.filter((id) => known.includes(id))
+      const fromUrl = valid(parseProjectFilter(this.$route.query.projects))
+      const ids =
+        fromUrl.length > 0
+          ? fromUrl
+          : valid(readRememberedProjectFilter('overview', context.projects?.[0]?.organizationId))
+      return ids.length === known.length ? [] : ids
+    },
+
+    async onActiveProjectChanged() {
+      if (this.leaving) return
+      try {
+        this.applyContext(await loadActiveProject({ force: true }))
+      } catch (error) {
+        console.error('Dashboard context reload error:', error)
+      }
+      await this.loadOverview()
+    },
+
+    onSelectionChange(ids) {
+      this.selectedIds = ids
+      this.loadOverview()
+    },
+
+    async loadOverview() {
+      const request = ++this.overviewRequest
+      this.overviewLoading = true
+      this.overviewError = ''
+      this.noProject = false
+      try {
+        const response = await $fetch('/api/dashboard/overview', {
+          query: { projects: projectFilterParam(this.selectedIds) },
+        })
+        if (request !== this.overviewRequest) return
+        this.overview = response?.data || null
+      } catch (error) {
+        if (request !== this.overviewRequest) return
+        this.overview = null
+        this.noProject = apiErrorStatus(error) === 409
+        this.overviewError = this.noProject
+          ? 'You have no project yet. Create one to see its overview.'
+          : apiErrorMessage(error, 'Failed to load the overview')
+      } finally {
+        if (request === this.overviewRequest) this.overviewLoading = false
+      }
+    },
+
+    // A "Needs you" button. Tool pages work in the active project, so a draft of another project
+    // switches to it first; the switch is announced before navigating, so this page's own reload is skipped.
+    async handleTodoAction(todo) {
+      const { to, switchProjectId } = todo.action
+      this.busyKey = todo.key
+      try {
+        if (switchProjectId) {
+          await $fetch('/api/projects/active', { method: 'POST', body: { projectId: switchProjectId } })
+          this.leaving = true
+          this.announceProjectChange(switchProjectId)
+        }
+        await navigateTo(to)
+      } catch (error) {
+        this.leaving = false
+        this.overviewError = apiErrorMessage(error, 'Could not open that')
+      } finally {
+        this.busyKey = ''
+      }
+    },
+
+    // A Projects table row: leave All projects and work in that project.
+    async switchToProject(projectId) {
+      try {
+        await $fetch('/api/projects/active', { method: 'POST', body: { projectId } })
+        this.announceProjectChange(projectId)
+      } catch (error) {
+        this.overviewError = apiErrorMessage(error, 'Failed to switch project')
+      }
+    },
+
+    announceProjectChange(projectId) {
+      clearDashboardBootstrapCache()
+      window.dispatchEvent(new CustomEvent('veerify:active-project-changed', { detail: { projectId } }))
     },
 
     scheduleAnonymousMerge() {
@@ -432,17 +456,6 @@ export default {
       window.setTimeout(merge, 1500)
     },
 
-    async loadWorkspaceStats() {
-      try {
-        const response = await $fetch('/api/dashboard/stats')
-        if (response?.data) {
-          this.stats = response.data
-        }
-      } catch (_error) {
-        // Non-critical
-      }
-    },
-
     async loadSubmissions() {
       try {
         const response = await $fetch('/api/user/submissions', {
@@ -464,7 +477,7 @@ export default {
           this.completedCount = allItems.filter((s) => s.status === 'completed').length
           this.totalVotes = allItems.reduce((sum, s) => sum + (s.voteCount || 0), 0)
         }
-      } catch (_error) {
+      } catch {
         // Submissions loading is non-critical
       }
     },
