@@ -90,6 +90,10 @@
                 </span>
               </h2>
               <p class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <template v-if="project">
+                  <ProjectTag :project="project" class="shrink-0" data-testid="support-thread-project" />
+                  <span aria-hidden="true">·</span>
+                </template>
                 <button
                   type="button"
                   data-testid="support-thread-contact"
@@ -263,6 +267,20 @@
               </DropdownMenu>
             </div>
 
+            <!-- All projects: continue in the project this conversation belongs to -->
+            <Button
+              v-if="project"
+              variant="outline"
+              size="sm"
+              data-testid="support-thread-open-in-project"
+              class="h-8"
+              :title="`Open in ${project.name}`"
+              @click="$emit('open-in-project')"
+            >
+              <Icon name="lucide:arrow-up-right" class="h-3.5 w-3.5" />
+              <span class="hidden @lg/panes:inline">Open in {{ project.name }}</span>
+            </Button>
+
             <Button
               variant="ghost"
               size="icon"
@@ -358,6 +376,8 @@ export default {
     isUpdating: { type: Boolean, default: false },
     detailsOpen: { type: Boolean, default: false },
     receivingAddress: { type: String, default: '' },
+    // All projects: the project this conversation belongs to (scope project with `identity`), else null.
+    project: { type: Object, default: null },
   },
 
   emits: [
@@ -367,6 +387,7 @@ export default {
     'claim-conversation',
     'mark-unread',
     'toggle-details',
+    'open-in-project',
     'back',
   ],
 

@@ -12265,6 +12265,205 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/conversations/combined": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List conversations across inboxes (All projects)",
+      "operationId": "listCombinedSupportConversations",
+      "description": "One newest-first list over every inbox the caller can work in, across the projects in the current scope that have Inbox switched on. In single-project mode the scope is the active project. `projects` narrows it to some of them (an id outside the scope is 403). Same views, search, filters and cursor paging as `GET /api/support/conversations`.\n",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids (the project filter chips). Empty means every project in scope.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "view",
+          "description": "Same values as `GET /api/support/conversations`. Spam and Trash are folders; every other view, the counts and search exclude them.\n",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "inbox",
+              "snoozed",
+              "unassigned",
+              "assigned-to-me",
+              "resolved",
+              "breaching-soon",
+              "archived",
+              "spam",
+              "trash",
+              "all"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "assigneeUserId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "contactId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "mailAddressId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "tagId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "csat",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "rated",
+              "unrated"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "schema": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`conversations` carry the receiving address (`mailAddress`), `isUnread`, `project` (`{ id, name, slug }`) and `inbox` (`{ id, name }`). `projectCounts` maps every project in scope with Inbox on (including ones the project filter left out, and zeros) to the number of conversations the current view, search and filters match in it, so the chips keep their numbers while one is selected. `unreadCounts` are for the signed-in agent over the projects that are not filtered out (same meaning as in the single-inbox list, without `byAddress`). `inboxes` are the inboxes the list covers (for live updates) and `totalInboxes` counts every inbox the caller can work in across the scope, ignoring the project filter.\n",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "conversations": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "hasMore": {
+                        "type": "boolean"
+                      },
+                      "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "projectCounts": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "totalInboxes": {
+                        "type": "integer"
+                      },
+                      "inboxes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "emailAddress": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          }
+                        }
+                      },
+                      "unreadCounts": {
+                        "type": "object",
+                        "properties": {
+                          "unassigned": {
+                            "type": "integer"
+                          },
+                          "assignedToMe": {
+                            "type": "integer"
+                          },
+                          "inbox": {
+                            "type": "integer"
+                          },
+                          "breachingSoon": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query or cursor"
+        },
+        "403": {
+          "description": "A requested project is outside the current scope"
+        }
+      }
+    }
+  },
   "/api/support/delivery/{provider}": {
     "post": {
       "tags": [
