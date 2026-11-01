@@ -7448,7 +7448,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Array of project summaries (id, name, slug, description, isPublic, accessMode, role, organizationId) plus productCount"
+          "description": "Array of project summaries (id, name, slug, description, isPublic, accessMode, role, organizationId) plus productCount, identity (color, initials, logoUrl) and modules"
         },
         "401": {
           "description": "Not authenticated"
@@ -10008,7 +10008,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "Get active project",
-      "description": "Returns the caller's active project with its organization, products and resolved module flags. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Returns the caller's active project with its organization, products and resolved module flags, plus `scope` (`all` while working in All projects, where `project` is the last single project), `projects` (every project the caller can open in the organization, with colour/initials and tool switches) and `allProjectsAvailable`. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "getActiveProject",
       "security": [
         {
@@ -10035,7 +10035,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "Set active project",
-      "description": "Switches the active project (and its organization). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
+      "description": "Switches the active project (and its organization), or with `{ \"scope\": \"all\" }` switches to All projects in the active organization (409 with fewer than two projects the caller can open). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
       "operationId": "setActiveProject",
       "security": [
         {
@@ -10051,13 +10051,16 @@ export const openapiPaths = {
           "application/json": {
             "schema": {
               "type": "object",
-              "required": [
-                "projectId"
-              ],
               "properties": {
                 "projectId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "all"
+                  ]
                 }
               }
             }
@@ -10079,6 +10082,9 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Project not found"
+        },
+        "409": {
+          "description": "All projects needs two or more projects the caller can open"
         }
       }
     }

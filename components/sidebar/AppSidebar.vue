@@ -9,6 +9,7 @@ import {
   type ActiveProjectContext,
 } from '~/lib/active-project'
 import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups, showProductSubItems } from '~/lib/sidebar-nav'
+import { isAllProjects as isAllProjectsContext, scopeModules } from '~/lib/project-scope'
 
 interface SidebarProps {
   side?: 'left' | 'right'
@@ -137,7 +138,9 @@ type ProductSummary = { id: string; name: string; slug: string }
 // flashing on and off, and the "Add tool" entry only appears for a known project admin.
 // The shared cache (lib/active-project.ts) keeps the last value, so navigating never blanks the nav.
 const lastContext = computed<ActiveProjectContext | null>(() => activeProjectStore.context ?? null)
-const projectModules = computed<Partial<ModuleSettings>>(() => lastContext.value?.modules || {})
+const isAllProjects = computed(() => isAllProjectsContext(lastContext.value))
+// In All projects a tool shows when any combined project has it on.
+const projectModules = computed<Partial<ModuleSettings>>(() => scopeModules(lastContext.value))
 const products = computed<ProductSummary[]>(() => lastContext.value?.products || [])
 const isProjectAdmin = computed(() => {
   const context = lastContext.value
@@ -160,6 +163,7 @@ const visibilityContext = computed(() => ({
   modules: projectModules.value,
   productCount: products.value.length,
   isProjectAdmin: isProjectAdmin.value,
+  isAllProjects: isAllProjects.value,
 }))
 
 // One rule decides every group and item; see lib/sidebar-nav.ts.
@@ -242,6 +246,14 @@ function productUrl(base: string, product: ProductSummary) {
           </SidebarGroupContent>
         </template>
       </SidebarGroup>
+      <p
+        v-if="isAllProjects"
+        data-testid="sidebar-all-projects-note"
+        class="mx-4 mt-1 rounded-md border border-dashed px-2.5 py-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
+      >
+        <Icon name="lucide:info" class="mr-1 inline size-3 align-[-2px]" />
+        Marketing and project settings live in each project. Pick one in the switcher above.
+      </p>
     </SidebarContent>
 
     <SidebarFooter>

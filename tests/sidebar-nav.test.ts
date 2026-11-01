@@ -5,13 +5,14 @@ import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups, showProductSubItems, type OrgS
 function visible(
   org: OrgState,
   modules: Partial<ModuleSettings> = {},
-  extra: { productCount?: number; isProjectAdmin?: boolean } = {}
+  extra: { productCount?: number; isProjectAdmin?: boolean; isAllProjects?: boolean } = {}
 ) {
   const groups = getVisibleNavGroups(SIDEBAR_NAV_GROUPS, {
     hasActiveOrganization: org,
     modules: { ...DEFAULT_PROJECT_MODULES, ...modules },
     productCount: extra.productCount ?? 1,
     isProjectAdmin: extra.isProjectAdmin ?? false,
+    isAllProjects: extra.isAllProjects ?? false,
   })
   return Object.fromEntries(groups.map((g) => [g.id, g.items.map((i) => i.title)]))
 }
@@ -73,5 +74,40 @@ describe('sidebar nav visibility', () => {
     expect(showProductSubItems({ productCount: 0 })).toBe(false)
     expect(showProductSubItems({ productCount: 1 })).toBe(false)
     expect(showProductSubItems({ productCount: 2 })).toBe(true)
+  })
+})
+
+describe('All projects', () => {
+  const everything = {
+    feedbackEnabled: true,
+    roadmapEnabled: true,
+    changelogEnabled: true,
+    supportEnabled: true,
+    marketingEnabled: true,
+  }
+
+  it('hides Marketing, project settings and the inbox sub-pages', () => {
+    expect(visible(true, everything, { isAllProjects: true, isProjectAdmin: true })).toEqual({
+      project: ['Overview', 'Feedback', 'Roadmap', 'Changelog'],
+      support: ['Inbox'],
+      workspace: ['Workspace settings'],
+      you: ['My submissions', 'Notifications', 'Settings'],
+    })
+  })
+
+  it('labels the first group All projects', () => {
+    const groups = getVisibleNavGroups(SIDEBAR_NAV_GROUPS, {
+      hasActiveOrganization: true,
+      modules: DEFAULT_PROJECT_MODULES,
+      productCount: 1,
+      isProjectAdmin: false,
+      isAllProjects: true,
+    })
+    expect(groups[0]).toMatchObject({ id: 'project', label: 'All projects' })
+  })
+
+  it('never shows per-product sub-items', () => {
+    expect(showProductSubItems({ productCount: 3, isAllProjects: true })).toBe(false)
+    expect(showProductSubItems({ productCount: 3 })).toBe(true)
   })
 })

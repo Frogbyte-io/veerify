@@ -29,6 +29,8 @@ export const session = pgTable('session', {
     .references(() => user.id, { onDelete: 'cascade' }),
   activeOrganizationId: text('active_organization_id'),
   activeProjectId: text('active_project_id'),
+  // 'all' = working in All projects (activeProjectId keeps the last single project); null = that one project
+  activeProjectScope: text('active_project_scope'),
 })
 
 export const account = pgTable('account', {

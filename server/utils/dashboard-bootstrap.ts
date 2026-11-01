@@ -4,14 +4,14 @@ import { member, organization } from '~/server/database/schema/auth'
 import { feedback, product, project } from '~/server/database/schema/feedback'
 import { notification } from '~/server/database/schema/notifications'
 import type { AuthSession } from '~/server/utils/auth-middleware'
-import { resolveActiveProjectForSession } from '~/server/utils/project-context'
+import { resolveActiveProjectForSession, resolveProjectScope } from '~/server/utils/project-context'
 import { listAccessibleProjects } from '~/server/utils/project-access'
 import {
   buildActiveProjectContext,
   listProjectMembers,
-  toProjectSummary,
+  toScopeProjects,
   type ActiveProjectContext,
-  type ProjectSummary,
+  type ScopeProject,
 } from '~/server/utils/project-summary'
 
 export const emptyWorkspaceStats = {
@@ -143,7 +143,7 @@ export async function getUnreadNotificationCount(userId: string) {
 export type DashboardProjectContext = {
   organizations: Awaited<ReturnType<typeof listOrganizationsForUser>>
   activeOrganization: typeof organization.$inferSelect | null
-  projects: ProjectSummary[]
+  projects: ScopeProject[]
   activeProject: ActiveProjectContext | null
 }
 
@@ -165,7 +165,11 @@ export async function getDashboardBootstrapData(session: AuthSession) {
         ? db.select().from(organization).where(eq(organization.id, activeOrganizationId)).limit(1)
         : Promise.resolve([]),
       activeOrganizationId ? listAccessibleProjects(activeOrganizationId, session.user.id) : Promise.resolve([]),
-      activeProject ? buildActiveProjectContext(activeProject, session.user.id) : Promise.resolve(null),
+      activeProject
+        ? resolveProjectScope(session, activeProject).then(({ scope }) =>
+            buildActiveProjectContext(activeProject, session.user.id, scope)
+          )
+        : Promise.resolve(null),
       activeProject ? getWorkspaceStatsForProject(activeProject.id) : Promise.resolve(null),
       activeProject ? Promise.resolve(null) : getPersonalDashboardSummary(session.user.id),
       getUnreadNotificationCount(session.user.id),
@@ -174,7 +178,7 @@ export async function getDashboardBootstrapData(session: AuthSession) {
   const projectContext: DashboardProjectContext = {
     organizations,
     activeOrganization: activeOrganizationRows[0] ?? null,
-    projects: accessibleProjects.map(toProjectSummary),
+    projects: activeOrganizationId ? await toScopeProjects(activeOrganizationId, accessibleProjects) : [],
     activeProject: activeContext,
   }
 

@@ -5,7 +5,10 @@
  *     tags: [Projects]
  *     summary: Get active project
  *     description: >
- *       Returns the caller's active project with its organization, products and resolved module flags. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Returns the caller's active project with its organization, products and resolved module flags,
+ *       plus `scope` (`all` while working in All projects, where `project` is the last single project),
+ *       `projects` (every project the caller can open in the organization, with colour/initials and tool
+ *       switches) and `allProjectsAvailable`. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
  *     operationId: getActiveProject
  *     security:
  *       - cookieAuth: []
@@ -15,11 +18,11 @@
  *       401: { description: "Not authenticated" }
  *       409: { description: "The caller can open no project; create one first" }
  */
-import { requireAuthWithResolvedProject } from '~/server/utils/project-context'
+import { requireAuthWithProjectScope } from '~/server/utils/project-context'
 import { buildActiveProjectContext } from '~/server/utils/project-summary'
 import { createSuccessResponse } from '~/server/utils/response'
 
 export default defineEventHandler(async (event) => {
-  const { session, activeProject } = await requireAuthWithResolvedProject(event)
-  return createSuccessResponse(await buildActiveProjectContext(activeProject, session.user.id))
+  const { session, activeProject, scope } = await requireAuthWithProjectScope(event)
+  return createSuccessResponse(await buildActiveProjectContext(activeProject, session.user.id, scope))
 })
