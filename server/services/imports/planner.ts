@@ -393,8 +393,9 @@ export async function planImport(runId: string): Promise<ImportPlan> {
   }
 
   // Taxonomy
-  const createdStatusValues = new Set(taxonomy.toCreate.statuses.map((s) => s.value))
-  counts.statuses.create = taxonomy.toCreate.statuses.length
+  // System statuses saved alongside a new one already exist in effect; only imported statuses count as created.
+  const createdStatusValues = new Set(taxonomy.toCreate.statuses.filter((s) => !s.systemDefault).map((s) => s.value))
+  counts.statuses.create = createdStatusValues.size
   for (const s of batch.statuses) {
     const value = taxonomy.statusValueByExternalId.get(s.externalId)
     if (value === undefined) counts.statuses.skip++

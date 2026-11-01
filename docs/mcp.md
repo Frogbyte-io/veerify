@@ -149,7 +149,7 @@ previews and writes. The format (`veerify-import/1`) is served by `import_get_fo
 | -------------------- | ------------------------------------------------------------------------------------------ |
 | `import_get_format`  | JSON Schema and an example batch. Call this first                                          |
 | `import_create_run`  | Draft run: `source`, `sourceLabel`, optional `product`, `project`, `onExisting`            |
-| `import_add_records` | Stage one batch: sections only, not the full document; returns per-record issues           |
+| `import_add_records` | Stage one batch: sections only, not the full document; unknown sections are a 400          |
 | `import_preview`     | The plan: `counts` per section (`create`, `update`, `unchanged`, `skip`), `kept`, `issues` |
 | `import_commit`      | Write the run. Returns `{ run }` with `run.summary = { counts, kept }`                     |
 | `import_status`      | Run status, counts, summary and issues; poll after a large commit                          |
@@ -216,7 +216,9 @@ previews and writes. The format (`veerify-import/1`) is served by `import_get_fo
 3. `import_create_run` with `source: "canny"` and a `sourceLabel`.
 4. `import_add_records` in batches of at most 1,000 records. Statuses, categories and people first is fine, but order
    does not matter within a run.
-5. `import_preview`. Read `counts`, `taxonomy` and `issues` to the user, then ask to continue.
+5. `import_preview`. Read `counts`, `taxonomy` and `issues` to the user, then ask to continue. When the project still
+   uses the built-in statuses and the import adds one, `taxonomy.statuses` also lists the built-ins (flagged
+   `systemDefault: true`): they are saved to the project, but `counts.statuses.create` counts only imported statuses.
 6. `import_commit`. If the run is `committing`, poll `import_status`.
 
 ### "Re-run weekly from GitHub issues"

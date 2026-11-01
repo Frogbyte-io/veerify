@@ -413,12 +413,33 @@ describe('planImport', () => {
       },
     ])
     const plan = await planImport('run-2')
-    expect(plan.counts.statuses.create).toBe(6) // 5 system statuses seeded + under_review
+    // Only under_review is new; the 5 system statuses are saved alongside it and flagged, not counted.
+    expect(plan.counts.statuses.create).toBe(1)
+    expect(plan.taxonomy.statuses.filter((s) => s.systemDefault).map((s) => s.value)).toEqual([
+      'open',
+      'planned',
+      'in_progress',
+      'completed',
+      'closed',
+    ])
     expect(plan.counts.categories).toEqual({ ...zero, create: 1 })
     expect(plan.counts.people).toEqual({ ...zero, create: 1 })
     expect(plan.counts.feedback).toEqual({ ...zero, create: 1 })
     expect(plan.counts.votes).toEqual({ ...zero, create: 2 })
     expect(plan.taxonomy.categories.map((c) => c.slug)).toEqual(['bugs'])
+  })
+
+  it('counts an imported status that matches a system status as unchanged when defaults are saved', async () => {
+    seed([
+      {
+        statuses: [
+          { externalId: 'st-1', name: 'Planned' },
+          { externalId: 'st-9', name: 'Under review' },
+        ],
+      },
+    ])
+    const plan = await planImport('run-2')
+    expect(plan.counts.statuses).toEqual({ ...zero, create: 1, unchanged: 1 })
   })
 
   it('lists edited fields as kept and still counts untouched changes as updates (Review Focus 2)', async () => {

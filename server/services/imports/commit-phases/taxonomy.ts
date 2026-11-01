@@ -15,8 +15,9 @@ export const taxonomyPhase: CommitPhase<void, 'taxonomy'> = {
     const taxonomy = ctx.taxonomy!
     for (const issue of taxonomy.issues) ctx.issue(issue)
 
-    const createdValues = new Set(taxonomy.toCreate.statuses.map((s) => s.value))
-    ctx.counts.statuses.create += taxonomy.toCreate.statuses.length
+    // Built-in statuses saved alongside a new one are not imported statuses (same rule as the preview).
+    const createdValues = new Set(taxonomy.toCreate.statuses.filter((s) => !s.systemDefault).map((s) => s.value))
+    ctx.counts.statuses.create += createdValues.size
     for (const s of ctx.batch.statuses) {
       const value = taxonomy.statusValueByExternalId.get(s.externalId)
       if (value === undefined) ctx.counts.statuses.skip++

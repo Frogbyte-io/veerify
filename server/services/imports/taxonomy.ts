@@ -13,7 +13,8 @@ export interface TaxonomyResolution {
   defaultStatusValue: string
   categoryIdByExternalId: Map<string, string | null>
   toCreate: {
-    statuses: { name: string; value: string; color?: string }[]
+    /** systemDefault: a built-in status saved because the project still used the defaults, not one from the import. */
+    statuses: { name: string; value: string; color?: string; systemDefault?: true }[]
     categories: { name: string; slug: string; color?: string }[]
   }
   issues: IssueInput[]
@@ -76,7 +77,9 @@ export async function resolveTaxonomy(
 
   if (created.size > 0) {
     if (!hasRows) {
-      for (const s of SYSTEM_STATUSES) toCreate.statuses.push({ name: s.name, value: s.value, color: s.color })
+      for (const s of SYSTEM_STATUSES) {
+        toCreate.statuses.push({ name: s.name, value: s.value, color: s.color, systemDefault: true })
+      }
     }
     toCreate.statuses.push(...created.values())
 

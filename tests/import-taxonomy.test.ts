@@ -51,6 +51,7 @@ describe('resolveTaxonomy', () => {
       'closed',
       'under_review',
     ])
+    expect(res.toCreate.statuses.map((s) => s.systemDefault ?? false)).toEqual([true, true, true, true, true, false])
     expect(res.statusValueByExternalId.get('s1')).toBe('under_review')
     expect(state.tables['feedback_status']).toEqual([])
   })

@@ -8873,7 +8873,7 @@ export const openapiPaths = {
         "Imports"
       ],
       "summary": "Add a batch of records to an import run",
-      "description": "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Duplicate externalIds within a section of the run are dropped and reported as skipped issues.",
+      "description": "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Unknown sections are rejected (400). Duplicate externalIds within a section of the run are dropped and reported as skipped issues.",
       "operationId": "addImportRecords",
       "security": [
         {
