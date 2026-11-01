@@ -108,7 +108,7 @@
             class="order-last w-full truncate px-2 text-xs text-muted-foreground sm:order-none sm:w-auto"
           >
             From <span class="font-medium text-foreground">{{ fromAddressLabel }}</span>
-            <span v-if="projectName" class="ml-0.5" data-testid="support-composer-from-project">
+            <span v-if="projectName" class="ml-1" data-testid="support-composer-from-project">
               ({{ projectName }}'s inbox)
             </span>
           </span>
