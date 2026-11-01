@@ -313,8 +313,8 @@ export default {
       return this.isAll && this.contextReady && !this.contextError && this.scopeProjectList.length > 0
     },
     chipCounts() {
-      // An empty map is a real answer (every project has zero items); only hide counts while loading.
-      return this.isAll && !this.isLoading ? this.combinedCounts : null
+      // An empty map is a real answer (every project has zero items); hide counts while loading or after a failure.
+      return this.isAll && !this.isLoading && !this.error ? this.combinedCounts : null
     },
     publicRoadmaps() {
       return this.combinedProjects

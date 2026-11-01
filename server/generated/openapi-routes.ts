@@ -2399,7 +2399,7 @@ export const openapiPaths = {
                 "status": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 80,
+                  "maxLength": 100,
                   "description": "A status value defined for the feedback project"
                 }
               }
