@@ -228,6 +228,12 @@ describe('import run routes', () => {
     })
   })
 
+  it('records rejects a section named after an Object.prototype key', async () => {
+    seedRun()
+    state.body = { feedback: [fb('f1')], constructor: [] }
+    await expect(recordsHandler({})).rejects.toMatchObject({ statusCode: 400 })
+  })
+
   it('records passes a 413 from the body reader through', async () => {
     seedRun()
     readJsonBodyWithLimit.mockRejectedValueOnce(Object.assign(new Error('Payload Too Large'), { statusCode: 413 }))

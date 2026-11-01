@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
   }
   // An unknown key is usually a misspelt section ("comment"); dropping it would silently lose those records.
   const unknown =
-    raw && typeof raw === 'object' ? Object.keys(raw).filter((key) => !(key in importBatchSchema.shape)) : []
+    raw && typeof raw === 'object' ? Object.keys(raw).filter((key) => !Object.hasOwn(importBatchSchema.shape, key)) : []
   if (unknown.length) {
     importHttpError(
       400,
