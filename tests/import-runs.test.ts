@@ -219,6 +219,21 @@ describe('import run routes', () => {
     expect(readJsonBodyWithLimit).toHaveBeenLastCalledWith({}, 4 * 1024 * 1024)
   })
 
+  it('records rejects an unknown section instead of dropping it', async () => {
+    seedRun()
+    state.body = { feedback: [fb('f1')], comment: [{ externalId: 'c1', feedbackExternalId: 'f1', body: 'x' }] }
+    await expect(recordsHandler({})).rejects.toMatchObject({
+      statusCode: 400,
+      data: { error: { code: 'VALIDATION_ERROR', message: expect.stringContaining('"comment"') } },
+    })
+  })
+
+  it('records rejects a section named after an Object.prototype key', async () => {
+    seedRun()
+    state.body = { feedback: [fb('f1')], constructor: [] }
+    await expect(recordsHandler({})).rejects.toMatchObject({ statusCode: 400 })
+  })
+
   it('records passes a 413 from the body reader through', async () => {
     seedRun()
     readJsonBodyWithLimit.mockRejectedValueOnce(Object.assign(new Error('Payload Too Large'), { statusCode: 413 }))

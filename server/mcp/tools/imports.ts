@@ -77,7 +77,7 @@ export const importTools: VeerifyTool[] = [
     name: 'import_add_records',
     title: 'Add records to an import run',
     description:
-      'Stages one batch of records on a draft run. `records` holds only the record sections of the import_get_format schema (statuses, categories, people, feedback, comments, changelog), not the full document: `format`, `target`, `source` and `sourceLabel` are rejected (they belong to import_create_run). Limits: at most 1,000 records per call, 10,000 listed votes per feedback, and the request must fit 4 MiB; send larger sources in several calls. The server validates and returns per-record issues.',
+      'Stages one batch of records on a draft run. `records` holds only the record sections of the import_get_format schema (statuses, categories, people, feedback, comments, changelog), not the full document: `format`, `target`, `source` and `sourceLabel` are rejected (they belong to import_create_run). Limits: at most 1,000 records per call, 10,000 listed votes per feedback, and the request must fit 4 MiB; send larger sources in several calls. Unknown sections (e.g. a misspelt "comment") are rejected with 400. The server validates and returns per-record issues.',
     inputSchema: {
       project: projectField,
       runId: runIdField,
@@ -99,7 +99,7 @@ export const importTools: VeerifyTool[] = [
     name: 'import_preview',
     title: 'Preview an import run',
     description:
-      'Returns the plan for a draft run: what would be created, updated, kept (edited in Veerify) or skipped. Show this to the user and get their confirmation before import_commit. Fails with 409 when the run is not a draft.',
+      'Returns the plan for a draft run: what would be created, updated, kept (edited in Veerify) or skipped. `taxonomy.statuses` entries with `systemDefault: true` are the built-in statuses, saved because the project still uses the defaults; they are not counted in `counts.statuses.create`. Show this to the user and get their confirmation before import_commit. Fails with 409 when the run is not a draft.',
     inputSchema: { project: projectField, runId: runIdField },
     annotations: { readOnlyHint: true },
     handler: async (ctx, input) =>

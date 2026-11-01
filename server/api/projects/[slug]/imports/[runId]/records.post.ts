@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Imports]
  *     summary: Add a batch of records to an import run
- *     description: "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Duplicate externalIds within a section of the run are dropped and reported as skipped issues."
+ *     description: "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Unknown sections are rejected (400). Duplicate externalIds within a section of the run are dropped and reported as skipped issues."
  *     operationId: addImportRecords
  *     security: [{ cookieAuth: [] }, { userApiKeyAuth: [] }]
  *     parameters:
@@ -57,6 +57,17 @@ export default defineEventHandler(async (event) => {
       'Bad Request',
       ErrorCode.VALIDATION_ERROR,
       'Send format and target to create the run; records batches carry only sections'
+    )
+  }
+  // An unknown key is usually a misspelt section ("comment"); dropping it would silently lose those records.
+  const unknown =
+    raw && typeof raw === 'object' ? Object.keys(raw).filter((key) => !Object.hasOwn(importBatchSchema.shape, key)) : []
+  if (unknown.length) {
+    importHttpError(
+      400,
+      'Bad Request',
+      ErrorCode.VALIDATION_ERROR,
+      `Unknown section ${unknown.map((key) => `"${key}"`).join(', ')}; sections are ${Object.keys(importBatchSchema.shape).join(', ')}`
     )
   }
 

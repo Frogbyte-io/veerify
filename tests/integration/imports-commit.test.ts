@@ -229,6 +229,8 @@ describe('import commit engine (real Postgres)', () => {
     expect(done.completedAt).toBeTruthy()
     expect(done.leaseUntil).toBeNull()
     expect(done.summary?.counts).toEqual(preview.counts)
+    // One imported status; the built-in statuses saved with it are not counted.
+    expect(done.summary?.counts.statuses.create).toBe(1)
 
     const fb = await importedFeedback(projA.id)
     expect(Object.keys(fb).sort()).toEqual(['f-1', 'f-2', 'f-3'])
