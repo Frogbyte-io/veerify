@@ -375,6 +375,8 @@ export default {
 
     async loadOverview() {
       const request = ++this.overviewRequest
+      // Never show the previous scope's numbers under the new selection.
+      this.overview = null
       this.overviewLoading = true
       this.overviewError = ''
       this.noProject = false

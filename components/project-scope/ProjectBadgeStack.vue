@@ -2,7 +2,7 @@
   <span :class="cn('relative inline-grid shrink-0 grid-cols-2 gap-[2px]', size === 'lg' ? 'size-8' : 'size-[18px]')">
     <i
       v-for="(project, index) in shown"
-      :key="project.id || index"
+      :key="index"
       :class="size === 'lg' ? 'rounded-[4px]' : 'rounded-[2px]'"
       :style="{ backgroundColor: project.identity?.color || '#888' }"
     />

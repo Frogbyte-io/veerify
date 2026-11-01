@@ -19,6 +19,7 @@
  *       200: { description: "data.projects: array of { id, feedbackCount, products[{ id, name, slug }], statuses[{ value, name, color, sortOrder, isDefault }] }" }
  *       401: { description: "Not authenticated" }
  *       403: { description: "A requested project is not in the current scope" }
+ *       409: { description: "The caller can open no project; create one first" }
  */
 import { asc, count, inArray } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
@@ -43,7 +44,11 @@ export default defineEventHandler(async (event) => {
       .from(product)
       .where(inArray(product.projectId, ids))
       .orderBy(asc(product.sortOrder), asc(product.createdAt), asc(product.id)),
-    db.select().from(feedbackStatus).where(inArray(feedbackStatus.projectId, ids)),
+    db
+      .select()
+      .from(feedbackStatus)
+      .where(inArray(feedbackStatus.projectId, ids))
+      .orderBy(asc(feedbackStatus.sortOrder), asc(feedbackStatus.createdAt), asc(feedbackStatus.id)),
   ])
 
   const countById = new Map(counts.map((row) => [row.projectId, row.count]))

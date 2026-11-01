@@ -95,6 +95,14 @@ describe('mergeRoadmapColumns', () => {
     expect(ids).not.toContain('stray')
   })
 
+  it("never puts an item in another project's column for a status its own project dropped", () => {
+    const input = boards()
+    // Project A has no "beta" status, but project B does: A's stale item must not land there.
+    input[0]!.items.push(item('stale-beta', 'beta'))
+    const beta = mergeRoadmapColumns(input).find((c) => c.value === 'beta')!
+    expect(beta.items.map((i) => i.id)).toEqual(['b2'])
+  })
+
   it('returns no columns without projects', () => {
     expect(mergeRoadmapColumns([])).toEqual([])
   })

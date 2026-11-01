@@ -88,18 +88,17 @@ export function rememberProjectFilter(page: string, organizationId: string | und
  */
 export function isProjectOnlyRoute(path: string): boolean {
   const clean = path.split('?')[0]!.split('#')[0]!
-  return (
-    clean === '/marketing' ||
-    clean.startsWith('/marketing/') ||
-    clean.startsWith('/project/settings') ||
-    clean.startsWith('/inbox/settings') ||
-    clean.startsWith('/inbox/contacts')
+  return ['/marketing', '/project/settings', '/inbox/settings', '/inbox/contacts'].some(
+    (base) => clean === base || clean.startsWith(`${base}/`)
   )
 }
 
 /** Alt+0 = All projects, Alt+1…9 = the nth project (Ctrl/⌘+digit is taken by the browser's tabs). */
 export function projectShortcutIndex(event: KeyboardEvent): number | null {
   if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null
+  // Alt+digit types characters on some layouts (macOS Option); never take it from a field.
+  const target = event.target as { tagName?: string; isContentEditable?: boolean } | null
+  if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return null
   const match = /^Digit([0-9])$/.exec(event.code)
   return match ? Number(match[1]) : null
 }

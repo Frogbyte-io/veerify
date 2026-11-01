@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_ACCENT_COLOR, PROJECT_PALETTE, projectIdentity, projectInitials } from '~/lib/project-identity'
+import {
+  DEFAULT_ACCENT_COLOR,
+  PROJECT_PALETTE,
+  projectForegroundColor,
+  projectIdentity,
+  projectInitials,
+} from '~/lib/project-identity'
 import {
   isAllProjects,
   isProjectOnlyRoute,
@@ -37,6 +43,14 @@ describe('project identity', () => {
     expect(projectInitials('Dotmatrixlabs')).toBe('D')
     expect(projectInitials('dot matrix labs')).toBe('DM')
     expect(projectInitials('')).toBe('?')
+    expect(projectInitials('🚀 rocket labs')).toBe('🚀R')
+  })
+
+  it('picks dark text on light colours and white on dark ones', () => {
+    expect(projectForegroundColor('#f59e0b')).toBe('#111827') // amber
+    expect(projectForegroundColor('#84cc16')).toBe('#111827') // lime
+    expect(projectForegroundColor('#1e3a8a')).toBe('#ffffff') // navy
+    expect(projectForegroundColor('nope')).toBe('#ffffff')
   })
 
   it('takes a changed accent colour, else the palette by position', () => {
@@ -87,6 +101,10 @@ describe('scope helpers', () => {
     expect(isProjectOnlyRoute('/inbox/contacts')).toBe(true)
     expect(isProjectOnlyRoute('/inbox')).toBe(false)
     expect(isProjectOnlyRoute('/marketingx')).toBe(false)
+    expect(isProjectOnlyRoute('/inbox/contacts/c1')).toBe(true)
+    expect(isProjectOnlyRoute('/inbox/contactsx')).toBe(false)
+    expect(isProjectOnlyRoute('/project/settingsx')).toBe(false)
+    expect(isProjectOnlyRoute('/inbox/settingsx')).toBe(false)
   })
 
   it('maps Alt+digit to a shortcut index', () => {
@@ -97,5 +115,8 @@ describe('scope helpers', () => {
     expect(projectShortcutIndex(key('Digit3', { altKey: false }))).toBeNull()
     expect(projectShortcutIndex(key('Digit3', { metaKey: true }))).toBeNull()
     expect(projectShortcutIndex(key('KeyA'))).toBeNull()
+    // Never from a form field: Alt+digit types characters there on some layouts
+    expect(projectShortcutIndex(key('Digit1', { target: { tagName: 'INPUT' } as never }))).toBeNull()
+    expect(projectShortcutIndex(key('Digit1', { target: { isContentEditable: true } as never }))).toBeNull()
   })
 })

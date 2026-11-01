@@ -32,14 +32,28 @@ export const PROJECT_PALETTE = [
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
+/** Near-black or white text, whichever contrasts more with the badge colour (WCAG relative luminance). */
+export function projectForegroundColor(color: string): string {
+  if (!HEX_COLOR.test(color)) return '#ffffff'
+  const channel = (offset: number) => {
+    const value = parseInt(color.slice(offset, offset + 2), 16) / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  }
+  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+  const DARK = 0.012 // relative luminance of #111827
+  return 1.05 / (luminance + 0.05) >= (luminance + 0.05) / (DARK + 0.05) ? '#ffffff' : '#111827'
+}
+
 export function projectInitials(name: string): string {
   const words = String(name || '')
     .trim()
     .split(/[\s\-_.]+/)
     .filter(Boolean)
   if (words.length === 0) return '?'
-  if (words.length === 1) return words[0]!.charAt(0).toUpperCase()
-  return (words[0]!.charAt(0) + words[1]!.charAt(0)).toUpperCase()
+  // Code points, not UTF-16 units, so a leading emoji stays whole.
+  const first = (word: string) => Array.from(word)[0] ?? ''
+  if (words.length === 1) return first(words[0]!).toUpperCase()
+  return (first(words[0]!) + first(words[1]!)).toUpperCase()
 }
 
 /**

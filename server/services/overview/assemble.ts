@@ -203,9 +203,10 @@ export function assembleOverview(raw: OverviewRaw): OverviewResponse {
     })
     .filter((row) => row.count > 0)
 
-  const drafts = inView(raw.drafts, (p) => p.changelogOn)
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .slice(0, DRAFT_ITEM_LIMIT)
+  const draftsInView = inView(raw.drafts, (p) => p.changelogOn)
+  const drafts = draftsInView.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, DRAFT_ITEM_LIMIT)
+  // The query counts drafts of changelog-on projects only; never report more than that when rows were dropped.
+  const draftTotal = draftsInView.length < raw.drafts.length ? draftsInView.length : raw.draftTotal
 
   // ---- Last 7 days
   const volume = (rows: Iterable<FeedbackWeekRow>, available: boolean): VolumeMetric => {
@@ -270,7 +271,7 @@ export function assembleOverview(raw: OverviewRaw): OverviewResponse {
       },
       drafts: {
         // The total counts drafts in projects with the changelog on; the items are capped.
-        total: raw.draftTotal,
+        total: draftTotal,
         items: drafts.map((row) => ({
           id: row.id,
           title: row.title,

@@ -1265,7 +1265,7 @@ export const openapiPaths = {
           "schema": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 80
+            "maxLength": 100
           }
         },
         {
@@ -2752,7 +2752,7 @@ export const openapiPaths = {
           "schema": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 80
+            "maxLength": 100
           }
         },
         {
@@ -2856,6 +2856,9 @@ export const openapiPaths = {
         },
         "403": {
           "description": "A requested project is not in the current scope"
+        },
+        "409": {
+          "description": "The caller can open no project; create one first"
         }
       }
     }
@@ -10219,19 +10222,34 @@ export const openapiPaths = {
         "content": {
           "application/json": {
             "schema": {
-              "type": "object",
-              "properties": {
-                "projectId": {
-                  "type": "string",
-                  "minLength": 1
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "projectId"
+                  ],
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 },
-                "scope": {
-                  "type": "string",
-                  "enum": [
-                    "all"
-                  ]
+                {
+                  "type": "object",
+                  "required": [
+                    "scope"
+                  ],
+                  "properties": {
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all"
+                      ]
+                    }
+                  }
                 }
-              }
+              ]
             }
           }
         }

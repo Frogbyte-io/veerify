@@ -73,7 +73,7 @@
               >
                 From
                 <span class="min-w-0 truncate font-medium text-foreground">{{ fromAddressLabel }}</span>
-                <span v-if="projectName" class="shrink-0" data-testid="support-composer-from-project">
+                <span v-if="projectName" class="min-w-0 truncate" data-testid="support-composer-from-project">
                   ({{ projectName }}'s inbox)
                 </span>
                 <Icon name="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0" />

@@ -274,6 +274,7 @@
               size="sm"
               data-testid="support-thread-open-in-project"
               class="h-8"
+              :disabled="isUpdating"
               :title="`Open in ${project.name}`"
               @click="$emit('open-in-project')"
             >

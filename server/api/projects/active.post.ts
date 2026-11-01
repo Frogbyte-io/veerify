@@ -17,10 +17,15 @@
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               projectId: { type: string, minLength: 1 }
- *               scope: { type: string, enum: [all] }
+ *             oneOf:
+ *               - type: object
+ *                 required: [projectId]
+ *                 properties:
+ *                   projectId: { type: string, minLength: 1 }
+ *               - type: object
+ *                 required: [scope]
+ *                 properties:
+ *                   scope: { type: string, enum: [all] }
  *     responses:
  *       200: { description: "Active project context after the switch" }
  *       400: { description: "Validation failed" }

@@ -178,7 +178,10 @@ export async function getDashboardBootstrapData(session: AuthSession) {
   const projectContext: DashboardProjectContext = {
     organizations,
     activeOrganization: activeOrganizationRows[0] ?? null,
-    projects: activeOrganizationId ? await toScopeProjects(activeOrganizationId, accessibleProjects) : [],
+    // The active context already carries the same summaries; only build them when there is no project.
+    projects:
+      activeContext?.projects ??
+      (activeOrganizationId ? await toScopeProjects(activeOrganizationId, accessibleProjects) : []),
     activeProject: activeContext,
   }
 

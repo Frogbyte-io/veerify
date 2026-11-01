@@ -97,8 +97,11 @@ export function mergeRoadmapColumns<Item extends RoadmapItemLike>(
   }
 
   for (const board of boards) {
+    const own = new Set(board.statuses.map((status) => status.value))
     for (const item of board.items) {
-      // Same as the single-project board: an item whose status the project no longer defines is not shown.
+      // Same as the single-project board: an item whose status its own project no longer defines is not
+      // shown, even when another project's column happens to use that value.
+      if (!own.has(item.status)) continue
       columns.get(item.status)?.items.push({ ...item, project: board.project })
     }
   }

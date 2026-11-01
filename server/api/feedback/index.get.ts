@@ -24,7 +24,7 @@
  *       - in: query
  *         name: status
  *         description: "A status value of the project (the system statuses open, in_progress, planned, completed, closed, declined, or a custom status value)"
- *         schema: { type: string, minLength: 1, maxLength: 80 }
+ *         schema: { type: string, minLength: 1, maxLength: 100 }
  *       - in: query
  *         name: categoryId
  *         schema: { type: string }
@@ -79,7 +79,7 @@ const listFeedbackQuerySchema = z
               .filter(Boolean)
           : []
       ),
-    status: z.string().trim().min(1).max(80).optional(),
+    status: z.string().trim().min(1).max(100).optional(),
     categoryId: z.string().optional(),
     productId: z.string().min(1).optional(),
     search: z.string().optional(),

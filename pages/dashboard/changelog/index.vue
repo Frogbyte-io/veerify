@@ -398,6 +398,8 @@ export default {
     },
 
     async onProductChange(context, productId) {
+      // Drop responses still in flight for the previous context or selection.
+      this.requestId++
       this.contextReady = true
       this.contextError = null
       this.context = context
@@ -461,7 +463,7 @@ export default {
       if (!this.project) return
       const projectId = this.project.id
       const productId = this.productId
-      const isCurrent = () => this.project?.id === projectId && this.productId === productId
+      const isCurrent = () => !this.isAll && this.project?.id === projectId && this.productId === productId
       this.isLoading = true
       this.error = null
       this.disabledMessage = null
@@ -501,6 +503,7 @@ export default {
         this.entries = [...this.entries, ...(response?.data?.entries || [])]
         this.nextCursor = response?.data?.nextCursor || null
       } catch (err) {
+        if (this.requestId !== requestId) return
         this.loadMoreError = apiErrorMessage(err, 'Failed to load more entries')
       } finally {
         this.isLoadingMore = false

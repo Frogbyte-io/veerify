@@ -95,6 +95,7 @@ describe('assembleOverview', () => {
     expect(result.needsYou.slaAtRisk.total).toBe(0)
     expect(result.needsYou.untriaged.total).toBe(0)
     expect(result.needsYou.drafts.items).toEqual([])
+    expect(result.needsYou.drafts.total).toBe(0)
     expect(result.week.received.current).toBe(0)
     expect(result.week.posts.current).toBe(0)
     const rowA = result.projects.find((p) => p.project.id === 'a')!

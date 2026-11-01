@@ -81,7 +81,7 @@
     <ProjectScopeChips
       v-if="isAll && isFeedbackView && scopeProjectList.length > 0"
       :model-value="selectedProjectIds"
-      :projects="scopeProjectList"
+      :projects="chipProjects"
       page="feedback"
       module="feedbackEnabled"
       :counts="scopeLoaded ? countsById : null"
@@ -138,8 +138,8 @@
 
     <!-- Main Content -->
     <div v-else-if="project" class="space-y-6">
-      <!-- Stats Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Stats Cards (single project only: they count the current page's built-in statuses) -->
+      <div v-if="!isAll" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle class="text-sm font-medium">Total Feedback</CardTitle>
@@ -860,7 +860,7 @@ import {
   readLastFeedbackProject,
   rememberLastFeedbackProject,
 } from '~/lib/feedback-scope'
-import { findScopeProject, isAllProjects, scopeProjectsWithModule } from '~/lib/project-scope'
+import { findScopeProject, isAllProjects, scopeProjects, scopeProjectsWithModule } from '~/lib/project-scope'
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 
@@ -985,6 +985,10 @@ export default {
     // Projects with the Feedback tool on (All projects: every one the user can open)
     scopeProjectList() {
       return scopeProjectsWithModule(this.context, 'feedbackEnabled')
+    },
+    // Every scope project: the chips hint at the ones with Feedback off
+    chipProjects() {
+      return scopeProjects(this.context)
     },
     // Projects the list shows: the chip selection, else every project with feedback
     viewProjectIds() {

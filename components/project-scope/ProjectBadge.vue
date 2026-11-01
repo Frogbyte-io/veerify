@@ -3,7 +3,7 @@
     :class="
       cn('inline-flex shrink-0 items-center justify-center overflow-hidden font-semibold leading-none', sizeClass)
     "
-    :style="logoUrl ? undefined : { backgroundColor: color, color: '#fff' }"
+    :style="logoUrl ? undefined : { backgroundColor: color, color: foreground }"
     :title="title || undefined"
     data-testid="project-badge"
   >
@@ -14,7 +14,7 @@
 
 <script>
 import { cn } from '~/lib/utils'
-import { projectInitials, PROJECT_PALETTE } from '~/lib/project-identity'
+import { projectForegroundColor, projectInitials, PROJECT_PALETTE } from '~/lib/project-identity'
 
 const SIZES = {
   xs: 'size-3.5 rounded-[4px] text-[8px]',
@@ -41,12 +41,15 @@ export default {
     color() {
       return this.identity?.color || PROJECT_PALETTE[0]
     },
+    foreground() {
+      return projectForegroundColor(this.color)
+    },
     logoUrl() {
       return this.identity?.logoUrl || null
     },
     initials() {
       const value = this.identity?.initials || projectInitials(this.project?.name || '')
-      return this.single || this.size === 'xs' ? value.charAt(0) : value
+      return this.single || this.size === 'xs' ? (Array.from(value)[0] ?? '') : value
     },
     sizeClass() {
       return SIZES[this.size] || SIZES.sm
