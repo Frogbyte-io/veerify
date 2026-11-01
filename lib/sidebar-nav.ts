@@ -9,6 +9,9 @@
  * Tools are switched per project: `modules` is the active project's resolved
  * tool switches, `productCount` its number of products and `isProjectAdmin`
  * whether the user can change project settings.
+ *
+ * In All projects (`isAllProjects`), `modules` is the union over the combined projects and entries
+ * that only make sense for one project (`hideInAllProjects`) are dropped.
  */
 import { MODULE_KEYS, type ModuleKey } from '~/lib/modules'
 
@@ -29,6 +32,8 @@ export interface SidebarVisibilityRule {
   requiresProjectAdmin?: boolean
   /** Hidden when every tool is already switched on (nothing left to add). */
   requiresDisabledModule?: boolean
+  /** Hidden in All projects (Marketing, project settings: they belong to one project). */
+  hideInAllProjects?: boolean
 }
 
 export interface SidebarNavItem extends SidebarVisibilityRule {
@@ -48,6 +53,8 @@ export interface SidebarNavGroup extends SidebarVisibilityRule {
   collapsible?: boolean
   /** Icon for a collapsible group's header. */
   icon?: string
+  /** Label used instead of `label` in All projects. */
+  allProjectsLabel?: string
 }
 
 export interface SidebarVisibilityContext {
@@ -56,6 +63,8 @@ export interface SidebarVisibilityContext {
   /** Number of products in the active project; `0` while unknown. */
   productCount: number
   isProjectAdmin: boolean
+  /** Working in All projects. */
+  isAllProjects?: boolean
 }
 
 export function isNavEntryVisible(rule: SidebarVisibilityRule, ctx: SidebarVisibilityContext): boolean {
@@ -64,6 +73,7 @@ export function isNavEntryVisible(rule: SidebarVisibilityRule, ctx: SidebarVisib
       ctx.hasActiveOrganization === true || (rule.showWhileOrgLoading === true && ctx.hasActiveOrganization === null)
     if (!orgOk) return false
   }
+  if (rule.hideInAllProjects && ctx.isAllProjects) return false
   if (rule.module && !ctx.modules[rule.module]) return false
   if (rule.requiresProjectAdmin && !ctx.isProjectAdmin) return false
   if (rule.requiresDisabledModule && !MODULE_KEYS.some((key) => !ctx.modules[key])) return false
@@ -71,8 +81,8 @@ export function isNavEntryVisible(rule: SidebarVisibilityRule, ctx: SidebarVisib
 }
 
 /** Whether per-product sub-items should render (single-product projects hide the product layer). */
-export function showProductSubItems(ctx: Pick<SidebarVisibilityContext, 'productCount'>): boolean {
-  return ctx.productCount > 1
+export function showProductSubItems(ctx: Pick<SidebarVisibilityContext, 'productCount' | 'isAllProjects'>): boolean {
+  return !ctx.isAllProjects && ctx.productCount > 1
 }
 
 /** Resolves which groups and items to render; groups left empty are removed. */
@@ -84,7 +94,10 @@ export function getVisibleNavGroups(
   for (const group of groups) {
     if (!isNavEntryVisible(group, ctx)) continue
     const items = group.items.filter((item) => isNavEntryVisible(item, ctx))
-    if (items.length > 0) visible.push({ ...group, items })
+    if (items.length > 0) {
+      const label = ctx.isAllProjects && group.allProjectsLabel ? group.allProjectsLabel : group.label
+      visible.push({ ...group, label, items })
+    }
   }
   return visible
 }
@@ -93,6 +106,7 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
   {
     id: 'project',
     label: 'Project',
+    allProjectsLabel: 'All projects',
     requiresOrg: true,
     items: [
       // Shown while loading to avoid layout jump.
@@ -119,6 +133,7 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
     label: 'Marketing',
     icon: 'lucide:megaphone',
     requiresOrg: true,
+    hideInAllProjects: true,
     module: 'marketingEnabled',
     collapsible: true,
     testId: 'sidebar-marketing-group',
@@ -143,14 +158,15 @@ export const SIDEBAR_NAV_GROUPS: readonly SidebarNavGroup[] = [
     module: 'supportEnabled',
     items: [
       { title: 'Inbox', url: '/inbox', icon: 'lucide:inbox' },
-      { title: 'Contacts', url: '/inbox/contacts', icon: 'lucide:contact' },
-      { title: 'Settings', url: '/inbox/settings', icon: 'lucide:settings' },
+      { title: 'Contacts', url: '/inbox/contacts', icon: 'lucide:contact', hideInAllProjects: true },
+      { title: 'Settings', url: '/inbox/settings', icon: 'lucide:settings', hideInAllProjects: true },
     ],
   },
   {
     id: 'manage',
     label: 'Manage',
     requiresOrg: true,
+    hideInAllProjects: true,
     items: [
       { title: 'Project settings', url: '/project/settings', icon: 'lucide:sliders-horizontal' },
       {

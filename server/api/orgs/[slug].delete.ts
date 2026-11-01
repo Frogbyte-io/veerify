@@ -81,6 +81,7 @@ export default defineEventHandler(async (event) => {
       .set({
         activeOrganizationId: null,
         activeProjectId: null,
+        activeProjectScope: null,
       })
       .where(eq(sessionTable.activeOrganizationId, org.id))
 

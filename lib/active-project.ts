@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { apiErrorStatus } from '~/lib/api-error'
 import type { ModuleSettings } from '~/lib/modules'
+import type { ProjectIdentity } from '~/lib/project-identity'
 
 /**
  * Client-side cache of `GET /api/projects/active`, shared by the sidebar, the
@@ -16,8 +17,28 @@ import type { ModuleSettings } from '~/lib/modules'
 
 export type ActiveProjectProduct = { id: string; name: string; slug: string; [key: string]: unknown }
 
+/** A project the user can open, as listed in All projects (server/utils/project-summary.ts ScopeProject). */
+export type ScopeProject = {
+  id: string
+  slug: string
+  name: string
+  isPublic: boolean
+  role: 'admin' | 'member'
+  organizationId: string
+  identity: ProjectIdentity
+  modules: ModuleSettings
+  productCount: number
+  [key: string]: unknown
+}
+
 export type ActiveProjectContext = {
+  /** `'all'` while working in All projects; `project` is then the last single project. */
+  scope?: 'project' | 'all'
+  /** Every project the user can open in the organization. */
+  projects?: ScopeProject[]
+  allProjectsAvailable?: boolean
   project: {
+    identity?: ProjectIdentity
     id: string
     slug: string
     name: string

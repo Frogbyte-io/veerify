@@ -1,14 +1,16 @@
 /**
  * Response shapes for the project/product context (see docs/plans/2026-10-23-projects-products/design.md).
  */
-import { asc, eq } from 'drizzle-orm'
+import { asc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { member, organization, user } from '~/server/database/schema/auth'
-import { projectMember } from '~/server/database/schema/feedback'
+import { product, project, projectMember } from '~/server/database/schema/feedback'
+import { projectIdentity, type ProjectIdentity } from '~/lib/project-identity'
 import { resolveProjectModules, type ModuleSettings } from '~/lib/modules'
 import {
   getOrganizationRole,
   isOrganizationAdminRole,
+  listAccessibleProjects,
   listProducts,
   type OrganizationRole,
   type ProductRow,
@@ -36,11 +38,67 @@ export type ProjectSummary = {
   organizationId: string
 }
 
+/** A project as listed in All projects: summary, colour/initials and its tool switches. */
+export type ScopeProject = ProjectSummary & {
+  identity: ProjectIdentity
+  modules: ModuleSettings
+  productCount: number
+}
+
 export type ActiveProjectContext = {
-  project: ProjectSummary & { settings: Record<string, unknown> }
+  project: ProjectSummary & { settings: Record<string, unknown>; identity: ProjectIdentity }
   organization: { id: string; name: string; slug: string; logo: string | null; role: OrganizationRole }
   products: ProductSummary[]
   modules: ModuleSettings
+  /** `'all'` while working in All projects; `project` then is the last single project. */
+  scope: 'project' | 'all'
+  /** Every project the user can open in this organization (creation order). */
+  projects: ScopeProject[]
+  /** Whether All projects is offered (two or more projects the user can open). */
+  allProjectsAvailable: boolean
+}
+
+/** Each project's position in its organization (creation order), for stable identity colours. */
+export async function projectIdentityIndex(organizationId: string): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ id: project.id })
+    .from(project)
+    .where(eq(project.organizationId, organizationId))
+    .orderBy(asc(project.createdAt), asc(project.id))
+  return new Map(rows.map((row, index) => [row.id, index]))
+}
+
+export async function identityFor(row: ProjectRow): Promise<ProjectIdentity> {
+  const index = await projectIdentityIndex(row.organizationId)
+  return projectIdentity(row, index.get(row.id) ?? 0)
+}
+
+/** Summaries with identity, tool switches and product counts for a list of accessible projects. */
+export async function toScopeProjects(
+  organizationId: string,
+  rows: Array<ProjectRow & { role: ProjectRole }>
+): Promise<ScopeProject[]> {
+  if (rows.length === 0) return []
+  const [index, counts] = await Promise.all([
+    projectIdentityIndex(organizationId),
+    db
+      .select({ projectId: product.projectId, count: sql<number>`count(*)::int` })
+      .from(product)
+      .where(
+        inArray(
+          product.projectId,
+          rows.map((r) => r.id)
+        )
+      )
+      .groupBy(product.projectId),
+  ])
+  const countByProject = new Map(counts.map((c) => [c.projectId, c.count]))
+  return rows.map((row) => ({
+    ...toProjectSummary(row),
+    identity: projectIdentity(row, index.get(row.id) ?? 0),
+    modules: resolveProjectModules((row.settings ?? {}) as Record<string, unknown>),
+    productCount: countByProject.get(row.id) ?? 0,
+  }))
 }
 
 export function toProductSummary(row: ProductRow): ProductSummary {
@@ -67,20 +125,32 @@ export function toProjectSummary(row: ProjectRow & { role: ProjectRole }): Proje
   }
 }
 
+/**
+ * @param storedScope the session's `activeProjectScope`; All projects is only reported while the user
+ * can open two or more projects (requireAuthWithProjectScope repairs the stored value).
+ */
 export async function buildActiveProjectContext(
   activeProject: ProjectRow & { role: ProjectRole },
-  userId: string
+  userId: string,
+  storedScope?: string | null
 ): Promise<ActiveProjectContext> {
-  const [orgRows, orgRole, products] = await Promise.all([
+  const [orgRows, orgRole, products, accessible] = await Promise.all([
     db.select().from(organization).where(eq(organization.id, activeProject.organizationId)).limit(1),
     getOrganizationRole(activeProject.organizationId, userId),
     listProducts(activeProject.id),
+    listAccessibleProjects(activeProject.organizationId, userId),
   ])
   const org = orgRows[0]
   const settings = (activeProject.settings ?? {}) as Record<string, unknown>
+  const projects = await toScopeProjects(activeProject.organizationId, accessible)
+  const allProjectsAvailable = projects.length >= 2
+  const identity = projects.find((p) => p.id === activeProject.id)?.identity ?? (await identityFor(activeProject))
 
   return {
-    project: { ...toProjectSummary(activeProject), settings },
+    scope: storedScope === 'all' && allProjectsAvailable ? 'all' : 'project',
+    projects,
+    allProjectsAvailable,
+    project: { ...toProjectSummary(activeProject), settings, identity },
     organization: {
       id: activeProject.organizationId,
       name: org?.name ?? '',

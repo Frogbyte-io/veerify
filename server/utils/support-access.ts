@@ -433,3 +433,52 @@ export async function listProjectUserIds(projectId: string, executor: SupportAcc
     )
     .map((row) => row.userId)
 }
+
+/**
+ * Every inbox the user can work in across the given projects (All projects): all inboxes of projects
+ * they administer, plus inboxes they are a member of elsewhere. Same rule as `requireInboxAccess`.
+ * `projects` must already be access-checked (e.g. from `requireScopedProjects`).
+ */
+export async function listAccessibleInboxes(
+  userId: string,
+  projects: Array<{ id: string; role: 'admin' | 'member' }>,
+  executor: SupportAccessExecutor = db
+): Promise<InboxAccess[]> {
+  if (projects.length === 0) return []
+  const adminProjectIds = new Set(projects.filter((p) => p.role === 'admin').map((p) => p.id))
+  const inboxes = await executor
+    .select()
+    .from(supportInbox)
+    .where(
+      inArray(
+        supportInbox.projectId,
+        projects.map((p) => p.id)
+      )
+    )
+  if (inboxes.length === 0) return []
+
+  const memberships = await executor
+    .select({ inboxId: supportInboxMember.inboxId, role: supportInboxMember.role })
+    .from(supportInboxMember)
+    .where(
+      and(
+        eq(supportInboxMember.userId, userId),
+        inArray(
+          supportInboxMember.inboxId,
+          inboxes.map((i) => i.id)
+        )
+      )
+    )
+  const roleByInbox = new Map(memberships.map((m) => [m.inboxId, parseSupportInboxRole(m.role)]))
+
+  const result: InboxAccess[] = []
+  for (const inbox of inboxes) {
+    if (adminProjectIds.has(inbox.projectId)) {
+      result.push(withInboxAccess(inbox, 'admin', true))
+      continue
+    }
+    const role = roleByInbox.get(inbox.id)
+    if (role) result.push(withInboxAccess(inbox, role, false))
+  }
+  return result
+}

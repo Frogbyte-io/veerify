@@ -139,7 +139,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: now,
     })
 
-    await writeContext(contextTargetFor(session), organizationId, null, tx)
+    await writeContext(contextTargetFor(session), organizationId, null, tx, 'project')
 
     return org
   })

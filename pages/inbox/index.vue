@@ -71,8 +71,12 @@
               <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                 <Icon name="lucide:life-buoy" class="h-6 w-6 text-muted-foreground" />
               </div>
-              <p class="font-medium">Inbox is switched off for this project</p>
-              <template v-if="activeProject?.role === 'admin'">
+              <p v-if="combined" class="font-medium">Inbox is switched off in every project</p>
+              <p v-else class="font-medium">Inbox is switched off for this project</p>
+              <p v-if="combined" class="text-sm text-muted-foreground">
+                Pick a project and switch Inbox on under Project settings, Tools.
+              </p>
+              <template v-else-if="activeProject?.role === 'admin'">
                 <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
                 <Button as-child variant="outline">
                   <NuxtLink to="/project/settings?tab=tools">
@@ -101,11 +105,14 @@
               </div>
               <Icon name="lucide:inbox" class="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
               <p class="mb-2 font-medium" data-testid="support-no-assignment">No inboxes are assigned to you.</p>
-              <p class="mx-auto mb-4 max-w-md text-sm text-muted-foreground">
+              <p v-if="combined" class="mx-auto max-w-md text-sm text-muted-foreground">
+                Pick a project to create an inbox in its settings, or ask an inbox administrator to add you to one.
+              </p>
+              <p v-else class="mx-auto mb-4 max-w-md text-sm text-muted-foreground">
                 Admins can create an inbox and set up domains, addresses and agents in inbox settings. Otherwise, ask an
                 inbox administrator to add you to an inbox.
               </p>
-              <Button as-child>
+              <Button v-if="!combined" as-child>
                 <NuxtLink to="/inbox/settings" data-testid="support-inbox-empty-settings">
                   <Icon name="lucide:settings" class="mr-2 h-4 w-4" />
                   Open inbox settings
@@ -137,7 +144,8 @@
         <!-- Tablet: views stay one tap away in an icon rail; the rest is in the drawer -->
         <aside v-else-if="showViewRail" class="w-14 shrink-0 border-r bg-sidebar" data-testid="support-view-rail">
           <SupportInboxRail
-            :active-inbox-name="activeInbox?.name || 'Inbox'"
+            :active-inbox-name="combined ? 'All inboxes' : activeInbox?.name || 'Inbox'"
+            :combined="combined"
             :active-view="activeView"
             :unread-counts="unreadCounts"
             @select-view="selectView"
@@ -164,7 +172,7 @@
             :search-query="conversationSearch"
             :csat-filter="csatFilter"
             :csat-summary="csatSummary"
-            :active-inbox-id="activeInboxId"
+            :active-inbox-id="combined ? null : activeInboxId"
             :active-view="activeView"
             :title="activeViewLabel"
             :active-address="activeAddress"
@@ -173,6 +181,9 @@
             :current-user-id="currentUserId"
             :current-user-name="currentUserName"
             :show-drawer-button="isCompactPanes && !showViewRail"
+            :show-project="combined"
+            :scope-projects="scopeProjectList"
+            :subtitle="listSubtitle"
             @select="selectConversation"
             @search="handleConversationSearch"
             @clear-search="clearConversationSearch"
@@ -184,7 +195,18 @@
             @go-to-inbox="selectView('inbox')"
             @retry="() => loadConversations(true)"
             @load-more="() => loadConversations(false)"
-          />
+          >
+            <template v-if="combined" #scope>
+              <ProjectScopeChips
+                :model-value="projectFilter"
+                :projects="scopeProjectList"
+                page="inbox"
+                module="supportEnabled"
+                :counts="projectCounts"
+                @update:model-value="handleProjectFilterChange"
+              />
+            </template>
+          </SupportConversationList>
         </section>
 
         <!-- Thread -->
@@ -207,6 +229,8 @@
             :is-updating="isUpdatingConversation"
             :details-open="showDetails"
             :receiving-address="receivingAddress"
+            :project="threadScopeProject"
+            @open-in-project="openInProject"
             @retry-detail="loadConversationDetail"
             @retry-messages="loadMessages"
             @update-conversation="patchConversation"
@@ -216,11 +240,19 @@
             @back="closeConversation"
           >
             <template #composer>
+              <div
+                v-if="selectedConversationId && focusLoading"
+                class="border-t p-3"
+                data-testid="support-composer-skeleton"
+              >
+                <Skeleton class="h-28 w-full rounded-xl" />
+              </div>
               <SupportComposer
-                v-if="selectedConversationId"
+                v-else-if="selectedConversationId"
                 ref="composer"
                 :conversation-id="selectedConversationId"
-                :project-id="activeProjectId"
+                :project-id="threadProjectId"
+                :project-name="threadScopeProject?.name || ''"
                 :contact="conversationContact"
                 :current-user-name="currentUserName"
                 :conversation="conversationDetail"
@@ -290,9 +322,9 @@
       :open="showFeedbackBridgeDialog"
       :conversation="conversationDetail"
       :messages="messages"
-      :project-id="activeProjectId"
-      :project-slug="activeProject?.slug || ''"
-      :products="activeProjectProducts"
+      :project-id="threadProjectId"
+      :project-slug="threadProject?.slug || ''"
+      :products="threadProducts"
       :is-submitting="isCreatingFeedback"
       @update:open="showFeedbackBridgeDialog = $event"
       @submit="convertConversationToFeedback"
@@ -352,6 +384,16 @@
 <script>
 import { toast } from 'vue-sonner'
 import { loadActiveProject } from '~/lib/active-project'
+import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
+import {
+  findScopeProject,
+  isAllProjects,
+  parseProjectFilter,
+  projectFilterParam,
+  readRememberedProjectFilter,
+  scopeProjects,
+  scopeProjectsWithModule,
+} from '~/lib/project-scope'
 import {
   getNextSupportConversationId,
   getSupportShortcutAction,
@@ -373,6 +415,8 @@ const SUPPORT_VIEWS = [
   'all',
 ]
 const DEFAULT_VIEW = 'inbox'
+// All projects has no single inbox: `activeInboxId` holds this marker so the per-inbox context checks keep working.
+const COMBINED_INBOX_ID = 'all-inboxes'
 const VIEW_LABELS = {
   inbox: 'Inbox',
   'assigned-to-me': 'Assigned to me',
@@ -414,6 +458,23 @@ export default {
       activeProjectListenerReady: false,
       isLoadingProject: true,
       projectError: null,
+
+      // All projects: one list over every inbox the user can work in (see `/api/support/conversations/combined`).
+      combined: false,
+      scopeContext: null,
+      projectFilter: [],
+      projectCounts: null,
+      totalInboxes: 0,
+      combinedInboxes: [],
+      combinedLoaded: false,
+      subscribedInboxKey: '',
+      // The inbox and project of the open conversation: members, addresses, tags and products are theirs.
+      focus: null,
+      focusLoading: false,
+      focusToken: 0,
+      focusProducts: [],
+      conversationsRequestId: 0,
+      isOpeningProject: false,
 
       inboxes: [],
       activeInboxId: null,
@@ -497,7 +558,38 @@ export default {
 
   computed: {
     noInbox() {
+      if (this.combined) return this.combinedLoaded && this.totalInboxes === 0
       return !this.isLoadingInboxes && !this.inboxesError && this.inboxes.length === 0
+    },
+
+    scopeProjectList() {
+      return scopeProjects(this.scopeContext)
+    },
+
+    // The project of the open conversation: the active one, or in All projects the conversation's own.
+    threadProjectId() {
+      if (!this.combined) return this.activeProjectId
+      return this.focus?.projectId || this.conversationDetail?.projectId || ''
+    },
+
+    threadProject() {
+      if (!this.combined) return this.activeProject
+      return findScopeProject(this.scopeContext, this.threadProjectId)
+    },
+
+    // Shown (tag, "Open in …", the composer's From note) only in All projects.
+    threadScopeProject() {
+      return this.combined ? this.threadProject : null
+    },
+
+    threadProducts() {
+      return this.combined ? this.focusProducts : this.activeProjectProducts
+    },
+
+    listSubtitle() {
+      if (!this.combined) return ''
+      const count = this.projectFilter.length || scopeProjectsWithModule(this.scopeContext, 'supportEnabled').length
+      return `Newest first, across ${count} ${count === 1 ? 'project' : 'projects'}`
     },
     showNotice() {
       return Boolean(this.projectError) || this.supportDisabled || this.noInbox
@@ -516,6 +608,7 @@ export default {
     },
 
     activeInbox() {
+      if (this.combined) return null
       return this.inboxes.find((inbox) => inbox.id === this.activeInboxId) || null
     },
 
@@ -542,8 +635,9 @@ export default {
 
     sidebarProps() {
       return {
-        inboxes: this.inboxes,
-        activeInboxId: this.activeInboxId,
+        inboxes: this.combined ? this.combinedInboxes : this.inboxes,
+        combined: this.combined,
+        activeInboxId: this.combined ? null : this.activeInboxId,
         isLoading: this.isLoadingInboxes,
         error: this.inboxesError,
         capabilities: this.activeInbox?.capabilities,
@@ -788,6 +882,21 @@ export default {
       this.conversationContact = null
       this.messages = []
       this.resetContactPanel()
+      this.combined = false
+      this.scopeContext = null
+      this.projectFilter = []
+      this.projectCounts = null
+      this.totalInboxes = 0
+      this.combinedInboxes = []
+      this.combinedLoaded = false
+      this.subscribedInboxKey = ''
+      this.focus = null
+      this.focusLoading = false
+      this.focusToken += 1
+      this.focusProducts = []
+      this.conversationsError = null
+      this.hasMoreConversations = false
+      this.conversationsNextCursor = null
     },
 
     async initProjectContext() {
@@ -814,7 +923,11 @@ export default {
         this.activeProjectId = activeProjectData.id
         this.activeProject = activeProjectData
         this.activeProjectProducts = activeContext.products || []
-        this.supportDisabled = activeContext.modules?.supportEnabled === false
+        this.scopeContext = activeContext
+        this.combined = isAllProjects(activeContext)
+        this.supportDisabled = this.combined
+          ? scopeProjectsWithModule(activeContext, 'supportEnabled').length === 0
+          : activeContext.modules?.supportEnabled === false
         if (this.supportDisabled) {
           this.isLoadingProject = false
           return
@@ -824,7 +937,8 @@ export default {
         this.currentUserId = sessionResponse?.data?.user?.id || ''
         this.currentUserName = sessionResponse?.data?.user?.name || sessionResponse?.data?.user?.email || ''
         this.isLoadingProject = false
-        await this.loadInboxes({ generation, projectId: activeProjectData.id })
+        if (this.combined) await this.loadCombinedInbox({ generation, projectId: activeProjectData.id })
+        else await this.loadInboxes({ generation, projectId: activeProjectData.id })
       } catch {
         if (generation === this.contextGeneration) {
           this.projectError = 'Something went wrong. Please try again.'
@@ -891,6 +1005,122 @@ export default {
       }
     },
 
+    /** The project filter to start with: the URL first, else what was remembered for this page. */
+    initialProjectFilter() {
+      const selectable = scopeProjectsWithModule(this.scopeContext, 'supportEnabled')
+      const valid = (ids) => ids.filter((id) => selectable.some((project) => project.id === id))
+      const fromUrl = valid(parseProjectFilter(this.$route.query.projects))
+      if (fromUrl.length > 0) return fromUrl
+      return valid(readRememberedProjectFilter('inbox', this.scopeProjectList[0]?.organizationId))
+    },
+
+    /** All projects: no inbox to pick, the one list covers every inbox. */
+    async loadCombinedInbox({ generation = this.contextGeneration, projectId = this.activeProjectId } = {}) {
+      if (!projectId || !this.isCurrentContext(generation, projectId)) return
+
+      this.isLoadingInboxes = true
+      this.inboxesError = null
+      this.inboxAccessError = null
+      this.activeInboxId = COMBINED_INBOX_ID
+      this.activeView = this.normalizeSupportView(this.$route.query.view)
+      this.conversationSearch = this.normalizeConversationSearch(this.$route.query.search)
+      this.csatFilter = this.normalizeCsatFilter(this.$route.query.csat)
+      this.projectFilter = this.initialProjectFilter()
+
+      try {
+        await this.loadConversations(true, { generation, projectId, inboxId: COMBINED_INBOX_ID })
+        // Deep link from a notification (`/inbox?conversationId=…`), opened once the list is in.
+        if (this.isCurrentContext(generation, projectId, COMBINED_INBOX_ID)) await this.openRequestedConversation()
+      } finally {
+        if (this.isCurrentContext(generation, projectId)) this.isLoadingInboxes = false
+      }
+    },
+
+    async handleProjectFilterChange(ids) {
+      if (ids.join(',') === this.projectFilter.join(',')) return
+      this.unselectConversation()
+      this.projectFilter = ids
+      if (import.meta.client) {
+        // The chips write `?projects=` themselves; `$route` may not show it yet, so state it here too.
+        await this.$router
+          .replace({ query: { ...this.$route.query, projects: projectFilterParam(ids), conversationId: undefined } })
+          .catch(() => {})
+      }
+      await this.loadConversations(true)
+    },
+
+    /**
+     * Members, addresses, tags and products of the open conversation's inbox and project (All projects).
+     * The composer waits for them, so a reply never starts from another project's addresses.
+     */
+    async loadFocus(target, { generation = this.contextGeneration } = {}) {
+      if (!target?.inboxId || !target?.projectId) return
+      if (this.focus?.inboxId === target.inboxId) return
+      const projectId = this.activeProjectId
+      const token = ++this.focusToken
+      this.focus = { projectId: target.projectId, inboxId: target.inboxId }
+      this.focusLoading = true
+      this.inboxMembers = []
+      this.addresses = []
+      this.inboxSendingAddress = null
+      this.tags = []
+      this.focusProducts = []
+
+      const slug = findScopeProject(this.scopeContext, target.projectId)?.slug
+      const [members, addresses, tags, products] = await Promise.allSettled([
+        $fetch(`/api/support/inboxes/${target.inboxId}/members`),
+        $fetch(`/api/support/inboxes/${target.inboxId}/addresses`),
+        $fetch('/api/support/tags', { params: { projectId: target.projectId } }),
+        slug ? $fetch(`/api/projects/${encodeURIComponent(slug)}/products`) : Promise.resolve(null),
+      ])
+      if (token !== this.focusToken || !this.isCurrentContext(generation, projectId)) return
+
+      const forbidden = [members, addresses].find(
+        (result) => result.status === 'rejected' && this.isForbiddenError(result.reason)
+      )
+      if (forbidden) {
+        await this.recoverFromForbiddenInbox({ generation, projectId, inboxId: COMBINED_INBOX_ID })
+        return
+      }
+      this.inboxMembers = members.status === 'fulfilled' ? members.value?.data?.members || [] : []
+      this.addresses = addresses.status === 'fulfilled' ? addresses.value?.data?.addresses || [] : []
+      this.inboxSendingAddress =
+        (addresses.status === 'fulfilled' && addresses.value?.data?.inboxSendingAddress) ||
+        this.combinedInboxes.find((inbox) => inbox.id === target.inboxId)?.emailAddress ||
+        null
+      this.tags = tags.status === 'fulfilled' ? tags.value?.data?.tags || [] : []
+      this.focusProducts = products.status === 'fulfilled' ? products.value?.data || [] : []
+      this.focusLoading = false
+    },
+
+    /** Switch to the conversation's project and keep it open there. */
+    async openInProject() {
+      const detail = this.conversationDetail
+      const conversationId = this.selectedConversationId
+      if (!detail?.projectId || !conversationId || this.isOpeningProject) return
+      this.isOpeningProject = true
+      try {
+        // The single-project page opens this conversation from the address, as for a notification link.
+        await this.$router.replace({
+          query: { conversationId, inboxId: detail.inboxId, view: this.$route.query.view || undefined },
+        })
+        await $fetch('/api/projects/active', { method: 'POST', body: { projectId: detail.projectId } })
+        clearDashboardBootstrapCache()
+        if (import.meta.client) {
+          window.dispatchEvent(
+            new CustomEvent(ACTIVE_PROJECT_CHANGED_EVENT, { detail: { projectId: detail.projectId } })
+          )
+        }
+      } catch (error) {
+        toast.error(error?.data?.error?.message || 'Failed to switch project')
+        await this.$router
+          .replace({ query: { ...this.$route.query, inboxId: undefined, conversationId } })
+          .catch(() => {})
+      } finally {
+        this.isOpeningProject = false
+      }
+    },
+
     async selectInbox(
       inboxId,
       { generation = this.contextGeneration, projectId = this.activeProjectId, useRouteView = false } = {}
@@ -951,6 +1181,21 @@ export default {
       inboxId = null,
     } = {}) {
       if (!this.isCurrentContext(generation, projectId, inboxId)) return
+      if (this.combined) {
+        // Access to one inbox went away: show the list again as the server now sees it.
+        this.unselectConversation()
+        this.focus = null
+        this.focusLoading = false
+        this.projectFilter = []
+        if (import.meta.client) {
+          await this.$router
+            .replace({ query: { ...this.$route.query, projects: undefined, conversationId: undefined } })
+            .catch(() => {})
+        }
+        await this.loadConversations(true, { generation, projectId, inboxId })
+        if (this.isCurrentContext(generation, projectId)) this.inboxAccessError = 'You do not have access to this inbox'
+        return
+      }
       this.unselectConversation()
       this.activeInboxId = null
       this.inboxMembers = []
@@ -1185,27 +1430,43 @@ export default {
         this.isLoadingMoreConversations = true
       }
       this.conversationsError = null
+      // Only the newest request may fill the list (the project filter and realtime reload while one is in flight).
+      const requestId = ++this.conversationsRequestId
 
       try {
-        const response = await $fetch('/api/support/conversations', {
-          params: {
-            inboxId,
-            view: this.activeView,
-            mailAddressId: this.activeAddressId || undefined,
-            tagId: this.activeTagId || undefined,
-            search: this.conversationSearch || undefined,
-            csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
-            limit: 25,
-            cursor: reset ? undefined : this.conversationsNextCursor || undefined,
-          },
-        })
+        const common = {
+          view: this.activeView,
+          search: this.conversationSearch || undefined,
+          csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
+          limit: 25,
+          cursor: reset ? undefined : this.conversationsNextCursor || undefined,
+        }
+        const response = this.combined
+          ? await $fetch('/api/support/conversations/combined', {
+              params: { ...common, projects: projectFilterParam(this.projectFilter) },
+            })
+          : await $fetch('/api/support/conversations', {
+              params: {
+                inboxId,
+                ...common,
+                mailAddressId: this.activeAddressId || undefined,
+                tagId: this.activeTagId || undefined,
+              },
+            })
 
-        if (!this.isCurrentContext(generation, projectId, inboxId)) return
+        if (!this.isCurrentContext(generation, projectId, inboxId) || requestId !== this.conversationsRequestId) return
         const page = response?.data?.conversations || []
         this.conversations = reset ? page : [...this.conversations, ...page]
         this.unreadCounts = { ...EMPTY_UNREAD_COUNTS, ...(response?.data?.unreadCounts || {}) }
         this.hasMoreConversations = Boolean(response?.data?.hasMore)
         this.conversationsNextCursor = response?.data?.nextCursor || null
+        if (this.combined) {
+          this.projectCounts = response?.data?.projectCounts || {}
+          this.totalInboxes = response?.data?.totalInboxes ?? 0
+          this.combinedInboxes = response?.data?.inboxes || []
+          this.combinedLoaded = true
+          this.subscribeCombinedInboxes()
+        }
         this.syncConversationDraftIndicators()
 
         await this.ensureContactsLoaded(
@@ -1213,14 +1474,14 @@ export default {
           { generation, projectId, inboxId }
         )
       } catch (error) {
-        if (!this.isCurrentContext(generation, projectId, inboxId)) return
+        if (!this.isCurrentContext(generation, projectId, inboxId) || requestId !== this.conversationsRequestId) return
         if (this.isForbiddenError(error)) {
           await this.recoverFromForbiddenInbox({ generation, projectId, inboxId })
           return
         }
         this.conversationsError = 'Failed to load conversations. Please try again.'
       } finally {
-        if (this.isCurrentContext(generation, projectId, inboxId)) {
+        if (this.isCurrentContext(generation, projectId, inboxId) && requestId === this.conversationsRequestId) {
           this.isLoadingConversations = false
           this.isLoadingMoreConversations = false
         }
@@ -1423,6 +1684,12 @@ export default {
         this.$router.replace({ query: { ...this.$route.query, conversationId } }).catch(() => {})
       }
 
+      if (this.combined) {
+        // The list row names the conversation's inbox and project; a deep link learns them from the detail below.
+        const row = this.conversations.find((item) => item.id === conversationId)
+        if (row) void this.loadFocus({ projectId: row.projectId, inboxId: row.inboxId }, { generation })
+      }
+
       this.subscribeConversation(conversationId)
 
       await this.updateConversationReadState(false, { generation, projectId, inboxId, conversationId })
@@ -1496,6 +1763,10 @@ export default {
         if (!this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
         this.conversationDetail = response?.data?.conversation || null
         this.conversationContact = response?.data?.contact || null
+        if (this.combined && this.conversationDetail) {
+          const { projectId: detailProjectId, inboxId: detailInboxId } = this.conversationDetail
+          void this.loadFocus({ projectId: detailProjectId, inboxId: detailInboxId }, { generation })
+        }
 
         if (this.conversationContact?.id) {
           // The contact sidebar is secondary; a slow history request must not
@@ -2104,7 +2375,7 @@ export default {
       this.previousConversationsLoading = true
       try {
         const response = await $fetch('/api/support/conversations', {
-          params: { inboxId, contactId, limit: 5 },
+          params: { inboxId: this.combined ? this.conversationDetail?.inboxId : inboxId, contactId, limit: 5 },
         })
         if (!this.isCurrentConversation(generation, projectId, inboxId, conversationId)) return
         this.previousConversations = (response?.data?.conversations || []).filter((c) => c.id !== conversationId)
@@ -2183,6 +2454,27 @@ export default {
           console.warn(`Could not subscribe to inbox updates: ${reason}`)
         },
       })
+    },
+
+    /** All projects: listen on every inbox the list covers, again whenever that set changes. */
+    subscribeCombinedInboxes() {
+      if (!import.meta.client) return
+      const ids = this.combinedInboxes.map((inbox) => inbox.id).sort()
+      const key = ids.join(',')
+      if (this.unsubscribeInboxChannel && key === this.subscribedInboxKey) return
+      if (this.unsubscribeInboxChannel) this.unsubscribeInboxChannel()
+      const unsubscribers = ids.map((id) =>
+        this.$realtime.subscribe(`inbox:${id}`, {
+          onEvent: () => {
+            this.loadConversations(true)
+          },
+          onSubscribeError: (reason) => {
+            console.warn(`Could not subscribe to inbox updates: ${reason}`)
+          },
+        })
+      )
+      this.subscribedInboxKey = key
+      this.unsubscribeInboxChannel = () => unsubscribers.forEach((unsubscribe) => unsubscribe())
     },
 
     subscribeConversation(conversationId) {

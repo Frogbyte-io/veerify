@@ -73,6 +73,9 @@
               >
                 From
                 <span class="min-w-0 truncate font-medium text-foreground">{{ fromAddressLabel }}</span>
+                <span v-if="projectName" class="min-w-0 truncate" data-testid="support-composer-from-project">
+                  ({{ projectName }}'s inbox)
+                </span>
                 <Icon name="lucide:chevron-down" class="h-3.5 w-3.5 shrink-0" />
               </button>
             </DropdownMenuTrigger>
@@ -105,6 +108,9 @@
             class="order-last w-full truncate px-2 text-xs text-muted-foreground sm:order-none sm:w-auto"
           >
             From <span class="font-medium text-foreground">{{ fromAddressLabel }}</span>
+            <span v-if="projectName" class="ml-1" data-testid="support-composer-from-project">
+              ({{ projectName }}'s inbox)
+            </span>
           </span>
         </template>
       </div>
@@ -374,6 +380,8 @@ export default {
   props: {
     conversationId: { type: String, required: true },
     projectId: { type: String, default: '' },
+    // All projects: the project whose inbox the reply goes out from, named next to the From address.
+    projectName: { type: String, default: '' },
     contact: { type: Object, default: null },
     currentUserName: { type: String, default: '' },
     // The conversation being answered: its type (`behaviour`), case number and receiving address.
