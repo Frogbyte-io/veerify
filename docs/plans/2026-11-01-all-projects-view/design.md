@@ -54,6 +54,8 @@ Decisions (settled with the user):
 - Project identity (`lib/project-identity.ts`): `{ color, initials, logoUrl }`; colour = changed accent
   colour, else a palette colour by the project's creation position in its workspace. Server helpers in
   `server/utils/project-summary.ts`: `toScopeProjects`, `projectIdentityIndex`, `identityFor`.
+- `listAccessibleInboxes(userId, projects)` (`server/utils/support-access.ts`): every inbox the user can work in
+  across scoped projects, same rule as `requireInboxAccess`.
 - Item rows returned by combining endpoints carry `project: { id, name, slug }`; clients look up the
   identity in the context's `projects` by id (don't send identity per row).
 
