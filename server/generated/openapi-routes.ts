@@ -46,6 +46,75 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/changelog/combined": {
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Combined changelog timeline across projects",
+      "description": "The changelog entries of every project in the caller's scope that has the Changelog tool on: the active project in single-project mode, every project they can open in All projects. One timeline, newest first, drafts included (`status: draft`). Narrow it with `projects` (comma-separated project ids; an id outside the scope is 403). Each entry carries `projectId` and `project` (id, name, slug); the body is omitted. `products` lists the products of the projects in view, to resolve `productIds`. Open or change an entry with the per-project endpoints under `/api/changelog/projects/{projectId}`.\n",
+      "operationId": "listCombinedChangelogEntries",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow the scope to",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`entries` (newest first), `nextCursor`, `products` and `counts` (entries per project of the whole scope, for the filter chips)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is outside the caller's scope"
+        },
+        "409": {
+          "description": "The caller can open no project"
+        }
+      }
+    }
+  },
   "/api/changelog/projects/{projectId}/entries": {
     "get": {
       "tags": [
@@ -10634,6 +10703,48 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Workspace or project not found"
+        }
+      }
+    }
+  },
+  "/api/roadmap/combined": {
+    "get": {
+      "tags": [
+        "Roadmap"
+      ],
+      "summary": "Combined roadmap board across projects (project members)",
+      "description": "The roadmap of every project in the caller's scope that has the Roadmap tool on: the active project in single-project mode, every project they can open in All projects. Narrow it with `projects` (comma-separated project ids; an id outside the scope is 403). Columns are merged by status `value`: the first project's name and colour win, and a status only one of several projects has is marked with `onlyProject`. `projectIds` lists the projects that have the status; an item can only be moved into a column whose `projectIds` contains its project. Like the single-project board this includes hidden items (flagged `isHidden`). Each item carries `project` and `productId`; `products` lists the products of the projects in view. Moving an item still goes through `PATCH /api/feedback/{id}/status`.\n",
+      "operationId": "getCombinedRoadmap",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow the scope to",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`columns` (merged by status, with items), `projects` (id, name, slug, publicUrl), `products` and `counts` (visible items per project of the whole scope, for the filter chips)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is outside the caller's scope"
+        },
+        "409": {
+          "description": "The caller can open no project"
         }
       }
     }
