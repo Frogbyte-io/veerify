@@ -184,76 +184,78 @@ function productUrl(base: string, product: ProductSummary) {
     <SidebarContent
       class="pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)] group-data-[collapsible=icon]:[mask-image:none]"
     >
-      <SidebarGroup v-for="group in visibleGroups" :key="group.id" :data-testid="group.testId">
-        <!-- Collapsible group (Marketing) -->
-        <template v-if="group.collapsible">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                :tooltip="group.label"
-                :aria-expanded="marketingOpen"
-                class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-                @click="marketingOpen = !marketingOpen"
-              >
-                <Icon :name="group.icon || 'lucide:folder'" class="!size-5 shrink-0" />
-                <span class="group-data-[collapsible=icon]:hidden">{{ group.label }}</span>
-                <Icon
-                  name="lucide:chevron-right"
-                  class="ml-auto size-4 transition-transform group-data-[collapsible=icon]:hidden"
-                  :class="marketingOpen ? 'rotate-90' : ''"
-                />
-              </SidebarMenuButton>
-              <SidebarMenuSub v-if="marketingOpen">
-                <SidebarMenuSubItem v-for="item in group.items" :key="item.url">
-                  <SidebarMenuSubButton as-child>
-                    <NuxtLink :to="item.url" prefetch-on="interaction">
-                      <span>{{ item.title }}</span>
-                    </NuxtLink>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-              </SidebarMenuSub>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </template>
-
-        <template v-else>
-          <SidebarGroupLabel>{{ group.label }}</SidebarGroupLabel>
-          <SidebarGroupContent>
+      <template v-for="group in visibleGroups" :key="group.id">
+        <p
+          v-if="isAllProjects && group.id === 'workspace'"
+          data-testid="sidebar-all-projects-note"
+          class="mx-4 mb-1 rounded-md border border-dashed px-2.5 py-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
+        >
+          <Icon name="lucide:info" class="mr-1 inline size-3 align-[-2px]" />
+          Marketing and project settings live in each project. Pick one in the switcher above.
+        </p>
+        <SidebarGroup :data-testid="group.testId">
+          <!-- Collapsible group (Marketing) -->
+          <template v-if="group.collapsible">
             <SidebarMenu>
-              <SidebarMenuItem v-for="item in group.items" :key="item.url">
+              <SidebarMenuItem>
                 <SidebarMenuButton
-                  as-child
-                  :tooltip="item.title"
+                  :tooltip="group.label"
+                  :aria-expanded="marketingOpen"
                   class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                  @click="marketingOpen = !marketingOpen"
                 >
-                  <NuxtLink :to="item.url" prefetch-on="interaction">
-                    <Icon :name="item.icon" class="!size-5 shrink-0" />
-                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                  </NuxtLink>
+                  <Icon :name="group.icon || 'lucide:folder'" class="!size-5 shrink-0" />
+                  <span class="group-data-[collapsible=icon]:hidden">{{ group.label }}</span>
+                  <Icon
+                    name="lucide:chevron-right"
+                    class="ml-auto size-4 transition-transform group-data-[collapsible=icon]:hidden"
+                    :class="marketingOpen ? 'rotate-90' : ''"
+                  />
                 </SidebarMenuButton>
-                <!-- Per-product boards: only when the project has more than one product -->
-                <SidebarMenuSub v-if="item.productSubItems && hasProductSubItems">
-                  <SidebarMenuSubItem v-for="product in products" :key="product.id">
+                <SidebarMenuSub v-if="marketingOpen">
+                  <SidebarMenuSubItem v-for="item in group.items" :key="item.url">
                     <SidebarMenuSubButton as-child>
-                      <NuxtLink :to="productUrl(item.url, product)" prefetch-on="interaction">
-                        <span>{{ product.name }}</span>
+                      <NuxtLink :to="item.url" prefetch-on="interaction">
+                        <span>{{ item.title }}</span>
                       </NuxtLink>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                 </SidebarMenuSub>
               </SidebarMenuItem>
             </SidebarMenu>
-          </SidebarGroupContent>
-        </template>
-      </SidebarGroup>
-      <p
-        v-if="isAllProjects"
-        data-testid="sidebar-all-projects-note"
-        class="mx-4 mt-1 rounded-md border border-dashed px-2.5 py-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden"
-      >
-        <Icon name="lucide:info" class="mr-1 inline size-3 align-[-2px]" />
-        Marketing and project settings live in each project. Pick one in the switcher above.
-      </p>
+          </template>
+
+          <template v-else>
+            <SidebarGroupLabel>{{ group.label }}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem v-for="item in group.items" :key="item.url">
+                  <SidebarMenuButton
+                    as-child
+                    :tooltip="item.title"
+                    class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                  >
+                    <NuxtLink :to="item.url" prefetch-on="interaction">
+                      <Icon :name="item.icon" class="!size-5 shrink-0" />
+                      <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
+                    </NuxtLink>
+                  </SidebarMenuButton>
+                  <!-- Per-product boards: only when the project has more than one product -->
+                  <SidebarMenuSub v-if="item.productSubItems && hasProductSubItems">
+                    <SidebarMenuSubItem v-for="product in products" :key="product.id">
+                      <SidebarMenuSubButton as-child>
+                        <NuxtLink :to="productUrl(item.url, product)" prefetch-on="interaction">
+                          <span>{{ product.name }}</span>
+                        </NuxtLink>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  </SidebarMenuSub>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </template>
+        </SidebarGroup>
+      </template>
     </SidebarContent>
 
     <SidebarFooter>
