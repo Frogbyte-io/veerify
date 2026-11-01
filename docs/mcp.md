@@ -115,9 +115,10 @@ The `mail_*` tools wrap Project settings → Email. Domains and forwards need a 
 
 | Tool                               | What it does                                                                     |
 | ---------------------------------- | -------------------------------------------------------------------------------- |
-| `mail_list_domains`                | Domains with status, receiving status and every DNS record to publish            |
+| `mail_list_domains`                | Domains with status, receiving status, `lastReceivedAt`, `existingMxHosts`, DNS  |
 | `mail_add_domain`                  | Connect a domain or subdomain; returns the DNS records                           |
 | `mail_verify_domain`               | Check a domain's DNS now                                                         |
+| `mail_check_receiving`             | Ask the provider for receiving status and `lastReceivedAt` now                   |
 | `mail_remove_domain`               | Remove a domain (409 `DOMAIN_IN_USE` while addresses use it)                     |
 | `mail_list_addresses`              | Addresses, delivery, forwards with confirmation status, `forwarding`, usage      |
 | `mail_list_inboxes`                | Inbox ids for `mail_create_address`                                              |
@@ -128,13 +129,18 @@ The `mail_*` tools wrap Project settings → Email. Domains and forwards need a 
 | `mail_stop_forwarding`             | Stop forwarding to a mailbox for its whole domain                                |
 
 1. `mail_add_domain` with `domain: "newsite.com"` (or a subdomain such as `mail.newsite.com` when the apex already
-   has mail). Show the user the records; they add them at their DNS host.
-2. `mail_verify_domain` until the domain is `verified`. Receiving turns `active` once the MX record resolves.
+   has mail). Show the user the ownership TXT and DKIM records; they add them at their DNS host. No SPF change is
+   needed.
+2. `mail_verify_domain` until the domain is `verified`. The MX record then appears (`receivingStatus: pending_mx`).
+   If `existingMxHosts` is non-empty, tell the user the MX moves all mail for the domain away from those hosts and
+   suggest a subdomain instead. Receiving turns `active` once the MX record resolves.
 3. `mail_list_inboxes`, then `mail_create_address` with `address: "hello@newsite.com"`, the inbox id, and
    `forwardTo: ["me@example.org"]` (add `deliverToInbox: false` to forward only).
 4. Tell the user to click the confirmation link Frogmail sends to `me@example.org`. `mail_list_addresses` shows
    the forward as `verified` afterwards. Forwarding starts then; earlier mail is not forwarded later. Until a
    forward is confirmed, a forward-only address also delivers to the Inbox (`inboxFallback: true`).
+5. To confirm receiving, ask the user to send a test email to the address, then `mail_check_receiving` until
+   `lastReceivedAt` changes.
 
 `forwardTo` needs `forwarding: true` in `mail_list_addresses`; without it, addresses deliver to the Inbox only.
 

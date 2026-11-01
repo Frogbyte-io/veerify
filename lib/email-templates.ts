@@ -763,3 +763,115 @@ Unsubscribe from these requests: ${unsubscribeUrl}
 
   return { subject, html, text }
 }
+
+// ---------------------------------------------------------------------------
+// Project email setup notices (Project settings → Email). Sent to project admins.
+// ---------------------------------------------------------------------------
+
+interface MailDomainMxNeededTemplateOptions {
+  projectName: string
+  domain: string
+  /** The receiving MX record to publish. */
+  mx: { host: string; value: string; priority?: string | null } | null
+  /** Mail hosts the domain uses today (other than ours); non-empty adds the takeover warning. */
+  existingMxHosts?: string[] | null
+  settingsUrl: string
+}
+
+export function getMailDomainMxNeededTemplate({
+  projectName,
+  domain,
+  mx,
+  existingMxHosts,
+  settingsUrl,
+}: MailDomainMxNeededTemplateOptions) {
+  const subject = `${domain} is verified: one more DNS record to add`
+  const hosts = (existingMxHosts ?? []).filter(Boolean)
+  const mxLine = mx ? `MX  ${mx.host}  ${mx.priority ? `${mx.priority} ` : ''}${mx.value}` : null
+  const warning = hosts.length
+    ? `${domain} currently receives mail at ${hosts.join(', ')}. Adding this MX moves all mail for @${domain} to Veerify. To keep your current mailbox, connect a subdomain like mail.${domain} instead.`
+    : null
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">One more DNS record to add</h2>
+      <p style="color:#444"><strong>${escapeHtml(domain)}</strong> is verified for ${escapeHtml(projectName)}. To start receiving mail on it, add the MX record shown in Project settings → Email.</p>
+      ${mxLine ? `<p style="font-family:monospace;background:#f5f5f5;padding:8px 12px;border-radius:4px;word-break:break-all">${escapeHtml(mxLine)}</p>` : ''}
+      ${warning ? `<p style="color:#92400e;background:#fffbeb;padding:8px 12px;border-radius:4px">${escapeHtml(warning)}</p>` : ''}
+      <p><a href="${escapeHtml(settingsUrl)}" style="color:#6366f1">Open Project settings → Email</a></p>
+      <p style="color:#999;font-size:12px">You are receiving this because you administer ${escapeHtml(projectName)} on Veerify.</p>
+    </div>
+  `
+
+  const text = `One more DNS record to add
+
+${domain} is verified for ${projectName}. To start receiving mail on it, add the MX record shown in Project settings → Email.
+${mxLine ? `\n${mxLine}\n` : ''}${warning ? `\n${warning}\n` : ''}
+Open Project settings → Email: ${settingsUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface MailForwardingPausedTemplateOptions {
+  projectName: string
+  forwardsPerMonth: number
+  settingsUrl: string
+}
+
+export function getMailForwardingPausedTemplate({
+  projectName,
+  forwardsPerMonth,
+  settingsUrl,
+}: MailForwardingPausedTemplateOptions) {
+  const limit = forwardsPerMonth.toLocaleString('en-US')
+  const subject = `Email forwarding is paused for ${projectName}`
+  const body = `Your workspace reached its limit of ${limit} forwarded emails this month, so Veerify stopped forwarding mail to external mailboxes until the 1st of next month (UTC). Mail still reaches the Inbox in Veerify.`
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Email forwarding is paused</h2>
+      <p style="color:#444">${escapeHtml(body)}</p>
+      <p><a href="${escapeHtml(settingsUrl)}" style="color:#6366f1">Open Project settings → Email</a></p>
+      <p style="color:#999;font-size:12px">You are receiving this because you administer ${escapeHtml(projectName)} on Veerify.</p>
+    </div>
+  `
+
+  const text = `Email forwarding is paused for ${projectName}
+
+${body}
+
+Open Project settings → Email: ${settingsUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface MailForwardingResumedTemplateOptions {
+  projectName: string
+  settingsUrl: string
+}
+
+export function getMailForwardingResumedTemplate({ projectName, settingsUrl }: MailForwardingResumedTemplateOptions) {
+  const subject = `Email forwarding is back on for ${projectName}`
+  const body =
+    'Veerify forwards mail to your external mailboxes again. Mail that arrived while forwarding was paused is in the Inbox in Veerify.'
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Email forwarding is back on</h2>
+      <p style="color:#444">${escapeHtml(body)}</p>
+      <p><a href="${escapeHtml(settingsUrl)}" style="color:#6366f1">Open Project settings → Email</a></p>
+      <p style="color:#999;font-size:12px">You are receiving this because you administer ${escapeHtml(projectName)} on Veerify.</p>
+    </div>
+  `
+
+  const text = `Email forwarding is back on for ${projectName}
+
+${body}
+
+Open Project settings → Email: ${settingsUrl}
+`
+
+  return { subject, html, text }
+}

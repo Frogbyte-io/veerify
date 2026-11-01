@@ -51,6 +51,19 @@ export interface SendingDomainView {
   suspendedReason: SendingDomainSuspendedReason | null
   providerOwnership: SendingDomainProviderOwnership | null
   providerMismatch: boolean
+  /**
+   * Frogmail SES receiving status: null until receiving is enabled, then
+   * `pending_verification` / `pending_mx` / `active` / `disabled`. Optional for older clients.
+   */
+  receivingStatus?: 'pending_verification' | 'pending_mx' | 'active' | 'disabled' | null
+  /** When the domain last received a message (Frogmail `last_received_at`), or null. */
+  lastReceivedAt?: string | null
+  /**
+   * MX hosts the domain already has, other than the SES inbound host. Publishing the
+   * receiving MX moves all of the domain's mail away from them. Null: not looked up.
+   */
+  existingMxHosts?: string[] | null
+  existingMxCheckedAt?: string | null
 }
 
 /**
@@ -118,6 +131,8 @@ export type ProjectSenderVerdict =
       status: 'unauthorized'
       reason: 'not_owned' | 'suspended' | 'provider_mismatch'
       projectDomains: string[]
+      /** Why the matching claim is suspended; set only with `reason: 'suspended'`. */
+      suspendedReason?: SendingDomainSuspendedReason
     }
   | { status: 'unknown'; reason: string }
 

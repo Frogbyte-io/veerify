@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-6" data-testid="project-settings-email">
     <!-- Domains -->
-    <SupportSendingDomains :project-id="project.id" @loaded="onDomainsLoaded" />
+    <SupportSendingDomains :project-id="project.id" :addresses="addresses" @loaded="onDomainsLoaded" />
 
     <!-- Addresses -->
     <Card data-testid="mail-addresses">
@@ -26,14 +26,23 @@
             v-if="canAdmin && inboxEnabled"
             size="sm"
             class="shrink-0"
-            :disabled="isLoading || Boolean(error) || inboxes.length === 0"
+            :disabled="isLoading || Boolean(error) || inboxes.length === 0 || addressLimitReached"
+            :aria-describedby="addressLimitReached ? 'mail-address-add-reason' : undefined"
             data-testid="mail-address-add"
             @click="openCreate"
           >
-            <Icon name="lucide:plus" class="mr-1 h-4 w-4" />
+            <Icon name="lucide:plus" class="mr-1 h-4 w-4" aria-hidden="true" />
             New address
           </Button>
         </div>
+        <p
+          v-if="canAdmin && inboxEnabled && addressLimitReached"
+          id="mail-address-add-reason"
+          class="text-xs text-muted-foreground sm:text-right"
+          data-testid="mail-address-add-reason"
+        >
+          Your workspace uses all {{ usage.limits.addresses }} addresses of its plan. Delete an address to add another.
+        </p>
       </CardHeader>
       <CardContent class="space-y-4">
         <!-- Inbox tool is off -->
@@ -78,46 +87,24 @@
             role="status"
             data-testid="mail-forwarding-paused"
           >
-            <Icon name="lucide:pause-circle" class="mt-0.5 h-4 w-4 shrink-0" />
+            <Icon name="lucide:pause-circle" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p>
               Forwarding is paused until next month: the workspace reached its monthly forward limit. Mail still reaches
               the inbox.
             </p>
           </div>
 
-          <div v-if="receivingDomains.length > 0" class="space-y-2" data-testid="mail-receiving">
-            <h3 class="text-sm font-medium">Receiving</h3>
-            <ul class="divide-y rounded-lg border">
-              <li
-                v-for="domain in receivingDomains"
-                :key="domain.id"
-                class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
-                data-testid="mail-receiving-domain"
-                :data-domain="domain.domain"
-                :data-receiving-status="domain.receivingStatus"
-              >
-                <span class="font-mono text-[13px]">{{ domain.domain }}</span>
-                <span
-                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium"
-                  :class="receivingMeta(domain).classes"
-                  data-testid="mail-receiving-status"
-                >
-                  <Icon :name="receivingMeta(domain).icon" class="h-3 w-3" />
-                  {{ receivingMeta(domain).label }}
-                </span>
-                <span
-                  v-if="mxRecordFor(domain) && domain.receivingStatus !== 'active'"
-                  class="min-w-0 text-xs text-muted-foreground"
-                >
-                  MX record to publish:
-                  <code class="break-all" data-testid="mail-receiving-mx">
-                    {{ mxRecordFor(domain).priority ? `${mxRecordFor(domain).priority} ` : ''
-                    }}{{ mxRecordFor(domain).value }}
-                  </code>
-                  on <code class="break-all">{{ mxRecordFor(domain).name }}</code>
-                </span>
-              </li>
-            </ul>
+          <div
+            v-else-if="forwardsLevel === 'warning' || forwardsLevel === 'limit'"
+            class="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+            role="status"
+            data-testid="mail-forwards-warning"
+          >
+            <Icon name="lucide:alert-triangle" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              The workspace has used {{ usage.used.forwardsThisMonth }} of {{ usage.limits.forwardsPerMonth }} forwards
+              this month. At the limit, forwarding pauses until next month; mail still reaches the inbox.
+            </p>
           </div>
 
           <p
@@ -213,11 +200,13 @@
                       <span
                         class="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium"
                         :class="statusMeta(row).classes"
+                        :title="statusMeta(row).description"
                         data-testid="mail-address-status"
                       >
-                        <Icon :name="statusMeta(row).icon" class="h-3 w-3" />
+                        <Icon :name="statusMeta(row).icon" class="h-3 w-3" aria-hidden="true" />
                         {{ statusMeta(row).label }}
                       </span>
+                      <span class="sr-only">{{ statusMeta(row).description }}</span>
                       <Badge v-if="row.isPrimary" variant="outline" class="text-xs">Primary</Badge>
                     </div>
                   </td>
@@ -300,25 +289,7 @@
 import { toast } from 'vue-sonner'
 import { resolveProjectModules } from '~/lib/modules'
 import { INBOX_FALLBACK_NOTE, canResendForwardConfirmation, forwardStatusLabel } from '~/lib/mail-address'
-
-const RECEIVING_META = {
-  pending_verification: {
-    label: 'Waiting for verification',
-    icon: 'lucide:clock',
-    classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  },
-  pending_mx: {
-    label: 'Waiting for MX record',
-    icon: 'lucide:clock',
-    classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  },
-  active: {
-    label: 'Receiving',
-    icon: 'lucide:check-circle-2',
-    classes: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-  },
-  disabled: { label: 'Off', icon: 'lucide:circle-off', classes: 'bg-muted text-muted-foreground' },
-}
+import { isAtLimit, usageLevel } from '~/lib/mail-setup'
 
 const FORWARD_META = {
   pending: { classes: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
@@ -329,12 +300,29 @@ const FORWARD_META = {
 
 const STATUS_META = {
   active: {
-    label: 'Active',
+    label: 'Receiving',
+    description: 'Mail sent to this address arrives.',
     icon: 'lucide:check-circle-2',
     classes: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   },
-  failed: { label: 'Route failed', icon: 'lucide:x-circle', classes: 'bg-destructive/10 text-destructive' },
-  forwarded: { label: 'Forwarded in', icon: 'lucide:corner-down-right', classes: 'bg-muted text-muted-foreground' },
+  failed: {
+    label: 'Not receiving yet',
+    description: "Veerify couldn't set this address up with the mail provider yet. It retries automatically.",
+    icon: 'lucide:alert-circle',
+    classes: 'bg-destructive/10 text-destructive',
+  },
+  platform: {
+    label: 'Veerify address',
+    description: 'Forward mail from your own mailbox to this address to bring it into the inbox.',
+    icon: 'lucide:corner-down-right',
+    classes: 'bg-muted text-muted-foreground',
+  },
+  waiting: {
+    label: 'Waiting for domain',
+    description: 'Mail arrives once the domain is verified and its MX record is published.',
+    icon: 'lucide:clock',
+    classes: 'bg-muted text-muted-foreground',
+  },
 }
 
 export default {
@@ -403,9 +391,13 @@ export default {
       if (typeof used !== 'number' || typeof limit !== 'number') return ''
       return `${used} of ${limit} forwards this month.`
     },
-    receivingDomains() {
-      if (!this.forwarding) return []
-      return this.mailDomains.filter((domain) => domain.receivingStatus)
+    /** ok | warning (≥ 80 %) | limit | unknown, for the monthly forwards. */
+    forwardsLevel() {
+      if (!this.forwarding) return 'unknown'
+      return usageLevel(this.usage?.used?.forwardsThisMonth, this.usage?.limits?.forwardsPerMonth)
+    },
+    addressLimitReached() {
+      return isAtLimit(this.usage?.used?.addresses, this.usage?.limits?.addresses)
     },
     forwardingPausedDomains() {
       return this.forwarding ? this.mailDomains.filter((domain) => domain.forwardingPaused) : []
@@ -444,13 +436,10 @@ export default {
     },
 
     statusMeta(row) {
+      if (row.kind === 'platform') return STATUS_META.platform
       if (row.routeStatus === 'active') return STATUS_META.active
       if (row.routeStatus === 'failed') return STATUS_META.failed
-      return STATUS_META.forwarded
-    },
-
-    receivingMeta(domain) {
-      return RECEIVING_META[domain.receivingStatus] || RECEIVING_META.disabled
+      return STATUS_META.waiting
     },
 
     forwardMeta(forward) {
@@ -492,20 +481,15 @@ export default {
       }
     },
 
-    /** The receiving MX record of a domain, from the sending-domain list's DNS records. */
-    mxRecordFor(domain) {
-      const row = (this.domainsInfo?.domains || []).find(
-        (entry) => entry.id === domain.id || entry.domain === domain.domain
-      )
-      return (row?.records || []).find((record) => record.purpose === 'receiving' && record.type === 'MX') || null
-    },
-
-    onDomainsLoaded(info, projectId) {
+    onDomainsLoaded(info, projectId, meta) {
       if (projectId && projectId !== this.project.id) return
       this.domainsInfo = info
+      // The domains card refreshes while a domain is being set up: refresh addresses and
+      // receiving with it, quietly (a failed background refresh keeps what is shown).
+      if (meta?.poll && !this.isLoading) this.load({ silent: true, quiet: true })
     },
 
-    async load({ silent = false } = {}) {
+    async load({ silent = false, quiet = false } = {}) {
       const token = ++this.requestToken
       const slug = this.project.slug
       if (!silent) {
@@ -524,7 +508,7 @@ export default {
       } catch (err) {
         if (this.isUnmounted || token !== this.requestToken) return
         if (!silent) this.error = this.errorMessage(err, 'Failed to load addresses')
-        else toast.error(this.errorMessage(err, 'Failed to refresh addresses'))
+        else if (!quiet) toast.error(this.errorMessage(err, 'Failed to refresh addresses'))
       } finally {
         if (!this.isUnmounted && token === this.requestToken) this.isLoading = false
       }

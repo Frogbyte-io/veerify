@@ -13,6 +13,9 @@ import {
   marketingMentionsDigestTemplate,
   marketingCredentialInvalidTemplate,
   marketingReviewRequestTemplate,
+  getMailDomainMxNeededTemplate,
+  getMailForwardingPausedTemplate,
+  getMailForwardingResumedTemplate,
 } from './email-templates'
 import type { Readable } from 'node:stream'
 import { createConsola } from 'consola'
@@ -452,4 +455,45 @@ export async function sendMarketingReviewRequestEmail(options: MarketingReviewRe
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   })
+}
+
+interface MailDomainMxNeededEmailOptions {
+  to: string
+  projectName: string
+  domain: string
+  mx: { host: string; value: string; priority?: string | null } | null
+  existingMxHosts?: string[] | null
+  settingsUrl: string
+}
+
+/** "One more DNS record to add": the domain verified and only the receiving MX is missing. */
+export async function sendMailDomainMxNeededEmail(options: MailDomainMxNeededEmailOptions) {
+  const { to, ...templateOptions } = options
+  const template = getMailDomainMxNeededTemplate(templateOptions)
+  return sendEmail({ to, subject: template.subject, html: template.html, text: template.text })
+}
+
+interface MailForwardingPausedEmailOptions {
+  to: string
+  projectName: string
+  forwardsPerMonth: number
+  settingsUrl: string
+}
+
+export async function sendMailForwardingPausedEmail(options: MailForwardingPausedEmailOptions) {
+  const { to, ...templateOptions } = options
+  const template = getMailForwardingPausedTemplate(templateOptions)
+  return sendEmail({ to, subject: template.subject, html: template.html, text: template.text })
+}
+
+interface MailForwardingResumedEmailOptions {
+  to: string
+  projectName: string
+  settingsUrl: string
+}
+
+export async function sendMailForwardingResumedEmail(options: MailForwardingResumedEmailOptions) {
+  const { to, ...templateOptions } = options
+  const template = getMailForwardingResumedTemplate(templateOptions)
+  return sendEmail({ to, subject: template.subject, html: template.html, text: template.text })
 }

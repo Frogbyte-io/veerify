@@ -180,7 +180,7 @@ Designs: `docs/plans/2026-10-22-custom-sending-domains/design.md` (sending) and
 1. An admin adds `acme.com`. Veerify records a claim for that project and calls Frogmail
    (`POST /v4/domains`) with the project key. A domain the project already has is adopted, never deleted
    by Veerify later.
-2. The settings card shows the DNS records: the Frogmail sending records plus a Veerify ownership TXT
+2. The settings card shows the DNS records: the Frogmail sending (DKIM) records plus a Veerify ownership TXT
    `_veerify-mail.<domain>` (`veerify-mail-verification=<token>`). DKIM alone does not prove which project owns
    a domain, so every claim needs its own TXT proof.
 3. A poller (every 5 minutes, `support:sending-domains-poll`) checks the pending claims. The domain becomes
@@ -291,8 +291,18 @@ The delivery webhooks, including `complained`, are ensured by the domain poll (s
 What Veerify then does:
 
 - The domain poll enables receiving for every claim (`PUT /api/v1/domains/{d}/receiving`) and stores its status
-  (`pending_verification`, `pending_mx`, `active`). The MX record (`10 inbound-smtp.us-east-1.amazonaws.com`) is
-  shown with the other DNS records. A domain that already receives through Cloudflare stays on the routes-only path.
+  (`pending_verification`, `pending_mx`, `active`) and `last_received_at`. Project settings → Email shows each domain
+  as a checklist: 1. ownership TXT + DKIM, 2. the MX record (`10 inbound-smtp.<region>.amazonaws.com`, shown once the
+  domain verifies), 3. a test email the admin sends from any mailbox, confirmed when `last_received_at` changes
+  (`POST …/sending-domains/{id}/receiving-check` asks Frogmail on demand). No SPF change is needed: replies are
+  DKIM-signed. A domain that already receives through Cloudflare stays on the routes-only path.
+- While receiving is not active, Veerify looks up the domain's current MX hosts (`resolveMx`, 3 s timeout, on add and
+  on every check; a DNS failure keeps the previous answer) and stores them in `existing_mx_hosts` (the SES host
+  excluded). When there are any, the Email tab warns that the MX moves all mail for the domain, suggests a subdomain,
+  and hides the MX value until the admin ticks "I understand". A verified domain waiting for receiving is checked
+  every 5 minutes for its first hour, every 15 minutes for a day, hourly for a week, then daily.
+- When a domain reaches `pending_mx`, project admins (workspace owners/admins and project admins) get one email,
+  "one more DNS record to add", on the system transport. `mx_notice_sent_at` makes it once per domain.
 - Each address is one route: `match_recipient("^addr$")` at priority 10, or `match_recipient("^.*@domain$")` at
   priority 100 for a catch-all, with `forward("<inbox URL>")` when it delivers to the Inbox, `forward("<mailbox>")`
   per forward, then `stop()`. Never `catch_all()`: all customers share one Frogmail project.
@@ -316,7 +326,9 @@ What Veerify then does:
 - `mail:forward-usage` (hourly, minute 15) sums `forwarded` from `GET /api/v1/domain-usage` over each workspace's
   receiving domains for the calendar month (UTC). At the tier limit (`standard` 5,000, `owner` 80,085) it pauses
   forwarding on those domains (`PATCH …/receiving {"forwarding_paused": true}`); mail still reaches the Inbox. It
-  resumes them in a new month or after a tier change. Forwards count per mailbox.
+  resumes them in a new month or after a tier change. Forwards count per mailbox. Project admins get one email when
+  forwarding pauses and one when it resumes (only the pass that changed the domain sends it). The Email tab turns
+  amber from 80 % of the monthly forwards.
 - Deleting a domain (`DELETE /v3/domains/{d}`) disables receiving first and revokes its forward mailboxes.
 
 Rollback: set `MAIL_FORWARDING_ENABLED=false`. Existing routes keep their forward actions until each address is

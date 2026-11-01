@@ -29,6 +29,8 @@ import {
 import { resyncForwardOnlyRoutes, syncAddressRoute } from '~/server/utils/inbound-routes'
 import { forwardingBrandForDomain, syncForwardingBrand } from '~/server/utils/forwarding-brand'
 import { syncDeliveryWebhooks } from '~/server/utils/sending-domain-webhooks'
+import { refreshExistingMxHosts } from '~/server/utils/mail-domain-mx'
+import { notifyMxRecordNeeded } from '~/server/utils/mail-setup-notifications'
 import { recordSupportMetric, type SupportMetricName } from '~/server/utils/support-observability'
 import { createLogger } from '~/server/utils/logger'
 
@@ -810,28 +812,64 @@ export interface ReceivingSyncResult {
   enabled: boolean
   /** The row's `receiving_status` after the sync (null: not receiving through Frogmail). */
   status: string | null
+  /** Frogmail's `last_received_at` after the sync (null: no message yet, or not receiving). */
+  lastReceivedAt: Date | null
   /** Local destination rows updated from the provider. */
   destinationsUpdated: number
   /** Why nothing happened or what was left for a later pass. */
   skipped: 'no_forwarding' | 'provider_conflict' | 'receives_elsewhere' | 'error' | null
 }
 
+/** The row fields `syncDomainReceiving` reads; the optional ones drive the MX lookup, notice and cadence. */
+export type ReceivingSyncRow = Pick<SendingDomainRow, 'id' | 'domain' | 'receivingStatus'> &
+  Partial<
+    Pick<
+      SendingDomainRow,
+      'projectId' | 'status' | 'verifiedAt' | 'nextCheckAt' | 'mxNoticeSentAt' | 'lastReceivedAt' | 'existingMxHosts'
+    >
+  >
+
+export interface ReceivingSyncDeps {
+  now?: Date
+  /** Look up and store the domain's existing MX hosts (the takeover warning). */
+  refreshMx?: typeof refreshExistingMxHosts
+  /** Email the project admins that the MX record is the one record left. */
+  notifyMx?: typeof notifyMxRecordNeeded
+}
+
+/**
+ * While a verified claim waits for receiving (Frogmail still verifying, or the MX record is
+ * missing), check it more often than the daily verified cadence so the Email tab moves on
+ * soon after the MX is published: every 5 minutes for the first hour after verification,
+ * every 15 minutes for a day, hourly for a week, then daily.
+ */
+export function computeReceivingNextCheckAt(verifiedAt: Date | null | undefined, now: Date): Date {
+  const age = verifiedAt ? now.getTime() - verifiedAt.getTime() : 0
+  const interval = age < HOUR_MS ? 5 * MINUTE_MS : age < DAY_MS ? 15 * MINUTE_MS : age < 7 * DAY_MS ? HOUR_MS : DAY_MS
+  return new Date(now.getTime() + interval)
+}
+
 /**
  * E3: SES receiving for a registered claim. Enables receiving once (allowed
- * while the claim is still pending), refreshes `receiving_status` and the
- * receiving MX record on every pass, and reconciles the local forward
+ * while the claim is still pending), refreshes `receiving_status`, `last_received_at`
+ * and the receiving MX record on every pass, and reconciles the local forward
  * destinations from the provider's list (a missed webhook heals here).
+ * While receiving is not active it also looks up the domain's existing MX hosts
+ * (the takeover warning), checks a verified claim sooner, and once the MX is the
+ * one record left (`pending_mx`) emails the project admins (once per domain).
  * `receiving_provider_conflict` leaves the claim on the E2 path;
  * `domain_receives_elsewhere` and transient errors are retried on a later pass.
  * Never throws: a failure here must not fail the claim.
  */
 export async function syncDomainReceiving(
-  row: Pick<SendingDomainRow, 'id' | 'domain' | 'receivingStatus'>,
-  provider: SendingDomainProvider
+  row: ReceivingSyncRow,
+  provider: SendingDomainProvider,
+  deps: ReceivingSyncDeps = {}
 ): Promise<ReceivingSyncResult> {
   const result: ReceivingSyncResult = {
     enabled: false,
     status: row.receivingStatus,
+    lastReceivedAt: row.lastReceivedAt ?? null,
     destinationsUpdated: 0,
     skipped: null,
   }
@@ -839,6 +877,7 @@ export async function syncDomainReceiving(
     return { ...result, skipped: 'no_forwarding' }
   }
 
+  const now = deps.now ?? new Date()
   try {
     const brandName = await forwardingBrandForDomain(row.id)
     let state =
@@ -855,12 +894,43 @@ export async function syncDomainReceiving(
       .where(eq(projectMailDomain.id, row.id))
       .limit(1)
     const patch: SendingDomainPatch = { receivingStatus: state.status }
+    if (state.lastReceivedAt) patch.lastReceivedAt = state.lastReceivedAt
+    let records = current?.dnsRecords ?? []
     if (current && state.records.length > 0) {
-      const records = [...current.dnsRecords.filter((r) => r.purpose !== 'receiving'), ...state.records]
-      patch.dnsRecords = records.sort((a, b) => RECEIVING_RECORD_ORDER[a.purpose] - RECEIVING_RECORD_ORDER[b.purpose])
+      records = [...current.dnsRecords.filter((r) => r.purpose !== 'receiving'), ...state.records]
+      records.sort((a, b) => RECEIVING_RECORD_ORDER[a.purpose] - RECEIVING_RECORD_ORDER[b.purpose])
+      patch.dnsRecords = records
+    }
+    const waiting = state.status === 'pending_verification' || state.status === 'pending_mx'
+    if (waiting && row.status === 'verified') {
+      const sooner = computeReceivingNextCheckAt(row.verifiedAt, now)
+      if (!row.nextCheckAt || sooner < row.nextCheckAt) patch.nextCheckAt = sooner
     }
     await db.update(projectMailDomain).set(patch).where(eq(projectMailDomain.id, row.id))
     result.status = state.status
+    result.lastReceivedAt = state.lastReceivedAt ?? result.lastReceivedAt
+
+    let existingMxHosts = row.existingMxHosts ?? null
+    if (state.status !== 'active') {
+      const refreshed = await (deps.refreshMx ?? refreshExistingMxHosts)(
+        { id: row.id, domain: row.domain, receivingStatus: state.status, dnsRecords: records },
+        { now }
+      )
+      if (refreshed) existingMxHosts = refreshed
+    }
+    if (state.status === 'pending_mx' && row.status === 'verified' && row.projectId && !row.mxNoticeSentAt) {
+      await (deps.notifyMx ?? notifyMxRecordNeeded)(
+        {
+          id: row.id,
+          projectId: row.projectId,
+          domain: row.domain,
+          mxNoticeSentAt: row.mxNoticeSentAt ?? null,
+          dnsRecords: records,
+          existingMxHosts,
+        },
+        { now }
+      )
+    }
 
     result.destinationsUpdated = await reconcileForwardDestinations(row, provider)
     // Forward-only addresses: inbox fallback on until a forward is confirmed (idempotent).
@@ -1142,7 +1212,8 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
       emit('support.sending_domain.suspended', row, 'suspended')
     }
     // Receiving first, so route reconcile sees `receiving_status` and the destinations.
-    await receiving(row)
+    // It reads the row as just saved (status, verifiedAt, nextCheckAt).
+    await receiving({ ...row, ...outcome.patch } as SendingDomainRow)
     if (outcome.patch.status === 'verified') await webhooks(row)
     if (outcome.patch.status === 'verified' && outcome.patch.receivesViaProvider && !routeScopeReported) {
       await reconcile(row)
@@ -1186,7 +1257,7 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
       consecutiveUnavailable = 0
       summary.registered++
       await finish(row, outcome.patch)
-      await receiving(row)
+      await receiving({ ...row, ...outcome.patch } as SendingDomainRow)
       return
     }
     if (outcome.kind === 'misconfigured') {

@@ -1215,6 +1215,17 @@ export const projectMailDomain = pgTable(
     receivingStatus: text('receiving_status'),
     // Set while Veerify has paused forwarding for the domain (monthly forward limit).
     forwardingPausedAt: timestamp('forwarding_paused_at'),
+    // Frogmail's `last_received_at` for the domain (SES receiving): when its last inbound
+    // message arrived. Null until the first message.
+    lastReceivedAt: timestamp('last_received_at'),
+    // MX hosts the domain already had (excluding the SES inbound host), looked up while
+    // receiving is not active, so the Email tab can warn that the MX moves all mail.
+    // Null until a lookup succeeded; a failed lookup keeps the previous answer.
+    existingMxHosts: jsonb('existing_mx_hosts').$type<string[]>(),
+    existingMxCheckedAt: timestamp('existing_mx_checked_at'),
+    // When project admins were emailed that the MX record is the one record left
+    // (receiving `pending_mx`). Set once, so the notice goes out once per domain.
+    mxNoticeSentAt: timestamp('mx_notice_sent_at'),
     // Marker for the provider's delivery webhooks (`delivered`, `permanent_fail`,
     // `temporary_fail`, `complained`): a hash of provider, delivery URL and events,
     // set once they were ensured. Null (or a stale hash) makes the poll ensure them.

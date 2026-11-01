@@ -7,7 +7,9 @@
  *     description: >
  *       Project administrators only. Returns 201 once the domain is registered and waiting
  *       for DNS, or 202 when the provider was temporarily unavailable and registration
- *       will be retried in the background.
+ *       will be retried in the background. Where the deployment receives mail (forwarding),
+ *       the domain's current MX hosts are looked up so `existingMxHosts` can warn that the
+ *       receiving MX moves all of the domain's mail; a DNS failure leaves it null.
  *     operationId: createSupportSendingDomain
  *     parameters:
  *       - in: path
@@ -44,6 +46,7 @@ import { validateBody } from '~/server/utils/validation'
 import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
 import { createSendingDomainClaim, getProjectSendingDomain, toSendingDomainView } from '~/server/utils/sending-domains'
+import { refreshExistingMxHosts } from '~/server/utils/mail-domain-mx'
 import {
   deleteSendingDomainRow,
   registerSendingDomainClaim,
@@ -120,6 +123,11 @@ export default defineEventHandler(async (event) => {
   }
 
   await saveSendingDomainPatch(claim, outcome.patch)
+  // The MX takeover warning needs the domain's current mail hosts straight away. Short timeout,
+  // never fails the request; each poll looks again while receiving is not active.
+  if (provider.capabilities.forwarding) {
+    await refreshExistingMxHosts({ id: claim.id, domain: claim.domain, receivingStatus: null })
+  }
   const row = await getProjectSendingDomain(projectId, claim.id)
 
   if (outcome.kind === 'transient') {

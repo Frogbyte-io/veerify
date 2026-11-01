@@ -111,7 +111,7 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Conflict',
       data: createErrorResponse(
         'SENDER_NOT_VERIFIED',
-        `Replies from ${from} are blocked until ${senderDomain} is verified in Support settings`
+        `Replies from ${from} are blocked until ${senderDomain} is verified in Project settings → Email`
       ),
     })
   }

@@ -102,7 +102,8 @@ Limits count per **workspace** (organization), the future paying customer in the
   - `SupportSendingDomains` moves here from Inbox settings.
 - **Connect domain** wizard:
   1. Enter the domain, then choose the apex or a subdomain. Warn when the apex already has MX records.
-  2. DNS records: ownership TXT, DKIM, MX, SPF and an optional DMARC record, each with a live status and **Check now**.
+  2. DNS records: ownership TXT and DKIM, then (after verification) the MX, and an optional DMARC record, each with a
+     live status and **Check now**. No SPF record: replies are DKIM-signed, which is what DMARC checks.
   3. Create the first address.
 - **Address editor**:
   - Local part (or `*` for a catch-all) and the domain.
@@ -232,13 +233,31 @@ attachments.
   so permissions and validation stay in one place.
 - OpenAPI: every E3 route already carries its `@openapi` block (`yarn openapi:check`).
 
+## Setup UX follow-up
+
+A review of the E4 Email tab found that admins never saw the MX step and were not warned that it moves all mail.
+
+- Each domain is a checklist: 1. Verify ownership (TXT + DKIM), 2. Add the MX record, 3. Send a test email. The tab
+  keeps refreshing while any domain is pending or waiting for receiving (and the tab is visible).
+- `project_mail_domain` (0071): `last_received_at` (Frogmail), `existing_mx_hosts` + `existing_mx_checked_at` (MX
+  lookup on add and on each check while receiving is not active), `mx_notice_sent_at`.
+- MX takeover warning next to the MX row when the domain already has other MX hosts; the MX value stays hidden until
+  the admin acknowledges it. The add dialog explains the consequence and suggests a subdomain.
+- Emails to project admins: "one more DNS record to add" at `pending_mx` (once per domain), and forwarding paused /
+  resumed (once per transition).
+- `POST /api/support/projects/{projectId}/sending-domains/{id}/receiving-check` and MCP `mail_check_receiving`.
+- Limits: pending-domain usage, amber banner from 80 % of the monthly forwards, Add domain / New address disabled at
+  the limit with the reason inline.
+- Provider name and missing env vars are no longer shown to customers (server log only).
+
 ## Staging acceptance
 
 Run on staging once Frogmail has SES receiving there, with `MAIL_FORWARDING_ENABLED=true`, a webhook endpoint
 subscribed and `FROGMAIL_WEBHOOK_SECRET` set. Use a fresh subdomain of a domain we control (for example
 `e4.frogbyte-test.com`).
 
-1. Connect the subdomain in Project settings → Email. The records list ownership TXT, DKIM, SPF and the SES MX.
+1. Connect the subdomain in Project settings → Email. The records list ownership TXT and DKIM; the SES MX appears
+   once the domain verifies.
    Publish them. The domain turns Verified, then receiving `active`.
 2. Create `hello@` with Inbox + forward to a mailbox we read. The forward shows Waiting for confirmation; the
    confirmation email arrives. Before clicking, send a test mail: it reaches the Inbox, and the message shows

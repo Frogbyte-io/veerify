@@ -282,6 +282,9 @@ const sendingDomainVerify = (await import('~/server/api/support/projects/[projec
   .default
 const sendingDomainDelete = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].delete'))
   .default
+const sendingDomainReceivingCheck = (
+  await import('~/server/api/support/projects/[projectId]/sending-domains/[id]/receiving-check.post')
+).default
 
 const contactList = (await import('~/server/api/support/contacts/index.get')).default
 const contactCreate = (await import('~/server/api/support/contacts/index.post')).default
@@ -709,6 +712,12 @@ const executableBoundaryCases: BoundaryCase[] = [
     }),
   },
   {
+    name: 'projects/[projectId]/sending-domains/[id]/receiving-check.post',
+    ...boundary(sendingDomainReceivingCheck, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1', id: 'sd-1' },
+    }),
+  },
+  {
     name: 'projects/[projectId]/sending-domains/[id].delete',
     ...boundary(sendingDomainDelete, 'requireProjectAdmin', ['project-1', 'user-1'], {
       params: { projectId: 'project-1', id: 'sd-1' },
@@ -943,7 +952,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(60)
+    expect(executableBoundaryCases).toHaveLength(61)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}

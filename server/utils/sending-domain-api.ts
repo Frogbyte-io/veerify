@@ -8,6 +8,9 @@ import { isSendingDomainsEnabled } from '~/server/utils/sending-domains'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { resolveSupportProjectRole } from '~/server/utils/support-access'
 import type { RegisterOutcome, SendingDomainRow } from '~/server/utils/sending-domain-poller'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('sending-domains')
 
 /** Shared helpers for the project sending-domain routes (design §7). */
 
@@ -83,19 +86,19 @@ export async function releaseSendingDomainLease(row: Pick<SendingDomainRow, 'id'
     .catch(() => undefined)
 }
 
-/** The configured provider, or a 503 that names missing settings only (D-34). */
+/**
+ * The configured provider, or a 503. Missing setting names (never values, D-34) go to the
+ * server log for the operator; the customer gets a plain message.
+ */
 export function requireConfiguredSendingDomainProvider(): SendingDomainProvider {
   const provider = getSendingDomainProvider()
   const status = provider?.isConfigured()
   if (!provider || !status?.configured) {
+    logger.warn('Sending-domain provider is not configured', { missing: status?.missing ?? [] })
     throw createError({
       statusCode: 503,
       statusMessage: 'Service Unavailable',
-      data: createErrorResponse(
-        'PROVIDER_NOT_CONFIGURED',
-        'The mail provider for sending domains is not configured',
-        status ? { missingEnvVars: status.missing } : undefined
-      ),
+      data: createErrorResponse('PROVIDER_NOT_CONFIGURED', "Email isn't available right now. Contact support."),
     })
   }
   return provider

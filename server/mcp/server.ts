@@ -20,7 +20,7 @@ export const MCP_INSTRUCTIONS = [
   '3. Find operations with `search_api` (keywords or tag; pass `operationId` for parameters and request body), then run them with `call_api` using the concrete path under /api/.',
   'If the MCP connection sends X-Veerify-Organization / X-Veerify-Project headers, those headers fix the workspace/project for every call (`whoami` shows `contextPinned: true`) and `set_context` is unavailable; `list_projects` still accepts another workspace.',
   'To import, call import_get_format, convert the source to that format, create a run, add records in batches of up to 1000, call import_preview and show the user the result, then import_commit.',
-  'For project email (custom-domain addresses, catch-alls, forwarding to external mailboxes), use the `mail_*` tools: mail_add_domain, show the user the DNS records, mail_verify_domain once they are published, then mail_create_address. Ask before deleting or stopping a forward.',
+  'For project email (custom-domain addresses, catch-alls, forwarding to external mailboxes), use the `mail_*` tools: mail_add_domain, show the user the DNS records, mail_verify_domain once they are published, then show the MX record that appears (warn that it moves all mail for the domain when existingMxHosts is non-empty), then mail_create_address. Ask before deleting or stopping a forward.',
   'Results are JSON. API failures come back as a tool error whose content is `{ status, body }`, where body is `{ success: false, error: { code, message } }`.',
 ].join('\n')
 

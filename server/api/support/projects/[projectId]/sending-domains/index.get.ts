@@ -11,7 +11,11 @@
  *       `limits.maxDomains` and `limits.maxPending` are the workspace mail limits
  *       (shared by every project of the workspace), and `usage` is the workspace's
  *       mail tier, limits and current usage (domains, pending domains, custom
- *       addresses; `forwardsThisMonth` is null until forwarding ships).
+ *       addresses; `forwardsThisMonth` is null until forwarding ships). Each domain also carries
+ *       `receivingStatus`, `lastReceivedAt` (when it last received a message) and
+ *       `existingMxHosts` (mail hosts it already uses, other than the SES inbound host; the
+ *       receiving MX would move all of its mail away from them). `missingEnvVars` is always
+ *       empty: missing provider settings are logged on the server instead.
  *     operationId: listSupportSendingDomains
  *     parameters:
  *       - in: path
@@ -36,6 +40,18 @@ import {
 } from '~/server/utils/sending-domains'
 import { requireSendingDomainReader } from '~/server/utils/sending-domain-api'
 import { getMailUsage, getOrganizationIdForProject } from '~/server/utils/mail-limits'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('sending-domains')
+let loggedMissingSettings = ''
+
+/** Once per process and set of names, so a polling page does not flood the log. */
+function logMissingProviderSettings(missing: string[]) {
+  const key = missing.join(',')
+  if (key === loggedMissingSettings) return
+  loggedMissingSettings = key
+  logger.warn('Sending domains are enabled but the mail provider is not configured', { missing })
+}
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -69,6 +85,8 @@ export default defineEventHandler(async (event) => {
 
   const provider = getSendingDomainProvider()
   const configured = provider?.isConfigured() ?? { configured: false, missing: [] as string[] }
+  // Setting names are for the operator (server log), not for customers.
+  if (!configured.configured) logMissingProviderSettings(configured.missing)
   const rows = await listProjectSendingDomains(projectId)
 
   const data: SendingDomainListResponse = {
@@ -80,7 +98,7 @@ export default defineEventHandler(async (event) => {
     limits,
     usage,
     providerConfigured: configured.configured,
-    missingEnvVars: configured.missing,
+    missingEnvVars: [],
     domains: rows.map((row) => toSendingDomainView(row, provider ?? undefined)),
   }
   return createSuccessResponse(data)

@@ -776,8 +776,9 @@
               >
                 <Icon name="lucide:clock" class="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
-                  Replies are blocked until {{ sendingStatus.authorization.domain.domain }} is verified. Publish the DNS
-                  records in Sending domains above.
+                  Replies are blocked until {{ sendingStatus.authorization.domain.domain }} is verified. Publish its DNS
+                  records in
+                  <NuxtLink to="/project/settings?tab=email" class="underline">Project settings → Email</NuxtLink>.
                 </span>
               </div>
               <div
@@ -1000,23 +1001,13 @@
                 >
               </div>
 
-              <p v-if="!channel.driverAvailable" class="text-sm text-muted-foreground">
-                <code>SUPPORT_CHANNEL_PROVIDER</code> is set to <code>{{ channel.provider }}</code
-                >, which is not one of {{ channel.supportedProviders.join(', ') }}. Inbound mail is rejected until it
-                names a supported provider.
+              <p
+                v-if="!channel.driverAvailable || !channel.credentialsConfigured"
+                class="text-sm text-muted-foreground"
+                data-testid="support-settings-channel-unavailable"
+              >
+                Email isn't available right now. Contact support.
               </p>
-
-              <div v-else-if="channel.missingEnvVars.length > 0" class="text-sm text-muted-foreground">
-                <p class="mb-1">
-                  Credentials are missing, so inbound mail is rejected. An unset credential never means “accept
-                  anything”. Set these and restart:
-                </p>
-                <ul class="list-disc pl-5 space-y-0.5">
-                  <li v-for="name in channel.missingEnvVars" :key="name">
-                    <code>{{ name }}</code>
-                  </li>
-                </ul>
-              </div>
 
               <div class="space-y-1">
                 <Label>Webhook URL to register with {{ channel.provider }}</Label>
@@ -1558,15 +1549,22 @@ export default {
       }
       const reason = status.authorization.reason
       if (reason === 'suspended') {
-        return `The domain for "${address}" is suspended because its DNS records were no longer found. Replies are blocked until you publish them again and verify the domain in Sending domains above.`
+        const why = status.authorization.suspendedReason
+        if (why === 'sender_rejected') {
+          return `The domain for "${address}" is suspended: your email provider refused to send from it. Check that the domain is verified, then click Verify now in Project settings → Email.`
+        }
+        if (why === 'other') {
+          return `The domain for "${address}" is suspended, so replies are blocked. Check it with Verify now in Project settings → Email.`
+        }
+        return `The domain for "${address}" is suspended because its DNS records were no longer found. Replies are blocked until you publish them again and verify the domain in Project settings → Email.`
       }
       if (reason === 'provider_mismatch') {
-        return `"${address}" was verified with a different mail provider configuration. Register the domain again in Sending domains above.`
+        return `"${address}" was verified with a different mail provider configuration. Register the domain again in Project settings → Email.`
       }
       const owned = status.authorization.projectDomains || status.authorization.teamDomains || []
       return owned.length
         ? `"${address}" is not on a domain your project has verified. Replies are blocked. Use an address on ${owned.join(', ')}.`
-        : `"${address}" is not on a domain your project has verified. Replies are blocked. Add and verify the domain in Sending domains above.`
+        : `"${address}" is not on a domain your project has verified. Replies are blocked. Add and verify the domain in Project settings → Email.`
     },
 
     slaWeekdays() {

@@ -5,7 +5,7 @@
  *     tags: [Projects]
  *     summary: List the project's email addresses
  *     description: >
- *       Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the project's domains with their receiving status, whether the deployment forwards mail (`forwarding`) and the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Lists every email address of the project across its inboxes (custom and platform forwarding addresses, catch-alls included), with the inbox it delivers to, its behaviour (`mail` or `helpdesk`), its product tag and the provider route status. Sorted by domain, then catch-all last, then address. Also returns the project's domains with their receiving status, when each last received a message (`lastReceivedAt`) and the mail hosts it already uses (`existingMxHosts`, other than the SES inbound host), whether the deployment forwards mail (`forwarding`) and the workspace's mail usage against its tier limits. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Any project member may read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
  *     operationId: listProjectMailAddresses
  *     security:
  *       - cookieAuth: []
@@ -17,7 +17,7 @@
  *         description: "Project slug"
  *         schema: { type: string }
  *     responses:
- *       200: { description: "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox, inboxFallback (forward-only address still delivering to the inbox because no forward is confirmed yet) and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused }], forwarding: boolean, usage: MailUsage }" }
+ *       200: { description: "ProjectMailAddressesResponse plus usage: { addresses: ProjectMailAddressItem[] (each with deliverToInbox, inboxFallback (forward-only address still delivering to the inbox because no forward is confirmed yet) and forwards: [{ id, email, status, statusReason, verificationSentAt }]), domains: [{ id, domain, receivingStatus, forwardingPaused, lastReceivedAt, existingMxHosts }], forwarding: boolean, usage: MailUsage }" }
  *       401: { description: "Not authenticated" }
  *       403: { description: "No access to the project" }
  *       404: { description: "Project not found in the active workspace" }
@@ -99,6 +99,8 @@ export default defineEventHandler(async (event) => {
       domain: projectMailDomain.domain,
       receivingStatus: projectMailDomain.receivingStatus,
       forwardingPausedAt: projectMailDomain.forwardingPausedAt,
+      lastReceivedAt: projectMailDomain.lastReceivedAt,
+      existingMxHosts: projectMailDomain.existingMxHosts,
     })
     .from(projectMailDomain)
     .where(and(eq(projectMailDomain.projectId, project.id), ne(projectMailDomain.status, 'deleting')))
@@ -108,6 +110,8 @@ export default defineEventHandler(async (event) => {
       domain: row.domain,
       receivingStatus: (row.receivingStatus ?? null) as ProjectMailDomainItem['receivingStatus'],
       forwardingPaused: row.forwardingPausedAt !== null,
+      lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt).toISOString() : null,
+      existingMxHosts: Array.isArray(row.existingMxHosts) ? row.existingMxHosts : null,
     }))
     .sort((a, b) => (a.domain < b.domain ? -1 : a.domain > b.domain ? 1 : 0))
   const forwarding = isSendingDomainsEnabled() && Boolean(getSendingDomainProvider()?.capabilities.forwarding)
