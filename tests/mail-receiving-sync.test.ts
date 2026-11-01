@@ -28,6 +28,14 @@ vi.mock('~/server/database/drizzle', () => {
     },
   }
 })
+vi.mock('~/server/utils/forwarding-brand', () => ({
+  forwardingBrandForDomain: vi.fn(async () => null),
+  syncForwardingBrand: vi.fn(async () => undefined),
+}))
+vi.mock('~/server/utils/inbound-routes', () => ({
+  syncAddressRoute: vi.fn(),
+  resyncForwardOnlyRoutes: vi.fn(async () => undefined),
+}))
 vi.mock('~/server/services/sending-domains', () => ({ getSendingDomainProvider: vi.fn(() => null) }))
 vi.mock('~/server/utils/sending-domains', () => ({
   isSendingDomainsEnabled: vi.fn(() => true),

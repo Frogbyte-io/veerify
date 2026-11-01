@@ -167,8 +167,9 @@
               v-else-if="row.status === 'suspended'"
               class="mt-2 text-xs text-amber-700 dark:text-amber-400"
               data-testid="support-sending-domain-reason"
+              :data-suspended-reason="row.suspendedReason || undefined"
             >
-              DNS records no longer found. Replies from this domain are blocked until they are published again.
+              {{ suspendedMessage(row) }}
             </p>
             <p
               v-else-if="row.status === 'failed' && row.lastError"
@@ -444,7 +445,14 @@
 <script>
 import { toast } from 'vue-sonner'
 import { normalizeSendingDomain, validateSendingDomain } from '~/lib/support-sending-domains'
-import { domainSetupState, isAtLimit, receivedSince, receivingActiveLine, testAddressForDomain } from '~/lib/mail-setup'
+import {
+  domainSetupState,
+  isAtLimit,
+  receivedSince,
+  receivingActiveLine,
+  suspendedDomainMessage,
+  testAddressForDomain,
+} from '~/lib/mail-setup'
 
 // Whether the deployment has the feature on is a deployment-wide fact, so remember the answer for the page
 // session: a "disabled" answer must not flash a skeleton on every later load, and an "enabled" one keeps
@@ -713,13 +721,18 @@ export default {
       return 'h-4 w-4 text-muted-foreground'
     },
 
+    suspendedMessage(row) {
+      return suspendedDomainMessage(row.suspendedReason)
+    },
+
     ownershipStepText(row) {
       const state = this.setupFor(row).ownership
       if (state === 'done') return 'Verified.'
       if (state === 'problem') {
-        return row.status === 'suspended'
-          ? 'The records are no longer found. Publish them again.'
-          : "Couldn't register the domain yet. Use Retry."
+        if (row.status !== 'suspended') return "Couldn't register the domain yet. Use Retry."
+        return row.suspendedReason === 'sender_rejected' || row.suspendedReason === 'other'
+          ? 'Suspended. See the note above.'
+          : 'The records are no longer found. Publish them again.'
       }
       const records = this.isExpanded(row.id)
         ? 'Publish the records below at your DNS host.'

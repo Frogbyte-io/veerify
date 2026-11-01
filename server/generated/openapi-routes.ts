@@ -10927,7 +10927,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Report how inbound mail is configured for this deployment",
-      "description": "Read-only. The provider and its webhook credentials are deployment environment configuration, not per-project settings, so this reports whether they are set - never their values. `platformAddress` is the inbox's platform forwarding address (customers forward their support address to it), or null when none exists yet. `platformForwardingEnabled` is true when the deployment sets `SUPPORT_PLATFORM_MAIL_DOMAIN`, so the UI can offer to create one for an inbox that predates it.\n",
+      "description": "Read-only. The provider and its webhook credentials are deployment environment configuration, not per-project settings, so this reports whether they are set - never their values. `platformAddress` is the inbox's platform forwarding address (customers forward their support address to it), or null when none exists yet. `platformForwardingEnabled` is true when the deployment sets `SUPPORT_PLATFORM_MAIL_DOMAIN`, so the UI can offer to create one for an inbox that predates it. `missingEnvVars` is always empty: missing setting names are logged on the server instead.\n",
       "operationId": "getSupportChannelStatus",
       "responses": {
         "200": {

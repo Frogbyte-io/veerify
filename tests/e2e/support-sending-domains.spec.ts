@@ -1356,6 +1356,36 @@ test.describe('support sending domains', () => {
       await expect(page.getByTestId('mail-address-add-reason')).toContainText('all 20 addresses')
     })
 
+    test('a suspended domain explains whether the provider refused it or DNS went missing', async ({ browser }) => {
+      const page = await openStubbed(
+        browser,
+        {
+          list: () =>
+            ok(
+              listPayload({
+                domains: [
+                  domainRow({ status: 'suspended', suspendedReason: 'sender_rejected' }),
+                  domainRow({
+                    id: 'stub-domain-2',
+                    domain: 'dns.example.com',
+                    status: 'suspended',
+                    suspendedReason: 'dns_missing',
+                  }),
+                ],
+              })
+            ),
+        },
+        domainsPath()
+      )
+      await expect(rowFor(page, 'stub.example.com').getByTestId('support-sending-domain-reason')).toContainText(
+        'your email provider refused to send from this domain',
+        { timeout: 20_000 }
+      )
+      await expect(rowFor(page, 'dns.example.com').getByTestId('support-sending-domain-reason')).toContainText(
+        'DNS records no longer found'
+      )
+    })
+
     test('the DNS records stack into cards on a phone instead of scrolling sideways', async ({ browser }) => {
       const page = await openStubbed(browser, { list: () => ok(listPayload()) }, domainsPath())
       await page.setViewportSize({ width: 390, height: 844 })

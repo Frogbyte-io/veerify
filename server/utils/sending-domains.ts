@@ -450,6 +450,7 @@ export async function resolveProjectSenderAuthorization(
       status: projectMailDomain.status,
       provider: projectMailDomain.provider,
       providerAccountKey: projectMailDomain.providerAccountKey,
+      lastErrorCode: projectMailDomain.lastErrorCode,
     })
     .from(projectMailDomain)
     .where(eq(projectMailDomain.projectId, projectId))
@@ -494,8 +495,14 @@ export async function resolveProjectSenderAuthorization(
     .map((c) => c.domain)
     .sort()
 
-  if (matching(live.filter((c) => c.status === 'suspended'))) {
-    return { status: 'unauthorized', reason: 'suspended', projectDomains }
+  const suspended = matching(live.filter((c) => c.status === 'suspended'))
+  if (suspended) {
+    return {
+      status: 'unauthorized',
+      reason: 'suspended',
+      projectDomains,
+      suspendedReason: sendingDomainSuspendedReason(suspended.status, suspended.lastErrorCode) ?? 'other',
+    }
   }
   if (matching(live.filter((c) => c.status === 'verified' && !sameProvider(c)))) {
     return { status: 'unauthorized', reason: 'provider_mismatch', projectDomains }

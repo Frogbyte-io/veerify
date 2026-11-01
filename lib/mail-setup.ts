@@ -171,3 +171,21 @@ export function testAddressForDomain(
   if (exact) return exact.address
   return onDomain.length > 0 ? `test${suffix}` : null
 }
+
+// ---------------------------------------------------------------------------
+// Suspended domains
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a suspended domain blocks replies, from the API's `suspendedReason`. A missing reason
+ * (older servers) reads as `dns_missing`, the only cause they reported.
+ */
+export function suspendedDomainMessage(reason: string | null | undefined): string {
+  if (reason === 'sender_rejected') {
+    return 'Suspended: your email provider refused to send from this domain. Check that the domain is verified, then click Verify now.'
+  }
+  if (reason === 'other') {
+    return 'Suspended: replies from this domain are blocked. Click Verify now to check it again.'
+  }
+  return 'DNS records no longer found. Replies from this domain are blocked until they are published again.'
+}

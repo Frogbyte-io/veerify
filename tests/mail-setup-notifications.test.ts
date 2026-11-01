@@ -30,7 +30,7 @@ const domainRow = { id: 'd1', projectId: 'p1', domain: 'acme.com', mxNoticeSentA
 
 describe('notifyMxRecordNeeded', () => {
   it('emails every project admin once the notice is claimed', async () => {
-    const sendMxNeeded = vi.fn(async () => ({}))
+    const sendMxNeeded = vi.fn(async () => ({}) as never)
     const claimMxNotice = vi.fn(async () => true)
     const sent = await notifyMxRecordNeeded(
       { ...domainRow, existingMxHosts: ['aspmx.l.google.com'] },
@@ -50,7 +50,7 @@ describe('notifyMxRecordNeeded', () => {
   })
 
   it('sends nothing when another pass already claimed the notice (idempotent)', async () => {
-    const sendMxNeeded = vi.fn(async () => ({}))
+    const sendMxNeeded = vi.fn(async () => ({}) as never)
     const listRecipients = vi.fn(async () => admins)
     expect(
       await notifyMxRecordNeeded(domainRow, { claimMxNotice: async () => false, listRecipients, sendMxNeeded })
@@ -82,7 +82,7 @@ describe('notifyMxRecordNeeded', () => {
 
 describe('notifyForwardingChange', () => {
   it('emails each changed project once, even when several of its domains changed', async () => {
-    const sendPaused = vi.fn(async () => ({}))
+    const sendPaused = vi.fn(async () => ({}) as never)
     const listRecipients = vi.fn(async () => admins)
     const sent = await notifyForwardingChange(
       'paused',
@@ -99,8 +99,8 @@ describe('notifyForwardingChange', () => {
   })
 
   it('sends the resumed notice for resumed changes', async () => {
-    const sendResumed = vi.fn(async () => ({}))
-    const sendPaused = vi.fn(async () => ({}))
+    const sendResumed = vi.fn(async () => ({}) as never)
+    const sendPaused = vi.fn(async () => ({}) as never)
     await notifyForwardingChange(
       'resumed',
       ['p1'],

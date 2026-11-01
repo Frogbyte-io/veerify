@@ -7,6 +7,7 @@ import {
   isSesInboundHost,
   receivedSince,
   receivingActiveLine,
+  suspendedDomainMessage,
   testAddressForDomain,
   usageLevel,
 } from '~/lib/mail-setup'
@@ -154,5 +155,15 @@ describe('receiving confirmation', () => {
     expect(testAddressForDomain([platform, other], 'acme.com')).toBeNull()
     // A subdomain's addresses do not count for the parent domain.
     expect(testAddressForDomain([{ address: 'a@mail.acme.com', kind: 'custom' }], 'acme.com')).toBeNull()
+  })
+})
+
+describe('suspendedDomainMessage', () => {
+  it('explains each suspension cause', () => {
+    expect(suspendedDomainMessage('sender_rejected')).toContain('your email provider refused to send from this domain')
+    expect(suspendedDomainMessage('dns_missing')).toContain('DNS records no longer found')
+    expect(suspendedDomainMessage('other')).toContain('Click Verify now')
+    // Older servers did not send a reason; DNS was the only cause then.
+    expect(suspendedDomainMessage(undefined)).toContain('DNS records no longer found')
   })
 })

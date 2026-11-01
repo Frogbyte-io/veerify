@@ -131,6 +131,8 @@ export type ProjectSenderVerdict =
       status: 'unauthorized'
       reason: 'not_owned' | 'suspended' | 'provider_mismatch'
       projectDomains: string[]
+      /** Why the matching claim is suspended; set only with `reason: 'suspended'`. */
+      suspendedReason?: SendingDomainSuspendedReason
     }
   | { status: 'unknown'; reason: string }
 

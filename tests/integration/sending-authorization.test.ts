@@ -174,7 +174,16 @@ describe('resolveProjectSenderAuthorization', () => {
     expect((await verdict(ids.projectA, `s@${domain}`)).status).toBe('authorized')
 
     await db.update(projectMailDomain).set({ status: 'suspended' }).where(eq(projectMailDomain.id, id))
-    expect(await verdict(ids.projectA, `s@${domain}`)).toMatchObject({ status: 'unauthorized', reason: 'suspended' })
+    expect(await verdict(ids.projectA, `s@${domain}`)).toMatchObject({
+      status: 'unauthorized',
+      reason: 'suspended',
+      suspendedReason: 'other',
+    })
+
+    await db.update(projectMailDomain).set({ lastErrorCode: 'sender_rejected' }).where(eq(projectMailDomain.id, id))
+    expect(await verdict(ids.projectA, `s@${domain}`)).toMatchObject({ suspendedReason: 'sender_rejected' })
+    await db.update(projectMailDomain).set({ lastErrorCode: 'ownership_missing' }).where(eq(projectMailDomain.id, id))
+    expect(await verdict(ids.projectA, `s@${domain}`)).toMatchObject({ suspendedReason: 'dns_missing' })
 
     await db.update(projectMailDomain).set({ status: 'verified' }).where(eq(projectMailDomain.id, id))
     expect((await verdict(ids.projectA, `s@${domain}`)).status).toBe('authorized')
