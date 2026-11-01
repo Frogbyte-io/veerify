@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { listAccessibleInboxes } from '~/server/utils/support-access'
 
 const state = vi.hoisted(() => ({
   inboxes: [] as Array<{ id: string; projectId: string }>,
@@ -7,8 +8,6 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('~/server/database/drizzle', () => ({ db: {} }))
-
-import { listAccessibleInboxes } from '~/server/utils/support-access'
 
 function executor() {
   return {

@@ -1082,6 +1082,12 @@ export default {
   },
 
   async mounted() {
+    // `?status=` (e.g. the Overview's Triage link) opens the list filtered to that status.
+    const status = this.$route.query.status
+    if (typeof status === 'string' && status) {
+      this.viewMode = 'table'
+      this.statusFilter = status
+    }
     if (import.meta.client) {
       window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.initProjectContext)
     }

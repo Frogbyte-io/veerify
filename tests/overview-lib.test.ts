@@ -106,7 +106,7 @@ describe('buildTodos', () => {
         items: [{ id: 'd1', title: 'Faster imports', createdAt: '2026-10-12T00:00:00Z', project: ref('b') }],
       },
     }
-    const todos = buildTodos(needsYou, { allProjects: true, now: NOW, activeProjectId: 'a' })
+    const todos = buildTodos(needsYou, { allProjects: true, now: NOW })
     expect(todos.map((t) => t.key)).toEqual(['sla-c1', 'waiting', 'untriaged', 'draft-d1'])
     expect(todos[0]).toMatchObject({
       title: 'Reply to Marta: the SLA runs out in 12 minutes',
@@ -123,12 +123,8 @@ describe('buildTodos', () => {
       title: '5 feedback posts have no status yet',
       action: { label: 'Triage', to: '/feedback?status=new&projects=b' },
     })
-    // The draft's project is not the active one: its tools need that project
-    expect(todos[3]!.action).toEqual({
-      label: 'Review draft',
-      to: '/dashboard/changelog/d1',
-      switchProjectId: 'b',
-    })
+    // The editor opens any scoped project's entry, so the draft names its project instead of switching
+    expect(todos[3]!.action).toEqual({ label: 'Review draft', to: '/dashboard/changelog/d1?project=b' })
   })
 
   it('shows the oldest waiting conversation in a single project instead of a breakdown', () => {
@@ -143,7 +139,7 @@ describe('buildTodos', () => {
     expect(todo!.breakdown).toBeUndefined()
   })
 
-  it('opens the plain board when several projects are untriaged, and does not switch for the active project', () => {
+  it('opens the plain board when several projects are untriaged', () => {
     const needsYou = empty()
     needsYou.untriaged = {
       total: 3,
@@ -156,9 +152,9 @@ describe('buildTodos', () => {
       total: 1,
       items: [{ id: 'd1', title: 'Notes', createdAt: '2026-10-12T00:00:00Z', project: ref('a') }],
     }
-    const todos = buildTodos(needsYou, { allProjects: true, now: NOW, activeProjectId: 'a' })
+    const todos = buildTodos(needsYou, { allProjects: true, now: NOW })
     expect(todos[0]!.action.to).toBe('/feedback')
-    expect(todos[1]!.action.switchProjectId).toBeUndefined()
+    expect(todos[1]!.action.to).toBe('/dashboard/changelog/d1?project=a')
   })
 
   it('adds a row for conversations and drafts beyond the listed ones', () => {

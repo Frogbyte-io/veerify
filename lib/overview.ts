@@ -66,7 +66,6 @@ export type TodoAction = {
   label: string
   to: string
   /** Switch to this project first (its tool pages work in the active project) */
-  switchProjectId?: string
 }
 
 export type Todo = {
@@ -91,8 +90,6 @@ export type Todo = {
 export type TodoOptions = {
   allProjects: boolean
   now?: Date
-  /** The project the dashboard currently works in */
-  activeProjectId?: string
 }
 
 function formatShortDate(value: string): string {
@@ -176,8 +173,8 @@ export function buildTodos(needsYou: OverviewResponse['needsYou'], options: Todo
       detail: `written ${formatShortDate(draft.createdAt)}`,
       action: {
         label: 'Review draft',
-        to: `/dashboard/changelog/${encodeURIComponent(draft.id)}`,
-        switchProjectId: draft.project.id !== options.activeProjectId ? draft.project.id : undefined,
+        // The editor opens an entry of any project in scope, so All projects is kept.
+        to: `/dashboard/changelog/${encodeURIComponent(draft.id)}?project=${encodeURIComponent(draft.project.id)}`,
       },
     })
   }

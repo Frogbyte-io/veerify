@@ -238,7 +238,6 @@ export default {
       overviewError: '',
       noProject: false,
       busyKey: '',
-      leaving: false,
       overviewRequest: 0,
     }
   },
@@ -263,7 +262,6 @@ export default {
       if (!this.overview) return []
       return buildTodos(this.overview.needsYou, {
         allProjects: this.allProjects,
-        activeProjectId: this.context?.project?.id,
       })
     },
     scopeName() {
@@ -362,7 +360,6 @@ export default {
     },
 
     async onActiveProjectChanged() {
-      if (this.leaving) return
       try {
         this.applyContext(await loadActiveProject({ force: true }))
       } catch (error) {
@@ -399,20 +396,12 @@ export default {
       }
     },
 
-    // A "Needs you" button. Tool pages work in the active project, so a draft of another project
-    // switches to it first; the switch is announced before navigating, so this page's own reload is skipped.
+    // A "Needs you" button. Every target works in All projects, so this only navigates.
     async handleTodoAction(todo) {
-      const { to, switchProjectId } = todo.action
       this.busyKey = todo.key
       try {
-        if (switchProjectId) {
-          await $fetch('/api/projects/active', { method: 'POST', body: { projectId: switchProjectId } })
-          this.leaving = true
-          this.announceProjectChange(switchProjectId)
-        }
-        await navigateTo(to)
+        await navigateTo(todo.action.to)
       } catch (error) {
-        this.leaving = false
         this.overviewError = apiErrorMessage(error, 'Could not open that')
       } finally {
         this.busyKey = ''
