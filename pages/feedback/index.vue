@@ -1,10 +1,6 @@
 <template>
   <PageContainer>
-    <PageHeader
-      title="Feedback"
-      description="Manage and respond to user feedback and feature requests"
-      data-testid="feedback-page-title"
-    >
+    <PageHeader title="Feedback" :description="headerDescription" data-testid="feedback-page-title">
       <template #actions>
         <Button
           v-if="isFeedbackView"
@@ -31,7 +27,7 @@
 
     <!-- Feedback / Settings tabs. The product chips share this row (rendered from the active-project cache)
          so they never push the board down. -->
-    <div class="flex flex-wrap items-center justify-between gap-x-4 border-b">
+    <div v-if="!isAll" class="flex flex-wrap items-center justify-between gap-x-4 border-b">
       <div class="flex items-center gap-1" role="tablist" data-testid="feedback-tabs">
         <NuxtLink
           :to="{ path: '/feedback', query: feedbackTabQuery }"
@@ -79,6 +75,19 @@
         </button>
       </div>
     </div>
+
+    <!-- All projects: narrow to some projects. Mounted as soon as the context is known so the
+         restored selection is in place before the first load. -->
+    <ProjectScopeChips
+      v-if="isAll && isFeedbackView && scopeProjectList.length > 0"
+      :model-value="selectedProjectIds"
+      :projects="scopeProjectList"
+      page="feedback"
+      module="feedbackEnabled"
+      :counts="scopeLoaded ? countsById : null"
+      data-testid="feedback-project-chips"
+      @update:model-value="onProjectsChange"
+    />
 
     <!-- Settings view -->
     <FeedbackSettingsPanel
@@ -222,12 +231,19 @@
               @change="onFilterChange()"
             >
               <option value="">All Statuses</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="planned">Planned</option>
-              <option value="completed">Completed</option>
-              <option value="closed">Closed</option>
-              <option value="declined">Declined</option>
+              <template v-if="isAll">
+                <option v-for="status in allStatuses" :key="status.value" :value="status.value">
+                  {{ status.name }}
+                </option>
+              </template>
+              <template v-else>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="planned">Planned</option>
+                <option value="completed">Completed</option>
+                <option value="closed">Closed</option>
+                <option value="declined">Declined</option>
+              </template>
             </select>
             <Icon
               name="lucide:chevron-down"
@@ -299,6 +315,14 @@
       <!-- Feedback Content -->
       <div v-else data-testid="feedback-list" class="space-y-4">
         <template v-if="viewMode === 'kanban'">
+          <p
+            v-if="kanbanNotice"
+            role="status"
+            class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+            data-testid="feedback-kanban-notice"
+          >
+            {{ kanbanNotice }}
+          </p>
           <div data-testid="feedback-kanban" class="overflow-x-auto pb-4">
             <div class="flex gap-4 min-w-max">
               <div
@@ -308,11 +332,14 @@
                 class="w-[320px] shrink-0 flex flex-col bg-muted/30 rounded-xl border"
               >
                 <div class="p-3 flex items-center justify-between border-b bg-card/50 rounded-t-xl">
-                  <div class="flex items-center gap-2">
-                    <div :class="`p-1 rounded-md ${column.colorClass}`">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <div :class="`p-1 rounded-md ${column.colorClass}`" :style="column.style">
                       <Icon :name="column.icon" class="w-4 h-4" />
                     </div>
-                    <h3 class="text-sm font-semibold">{{ column.label }}</h3>
+                    <h3 class="truncate text-sm font-semibold">{{ column.label }}</h3>
+                    <span v-if="column.only" class="truncate text-xs text-muted-foreground"
+                      >· {{ column.only }} only</span
+                    >
                   </div>
                   <Badge variant="secondary" class="font-mono">{{ kanbanData[column.value]?.length ?? 0 }}</Badge>
                 </div>
@@ -331,6 +358,7 @@
                       v-for="item in kanbanData[column.value]"
                       :key="item.id"
                       class="group cursor-grab active:cursor-grabbing hover:border-primary/50 transition-all select-none"
+                      :style="projectEdgeStyle(item)"
                       @click="$router.push(`/feedback/${item.id}`)"
                       @pointerenter="prewarmFeedbackRoute(item.id)"
                     >
@@ -348,10 +376,10 @@
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <template v-if="hasMultipleProducts">
+                              <template v-if="productsOf(item).length > 1">
                                 <DropdownMenuLabel>Move to product</DropdownMenuLabel>
                                 <DropdownMenuItem
-                                  v-for="p in products.filter((prod) => prod.id !== item.productId)"
+                                  v-for="p in productsOf(item).filter((prod) => prod.id !== item.productId)"
                                   :key="p.id"
                                   :data-testid="`feedback-move-${item.id}-${p.slug}`"
                                   @click.stop="moveToProduct(item, p.id)"
@@ -390,9 +418,15 @@
                               <span>{{ item.commentCount }}</span>
                             </div>
                           </div>
-                          <div class="flex items-center gap-1">
+                          <div class="flex min-w-0 items-center gap-1">
+                            <ProjectTag
+                              v-if="isAll && itemProject(item)"
+                              :project="itemProject(item)"
+                              :suffix="productSuffix(item)"
+                              class="max-w-[190px]"
+                            />
                             <Badge
-                              v-if="hasMultipleProducts"
+                              v-else-if="hasMultipleProducts"
                               variant="secondary"
                               class="text-[10px] px-1.5 py-0 font-normal"
                               data-testid="feedback-item-product"
@@ -443,6 +477,7 @@
                       </span>
                     </th>
                     <th v-if="hasMultipleProducts" class="font-medium px-4 py-3">Product</th>
+                    <th v-if="isAll" class="font-medium px-4 py-3">Project / product</th>
                     <th class="font-medium px-4 py-3">Status</th>
                     <th
                       class="font-medium px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
@@ -504,8 +539,19 @@
                         productLabel(item)
                       }}</span>
                     </td>
+                    <td v-if="isAll" class="px-4 py-3 align-top">
+                      <ProjectTag v-if="itemProject(item)" :project="itemProject(item)" :suffix="productSuffix(item)" />
+                    </td>
                     <td class="px-4 py-3 align-top">
-                      <Badge :variant="statusBadgeVariant(item.status)" class="font-normal">{{
+                      <span
+                        v-if="isAll"
+                        class="inline-flex items-center gap-1.5 text-sm"
+                        data-testid="feedback-item-status"
+                      >
+                        <i class="size-2 shrink-0 rounded-full bg-muted-foreground" :style="statusDotStyle(item)" />
+                        {{ itemStatusName(item) }}
+                      </span>
+                      <Badge v-else :variant="statusBadgeVariant(item.status)" class="font-normal">{{
                         formatStatus(item.status)
                       }}</Badge>
                     </td>
@@ -615,13 +661,53 @@
             {{
               createDialogStep === 'select-type'
                 ? 'Choose the feedback type first, then add details.'
-                : `Create a new feedback item for ${project?.name || 'this project'}.`
+                : `Create a new feedback item for ${createTarget?.name || 'this project'}.`
             }}
           </DialogDescription>
         </DialogHeader>
 
         <!-- Step 2: Feedback type picker -->
-        <div v-if="createDialogStep === 'select-type'" class="py-2">
+        <div v-if="createDialogStep === 'select-type'" class="space-y-4 py-2">
+          <!-- All projects: say where it goes (project, then product when it has several) -->
+          <div v-if="isAll" class="space-y-3" data-testid="feedback-create-destination">
+            <div class="space-y-1.5">
+              <Label>Project</Label>
+              <div class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="p in scopeProjectList"
+                  :key="p.id"
+                  type="button"
+                  :data-testid="`feedback-create-project-${p.id}`"
+                  :aria-pressed="createForm.projectId === p.id"
+                  :class="chipClass(createForm.projectId === p.id, 'inline-flex items-center gap-1.5')"
+                  @click="selectCreateProject(p.id)"
+                >
+                  <ProjectBadge :project="p" size="xs" />
+                  {{ p.name }}
+                </button>
+              </div>
+              <p class="flex items-center gap-1 text-xs text-muted-foreground">
+                <Icon name="lucide:history" class="h-3 w-3" />
+                Defaults to the last project you used
+              </p>
+            </div>
+            <div v-if="createProducts.length > 1" class="space-y-1.5">
+              <Label>Product</Label>
+              <div class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="prod in createProducts"
+                  :key="prod.id"
+                  type="button"
+                  :data-testid="`feedback-create-product-${prod.slug}`"
+                  :aria-pressed="createForm.productId === prod.id"
+                  :class="chipClass(createForm.productId === prod.id)"
+                  @click="createForm.productId = prod.id"
+                >
+                  {{ prod.name }}
+                </button>
+              </div>
+            </div>
+          </div>
           <div class="space-y-2">
             <button
               v-for="type in feedbackTypeOptions"
@@ -655,6 +741,16 @@
               <Icon :name="selectedFeedbackType.icon" class="w-4 h-4 text-muted-foreground" />
               <span class="font-medium">{{ selectedFeedbackType.label }}</span>
             </div>
+            <Button variant="ghost" size="sm" class="h-7 px-2" @click="createDialogStep = 'select-type'">
+              Change
+            </Button>
+          </div>
+          <div
+            v-if="isAll && createTarget"
+            class="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/30 px-3 py-2"
+            data-testid="feedback-create-destination-summary"
+          >
+            <ProjectTag :project="createTarget" :suffix="createProductSuffix" />
             <Button variant="ghost" size="sm" class="h-7 px-2" @click="createDialogStep = 'select-type'">
               Change
             </Button>
@@ -721,7 +817,7 @@
             @click="createFeedback"
           >
             <Icon v-if="isCreating" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-            Add Feedback
+            {{ isAll && createTarget ? `Create in ${createTarget.name}` : 'Add Feedback' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -757,8 +853,26 @@
 import { VueDraggable } from 'vue-draggable-plus'
 import { cn } from '~/lib/utils'
 import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
+import {
+  defaultCreateProjectId,
+  mergeScopeStatuses,
+  projectStatus,
+  readLastFeedbackProject,
+  rememberLastFeedbackProject,
+} from '~/lib/feedback-scope'
+import { findScopeProject, isAllProjects, scopeProjectsWithModule } from '~/lib/project-scope'
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
+
+const COLUMN_STYLES = {
+  open: { label: 'Open', icon: 'lucide:clock-3', colorClass: 'bg-orange-500/10 text-orange-500' },
+  in_progress: { label: 'In Progress', icon: 'lucide:play-circle', colorClass: 'bg-blue-500/10 text-blue-500' },
+  planned: { label: 'Planned', icon: 'lucide:calendar-range', colorClass: 'bg-purple-500/10 text-purple-500' },
+  completed: { label: 'Completed', icon: 'lucide:check-circle-2', colorClass: 'bg-green-500/10 text-green-500' },
+  closed: { label: 'Closed', icon: 'lucide:archive', colorClass: 'bg-gray-500/10 text-gray-500' },
+  declined: { label: 'Declined', icon: 'lucide:x-circle', colorClass: 'bg-red-500/10 text-red-500' },
+}
+const SINGLE_PROJECT_COLUMNS = ['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']
 
 export default {
   name: 'FeedbackPage',
@@ -769,9 +883,19 @@ export default {
     // Warm navigation: start from the shared active-project cache so the chips and header render at once
     const cached = import.meta.client ? cachedActiveProject() : undefined
     return {
-      // Active project (GET /api/projects/active)
+      // Active project (GET /api/projects/active); `context` also carries the scope and its projects
+      context: cached || null,
       project: cached?.project || null,
       products: cached?.products || [],
+
+      // All projects: per-project counts, products and statuses (GET /api/feedback/scope)
+      scopeData: [],
+      scopeLoaded: false,
+      scopeReady: false,
+      selectedProjectIds: [],
+      githubIntegrations: {},
+      feedbackRequestId: 0,
+      kanbanNotice: '',
 
       feedbackItems: [],
       categories: [],
@@ -822,7 +946,7 @@ export default {
           description: 'Share feedback that does not fit a specific type.',
         },
       ],
-      createForm: { title: '', body: '', categoryId: null, productId: '', feedbackType: '' },
+      createForm: { title: '', body: '', categoryId: null, productId: '', projectId: '', feedbackType: '' },
 
       isExporting: false,
 
@@ -851,11 +975,51 @@ export default {
   },
 
   computed: {
+    // Feedback settings are per project, so All projects has no Settings tab
     isFeedbackView() {
-      return this.$route.query.view !== 'settings'
+      return this.isAll || this.$route.query.view !== 'settings'
     },
+    isAll() {
+      return isAllProjects(this.context)
+    },
+    // Projects with the Feedback tool on (All projects: every one the user can open)
+    scopeProjectList() {
+      return scopeProjectsWithModule(this.context, 'feedbackEnabled')
+    },
+    // Projects the list shows: the chip selection, else every project with feedback
+    viewProjectIds() {
+      const selected = this.selectedProjectIds.filter((id) => this.scopeProjectList.some((p) => p.id === id))
+      return selected.length > 0 ? selected : this.scopeProjectList.map((p) => p.id)
+    },
+    viewScopeData() {
+      return this.scopeData.filter((p) => this.viewProjectIds.includes(p.id))
+    },
+    countsById() {
+      return Object.fromEntries(this.scopeData.map((p) => [p.id, p.feedbackCount]))
+    },
+    allStatuses() {
+      return mergeScopeStatuses(this.viewScopeData)
+    },
+    headerDescription() {
+      if (!this.isAll) return 'Manage and respond to user feedback and feature requests'
+      const n = this.viewProjectIds.length
+      return `Feedback from ${n} ${n === 1 ? 'project' : 'projects'}`
+    },
+    // Product filtering and the product column do not apply in All projects (the project column replaces them)
     hasMultipleProducts() {
-      return this.products.length > 1
+      return !this.isAll && this.products.length > 1
+    },
+    createTarget() {
+      if (!this.isAll) return this.project
+      return findScopeProject(this.context, this.createForm.projectId)
+    },
+    createProducts() {
+      return this.productsForProject(this.createTarget?.id)
+    },
+    createProductSuffix() {
+      return this.createProducts.length > 1
+        ? this.createProducts.find((p) => p.id === this.createForm.productId)?.name || ''
+        : ''
     },
     // Current `?product=<slug>` filter; ignored with a single product
     productFilterSlug() {
@@ -870,38 +1034,32 @@ export default {
       return this.productFilterSlug ? { product: this.productFilterSlug } : {}
     },
     canCreateFeedback() {
+      if (this.isAll) return this.scopeProjectList.length > 0 && this.scopeData.length > 0
       return Boolean(this.project) && this.products.length > 0
     },
     showGithubIssueColumn() {
+      if (this.isAll) return this.viewProjectIds.some((id) => this.hasGithubIntegration({ project: { id } }))
       return this.hasGithubIntegration()
     },
     selectedFeedbackType() {
       return this.feedbackTypeOptions.find((type) => type.value === this.createForm.feedbackType) || null
     },
     kanbanColumns() {
-      return [
-        { value: 'open', label: 'Open', icon: 'lucide:clock-3', colorClass: 'bg-orange-500/10 text-orange-500' },
-        {
-          value: 'in_progress',
-          label: 'In Progress',
-          icon: 'lucide:play-circle',
-          colorClass: 'bg-blue-500/10 text-blue-500',
-        },
-        {
-          value: 'planned',
-          label: 'Planned',
-          icon: 'lucide:calendar-range',
-          colorClass: 'bg-purple-500/10 text-purple-500',
-        },
-        {
-          value: 'completed',
-          label: 'Completed',
-          icon: 'lucide:check-circle-2',
-          colorClass: 'bg-green-500/10 text-green-500',
-        },
-        { value: 'closed', label: 'Closed', icon: 'lucide:archive', colorClass: 'bg-gray-500/10 text-gray-500' },
-        { value: 'declined', label: 'Declined', icon: 'lucide:x-circle', colorClass: 'bg-red-500/10 text-red-500' },
-      ]
+      if (!this.isAll) return SINGLE_PROJECT_COLUMNS.map((value) => ({ value, ...COLUMN_STYLES[value] }))
+      // All projects: one column per status value; a status only one project has says so
+      const several = this.viewScopeData.length > 1
+      return this.allStatuses.map((status) => {
+        const known = COLUMN_STYLES[status.value]
+        const only = several && status.projectIds.length === 1 ? this.projectName(status.projectIds[0]) : ''
+        return {
+          value: status.value,
+          label: status.name,
+          icon: known?.icon || 'lucide:circle-dot',
+          colorClass: known?.colorClass || 'bg-muted text-muted-foreground',
+          style: !known && status.color ? { backgroundColor: `${status.color}26`, color: status.color } : undefined,
+          only,
+        }
+      })
     },
   },
 
@@ -945,11 +1103,71 @@ export default {
       )
     },
 
-    chipClass(active) {
+    chipClass(active, extra = '') {
       return cn(
         'rounded-full border px-3 py-1 text-sm transition-colors',
-        active ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-accent'
+        active ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-accent',
+        extra
       )
+    },
+
+    // --- All projects helpers ---
+
+    itemProject(item) {
+      return findScopeProject(this.context, item.project?.id)
+    },
+
+    projectName(projectId) {
+      return findScopeProject(this.context, projectId)?.name || ''
+    },
+
+    // The product after the project name, only when that project has several
+    productSuffix(item) {
+      return (this.itemProject(item)?.productCount ?? 0) > 1 ? item.product?.name || '' : ''
+    },
+
+    productsForProject(projectId) {
+      if (!this.isAll) return this.products
+      return this.scopeData.find((p) => p.id === projectId)?.products || []
+    },
+
+    // The products of the item's own project (All projects) or of the active project
+    productsOf(item) {
+      return this.productsForProject(item.project?.id)
+    },
+
+    projectEdgeStyle(item) {
+      const color = this.isAll ? this.itemProject(item)?.identity?.color : null
+      return color ? { borderLeft: `3px solid ${color}` } : undefined
+    },
+
+    // The status as the item's own project names it
+    itemStatus(item) {
+      return projectStatus(this.scopeData, item.project?.id, item.status)
+    },
+
+    itemStatusName(item) {
+      return this.itemStatus(item)?.name || this.formatStatus(item.status)
+    },
+
+    statusDotStyle(item) {
+      const color = this.itemStatus(item)?.color
+      return color ? { backgroundColor: color } : undefined
+    },
+
+    onProjectsChange(ids) {
+      this.selectedProjectIds = ids
+      // The chips restore their selection on mount, before the first load
+      if (!this.scopeReady) return
+      if (this.statusFilter && !this.allStatuses.some((s) => s.value === this.statusFilter)) this.statusFilter = ''
+      this.pagination.page = 1
+      this.loadFeedback()
+    },
+
+    async loadScopeData() {
+      const response = await $fetch('/api/feedback/scope')
+      this.scopeData = response?.data?.projects || []
+      this.scopeLoaded = true
     },
 
     productLabel(item) {
@@ -973,8 +1191,20 @@ export default {
           this.error = 'No active project found'
           return
         }
+        this.context = context
         this.project = context.project
         this.products = context.products || []
+        this.scopeReady = false
+        if (isAllProjects(context)) {
+          await this.loadScopeData()
+          // Let the chips mount and restore their selection before the first load
+          await this.$nextTick()
+        } else {
+          this.scopeData = []
+          this.scopeLoaded = false
+          this.selectedProjectIds = []
+        }
+        this.scopeReady = true
         await this.onFilterScopeChange()
       } catch (err) {
         console.error('Error loading the active project:', err)
@@ -991,7 +1221,7 @@ export default {
     },
 
     async loadFeedback() {
-      if (!this.project) {
+      if (!this.project || (this.isAll && this.viewProjectIds.length === 0)) {
         this.feedbackItems = []
         this.pagination = { ...this.pagination, page: 1, total: 0, totalPages: 0 }
         this.buildKanbanData()
@@ -1001,10 +1231,12 @@ export default {
 
       this.isFeedbackLoading = true
       this.feedbackError = null
+      this.kanbanNotice = ''
+      const requestId = ++this.feedbackRequestId
 
       try {
         const params = new URLSearchParams({
-          projectIds: this.project.id,
+          projectIds: this.isAll ? this.viewProjectIds.join(',') : this.project.id,
           page: String(this.pagination.page),
           limit: String(this.pagination.limit),
         })
@@ -1020,6 +1252,7 @@ export default {
         }
 
         const response = await $fetch(`/api/feedback?${params}`)
+        if (requestId !== this.feedbackRequestId) return
         this.feedbackItems = (response?.data?.items || []).map((item) => ({
           ...item,
           githubIssue: item.githubIssue || null,
@@ -1029,15 +1262,17 @@ export default {
         this.updateStatusCounts()
         this.feedbackLoadedOnce = true
       } catch (err) {
+        if (requestId !== this.feedbackRequestId) return
         console.error('Error loading feedback:', err)
         this.feedbackError = 'Failed to load feedback. Please try again.'
       } finally {
-        this.isFeedbackLoading = false
+        if (requestId === this.feedbackRequestId) this.isFeedbackLoading = false
       }
     },
 
     async loadCategories() {
-      if (!this.project?.slug) {
+      // All projects: categories are per project and only the create dialog needs them
+      if (!this.project?.slug || this.isAll) {
         this.categories = []
         return
       }
@@ -1051,6 +1286,22 @@ export default {
     },
 
     async loadGithubIntegration() {
+      if (this.isAll) {
+        // One integration per project; "Create Issue" uses the item's own project's repository
+        this.githubIntegration = null
+        const entries = await Promise.all(
+          this.scopeProjectList.map(async (p) => {
+            try {
+              const response = await $fetch(`/api/projects/${p.slug}/github`)
+              return [p.id, response?.data || null]
+            } catch {
+              return [p.id, null]
+            }
+          })
+        )
+        this.githubIntegrations = Object.fromEntries(entries)
+        return
+      }
       if (!this.project?.slug) {
         this.githubIntegration = null
         return
@@ -1078,11 +1329,25 @@ export default {
 
     openCreateDialog() {
       if (!this.canCreateFeedback) return
-      // Default product: the current filter, else the project's default (first) product
-      const productId = this.productFilterId || this.products[0]?.id || ''
-      this.createForm = { title: '', body: '', categoryId: null, productId, feedbackType: '' }
+      // Default product: the current filter, else the project's default (first) product.
+      // All projects: the last project used, else the active (last single) project.
+      const projectId = this.isAll
+        ? defaultCreateProjectId(
+            this.scopeProjectList.map((p) => p.id),
+            readLastFeedbackProject(this.context?.organization?.id),
+            this.project?.id
+          )
+        : this.project.id
+      const productId = (this.isAll ? '' : this.productFilterId) || this.productsForProject(projectId)[0]?.id || ''
+      this.createForm = { title: '', body: '', categoryId: null, productId, projectId, feedbackType: '' }
       this.createDialogStep = 'select-type'
       this.showCreateDialog = true
+    },
+
+    selectCreateProject(projectId) {
+      this.createForm.projectId = projectId
+      this.createForm.productId = this.productsForProject(projectId)[0]?.id || ''
+      this.createForm.categoryId = null
     },
 
     async selectFeedbackType(type) {
@@ -1119,13 +1384,14 @@ export default {
     },
 
     async loadDialogCategories() {
-      if (!this.project?.slug) {
+      const slug = this.createTarget?.slug
+      if (!slug) {
         this.dialogCategories = []
         return
       }
       this.isLoadingDialogCategories = true
       try {
-        const response = await $fetch(`/api/projects/${this.project.slug}/categories`)
+        const response = await $fetch(`/api/projects/${slug}/categories`)
         this.dialogCategories = response?.data || []
         this.syncCategoryWithFeedbackType()
       } catch (err) {
@@ -1141,15 +1407,21 @@ export default {
       this.createDialogStep = 'select-type'
       this.isLoadingDialogCategories = false
       this.dialogCategories = []
-      this.createForm = { title: '', body: '', categoryId: null, productId: '', feedbackType: '' }
+      this.createForm = { title: '', body: '', categoryId: null, productId: '', projectId: '', feedbackType: '' }
     },
 
-    hasGithubIntegration() {
-      return Boolean(this.githubIntegration?.repoFullName && this.githubIntegration?.hasAccessToken)
+    // The GitHub integration of the item's project (All projects) or of the active project
+    githubIntegrationFor(item) {
+      return this.isAll ? this.githubIntegrations[item?.project?.id] : this.githubIntegration
+    },
+
+    hasGithubIntegration(item) {
+      const integration = this.githubIntegrationFor(item)
+      return Boolean(integration?.repoFullName && integration?.hasAccessToken)
     },
 
     canCreateGithubIssue(item) {
-      return !item.githubIssue && this.hasGithubIntegration()
+      return !item.githubIssue && this.hasGithubIntegration(item)
     },
 
     isCreatingGithubIssue(feedbackId) {
@@ -1159,7 +1431,7 @@ export default {
     async createGithubIssue(item) {
       if (!this.canCreateGithubIssue(item) || this.isCreatingGithubIssue(item.id)) return
 
-      const repo = this.githubIntegration?.repoFullName
+      const repo = this.githubIntegrationFor(item)?.repoFullName
       if (!repo) return
 
       this.creatingGithubIssueFeedbackIds = [...this.creatingGithubIssueFeedbackIds, item.id]
@@ -1256,7 +1528,7 @@ export default {
     },
 
     async createFeedback() {
-      if (!this.project || !this.createForm.title || !this.createForm.body) return
+      if (!this.createTarget || !this.createForm.title || !this.createForm.body) return
       if (!this.createForm.feedbackType) return
 
       this.isCreating = true
@@ -1265,7 +1537,7 @@ export default {
         await $fetch('/api/feedback', {
           method: 'POST',
           body: {
-            projectId: this.project.id,
+            projectId: this.createTarget.id,
             ...(this.createForm.productId ? { productId: this.createForm.productId } : {}),
             title: this.createForm.title,
             body: this.createForm.body,
@@ -1274,8 +1546,10 @@ export default {
           },
         })
 
+        if (this.isAll) rememberLastFeedbackProject(this.context?.organization?.id, this.createTarget.id)
         this.showCreateDialog = false
-        this.createForm = { title: '', body: '', categoryId: null, productId: '', feedbackType: '' }
+        this.createForm = { title: '', body: '', categoryId: null, productId: '', projectId: '', feedbackType: '' }
+        if (this.isAll) await this.loadScopeData()
         await this.loadFeedback()
       } catch (err) {
         console.error('Error creating feedback:', err)
@@ -1314,7 +1588,7 @@ export default {
       this.isExporting = true
       try {
         const params = new URLSearchParams({
-          projectIds: this.project.id,
+          projectIds: this.isAll ? this.viewProjectIds.join(',') : this.project.id,
         })
         if (this.productFilterId) params.set('productId', this.productFilterId)
         if (this.searchQuery.trim()) params.set('search', this.searchQuery.trim())
@@ -1352,12 +1626,14 @@ export default {
     },
 
     buildKanbanData() {
-      const grouped = { open: [], in_progress: [], planned: [], completed: [], closed: [], declined: [] }
+      const grouped = Object.fromEntries(this.kanbanColumns.map((column) => [column.value, []]))
+      // A status without a column (e.g. deleted since) lands in Open, else the first column
+      const fallback = grouped.open ? 'open' : this.kanbanColumns[0]?.value
       for (const item of this.feedbackItems) {
         if (grouped[item.status]) {
           grouped[item.status].push(item)
-        } else {
-          grouped.open.push(item)
+        } else if (fallback) {
+          grouped[fallback].push(item)
         }
       }
       this.kanbanData = grouped
@@ -1374,6 +1650,16 @@ export default {
 
       const feedbackItem = this.feedbackItems.find((i) => i.id === movedItem.id)
       if (!feedbackItem) return
+
+      // All projects: a column is the status of every project that has it, so a project without it
+      // cannot take the item
+      if (this.isAll && !projectStatus(this.scopeData, feedbackItem.project?.id, toStatus)) {
+        const column = this.kanbanColumns.find((c) => c.value === toStatus)
+        this.kanbanNotice = `${this.projectName(feedbackItem.project?.id)} has no “${column?.label || toStatus}” status, so “${feedbackItem.title}” stayed where it was.`
+        this.buildKanbanData()
+        return
+      }
+      this.kanbanNotice = ''
 
       const oldStatus = feedbackItem.status
       feedbackItem.status = toStatus

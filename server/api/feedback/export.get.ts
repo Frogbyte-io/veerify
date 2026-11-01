@@ -21,7 +21,8 @@
  *         schema: { type: string }
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [open, in_progress, planned, completed, closed, declined] }
+ *         description: "A status value of the project (system or custom)"
+ *         schema: { type: string, minLength: 1, maxLength: 80 }
  *       - in: query
  *         name: categoryId
  *         schema: { type: string }
@@ -66,7 +67,7 @@ const exportQuerySchema = z
               .filter(Boolean)
           : []
       ),
-    status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
+    status: z.string().trim().min(1).max(80).optional(),
     categoryId: z.string().optional(),
     productId: z.string().min(1).optional(),
     search: z.string().optional(),

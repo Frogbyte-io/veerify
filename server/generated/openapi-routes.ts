@@ -1121,16 +1121,11 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "status",
+          "description": "A status value of the project (the system statuses open, in_progress, planned, completed, closed, declined, or a custom status value)",
           "schema": {
             "type": "string",
-            "enum": [
-              "open",
-              "in_progress",
-              "planned",
-              "completed",
-              "closed",
-              "declined"
-            ]
+            "minLength": 1,
+            "maxLength": 80
           }
         },
         {
@@ -2613,16 +2608,11 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "status",
+          "description": "A status value of the project (system or custom)",
           "schema": {
             "type": "string",
-            "enum": [
-              "open",
-              "in_progress",
-              "planned",
-              "completed",
-              "closed",
-              "declined"
-            ]
+            "minLength": 1,
+            "maxLength": 80
           }
         },
         {
@@ -2687,6 +2677,45 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a member of a requested project"
+        }
+      }
+    }
+  },
+  "/api/feedback/scope": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Feedback summary per project",
+      "description": "For each project in the caller's scope with the Feedback tool switched on, returns the number of feedback items, the products and the feedback statuses (custom when defined, else the system statuses). Powers the combined Feedback page in All projects: the project filter chips with counts, the status filter and the project/product picker. In a single project the scope is just the active project. Narrow with `projects` (comma-separated ids; an id outside the scope is 403). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getFeedbackScope",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow to. Empty = every project in the scope",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "data.projects: array of { id, feedbackCount, products[{ id, name, slug }], statuses[{ value, name, color, sortOrder, isDefault }] }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is not in the current scope"
         }
       }
     }
