@@ -69,6 +69,7 @@ Decisions (settled with the user):
 - Components (`components/project-scope/`, registered without path prefix):
   - `<ProjectScopeChips v-model="selectedIds" :projects="scopeProjects" page="inbox" module="supportEnabled" :counts="countsById" />`
     — only render it in All projects. It restores the selection from the URL/storage on mount and emits it.
+    Projects without `module` get no chip; one hint sums them up ("5 projects without Inbox").
   - `<ProjectTag :project="scopeProject" suffix="dot x" />` — badge + name for rows.
   - `<ProjectBadge :project="scopeProject" size="xs|sm|md|lg" />`, `<ProjectBadgeStack :projects />`.
 - Switcher: "All projects" on top (Alt+0; projects Alt+1…9). Sidebar: union of tools, Marketing / Manage /

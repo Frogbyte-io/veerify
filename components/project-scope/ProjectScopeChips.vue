@@ -11,19 +11,8 @@
       <span>All projects</span>
       <span v-if="counts" class="tabular-nums opacity-70">{{ totalCount }}</span>
     </button>
-    <template v-for="project in projects" :key="project.id">
-      <span
-        v-if="!hasModule(project)"
-        :class="chipClass(false, true)"
-        :title="`${moduleLabel} is off in ${project.name}`"
-        :data-testid="`project-scope-chip-${project.id}`"
-      >
-        <ProjectBadge :project="project" size="xs" />
-        <span>{{ project.name }}</span>
-        <span class="opacity-70">off</span>
-      </span>
+    <template v-for="project in selectable" :key="project.id">
       <button
-        v-else
         type="button"
         :data-testid="`project-scope-chip-${project.id}`"
         :class="chipClass(selected.includes(project.id))"
@@ -36,6 +25,14 @@
         <span v-if="counts" class="tabular-nums opacity-70">{{ counts[project.id] ?? 0 }}</span>
       </button>
     </template>
+    <span
+      v-if="unavailable.length > 0"
+      class="px-1 text-xs text-muted-foreground"
+      :title="`${moduleLabel} is off in ${unavailable.map((p) => p.name).join(', ')}`"
+      data-testid="project-scope-chip-unavailable"
+    >
+      {{ unavailableLabel }}
+    </span>
     <button
       v-if="selected.length > 0"
       type="button"
@@ -61,8 +58,10 @@ import {
 /**
  * Project filter chips for All projects. `v-model` is the selected project ids (empty = every
  * project). The selection is mirrored to `?projects=` and remembered per `page`, and restored from
- * there on mount (URL first). Projects without `module` switched on are shown greyed out.
+ * there on mount (URL first). Projects without `module` switched on are left out and summed up
+ * in one hint ("2 projects without Inbox"; hover lists them).
  */
+
 export default {
   name: 'ProjectScopeChips',
   props: {
@@ -83,6 +82,15 @@ export default {
     },
     selectable() {
       return this.projects.filter((p) => this.hasModule(p))
+    },
+    // Projects without the tool are summed up in one hint instead of a greyed chip each.
+    unavailable() {
+      return this.projects.filter((p) => !this.hasModule(p))
+    },
+    unavailableLabel() {
+      const list = this.unavailable
+      if (list.length === 1) return `${this.moduleLabel} is off in ${list[0].name}`
+      return `${list.length} projects without ${this.moduleLabel}`
     },
     organizationId() {
       return this.projects[0]?.organizationId
@@ -113,11 +121,10 @@ export default {
     hasModule(project) {
       return !this.module || Boolean(project.modules?.[this.module])
     },
-    chipClass(on, disabled = false) {
+    chipClass(on) {
       return cn(
         'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors',
-        on ? 'bg-accent text-foreground border-primary/50' : 'text-muted-foreground hover:border-muted-foreground',
-        disabled && 'cursor-help opacity-45 hover:border-border'
+        on ? 'bg-accent text-foreground border-primary/50' : 'text-muted-foreground hover:border-muted-foreground'
       )
     },
     toggle(id) {
