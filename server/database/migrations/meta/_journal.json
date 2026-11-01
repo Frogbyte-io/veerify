@@ -505,6 +505,13 @@
       "when": 1793487385631,
       "tag": "0071_forward_only_inbox_fallback",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793490306223,
+      "tag": "0072_mail_setup_ux",
+      "breakpoints": true
     }
   ]
 }
