@@ -46,6 +46,75 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/changelog/combined": {
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Combined changelog timeline across projects",
+      "description": "The changelog entries of every project in the caller's scope that has the Changelog tool on: the active project in single-project mode, every project they can open in All projects. One timeline, newest first, drafts included (`status: draft`). Narrow it with `projects` (comma-separated project ids; an id outside the scope is 403). Each entry carries `projectId` and `project` (id, name, slug); the body is omitted. `products` lists the products of the projects in view, to resolve `productIds`. Open or change an entry with the per-project endpoints under `/api/changelog/projects/{projectId}`.\n",
+      "operationId": "listCombinedChangelogEntries",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow the scope to",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`entries` (newest first), `nextCursor`, `products` and `counts` (entries per project of the whole scope, for the filter chips)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is outside the caller's scope"
+        },
+        "409": {
+          "description": "The caller can open no project"
+        }
+      }
+    }
+  },
   "/api/changelog/projects/{projectId}/entries": {
     "get": {
       "tags": [
@@ -773,6 +842,77 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/dashboard/overview": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Overview of what needs attention and the last 7 days",
+      "description": "The Overview page's data, for the active project, or for every project the caller can open in All projects (see POST /api/projects/active). `projects` narrows All projects to some projects. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A tool that is off in a project contributes nothing, and conversation numbers only cover inboxes the caller can work in. Nothing here is per person: \"needs you\" is everything unanswered or untriaged in view.\n`needsYou` holds `slaAtRisk` (open or pending conversations with a response or resolution due within the hour; `items` are the most urgent, `total` counts all), `waiting` (open or pending conversations where the customer wrote last or nobody replied yet, not counting the SLA ones; `byProject`, and the `oldest`), `untriaged` (feedback posts still on the project's default status, per project) and `drafts` (unpublished changelog entries, newest first).\n`week` covers the last 7 days (`from` to `to`) against the 7 days before (`previousFrom`), for the same projects: `received` (conversations created), `firstReply` (median minutes from the first message to the first agent reply, over conversations created in the period and answered), `posts` (new feedback posts) and `votes` (upvotes cast). Each has `current`, `previous`, `byProject` and `available` (false when no project in view has the tool on). `projects` has one row per project in view for the Projects table.\n",
+      "operationId": "getDashboardOverview",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow All projects to. An id outside the caller's scope is 403.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Overview: needsYou (slaAtRisk, waiting, untriaged, drafts), week (received, firstReply, posts, votes) and projects (one row per project in view)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "needsYou": {
+                        "type": "object"
+                      },
+                      "week": {
+                        "type": "object"
+                      },
+                      "projects": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is not in the caller's scope"
+        },
+        "409": {
+          "description": "The caller can open no project; create one first"
+        }
+      }
+    }
+  },
   "/api/dashboard/stats": {
     "get": {
       "tags": [
@@ -1121,16 +1261,11 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "status",
+          "description": "A status value of the project (the system statuses open, in_progress, planned, completed, closed, declined, or a custom status value)",
           "schema": {
             "type": "string",
-            "enum": [
-              "open",
-              "in_progress",
-              "planned",
-              "completed",
-              "closed",
-              "declined"
-            ]
+            "minLength": 1,
+            "maxLength": 100
           }
         },
         {
@@ -2264,7 +2399,7 @@ export const openapiPaths = {
                 "status": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 80,
+                  "maxLength": 100,
                   "description": "A status value defined for the feedback project"
                 }
               }
@@ -2613,16 +2748,11 @@ export const openapiPaths = {
         {
           "in": "query",
           "name": "status",
+          "description": "A status value of the project (system or custom)",
           "schema": {
             "type": "string",
-            "enum": [
-              "open",
-              "in_progress",
-              "planned",
-              "completed",
-              "closed",
-              "declined"
-            ]
+            "minLength": 1,
+            "maxLength": 100
           }
         },
         {
@@ -2687,6 +2817,48 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a member of a requested project"
+        }
+      }
+    }
+  },
+  "/api/feedback/scope": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Feedback summary per project",
+      "description": "For each project in the caller's scope with the Feedback tool switched on, returns the number of feedback items, the products and the feedback statuses (custom when defined, else the system statuses). Powers the combined Feedback page in All projects: the project filter chips with counts, the status filter and the project/product picker. In a single project the scope is just the active project. Narrow with `projects` (comma-separated ids; an id outside the scope is 403). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getFeedbackScope",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow to. Empty = every project in the scope",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "data.projects: array of { id, feedbackCount, products[{ id, name, slug }], statuses[{ value, name, color, sortOrder, isDefault }] }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is not in the current scope"
+        },
+        "409": {
+          "description": "The caller can open no project; create one first"
         }
       }
     }
@@ -7448,7 +7620,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Array of project summaries (id, name, slug, description, isPublic, accessMode, role, organizationId) plus productCount"
+          "description": "Array of project summaries (id, name, slug, description, isPublic, accessMode, role, organizationId) plus productCount, identity (color, initials, logoUrl) and modules"
         },
         "401": {
           "description": "Not authenticated"
@@ -10008,7 +10180,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "Get active project",
-      "description": "Returns the caller's active project with its organization, products and resolved module flags. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Returns the caller's active project with its organization, products and resolved module flags, plus `scope` (`all` while working in All projects, where `project` is the last single project), `projects` (every project the caller can open in the organization, with colour/initials and tool switches) and `allProjectsAvailable`. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "getActiveProject",
       "security": [
         {
@@ -10035,7 +10207,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "Set active project",
-      "description": "Switches the active project (and its organization). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
+      "description": "Switches the active project (and its organization), or with `{ \"scope\": \"all\" }` switches to All projects in the active organization (409 with fewer than two projects the caller can open). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
       "operationId": "setActiveProject",
       "security": [
         {
@@ -10050,16 +10222,34 @@ export const openapiPaths = {
         "content": {
           "application/json": {
             "schema": {
-              "type": "object",
-              "required": [
-                "projectId"
-              ],
-              "properties": {
-                "projectId": {
-                  "type": "string",
-                  "minLength": 1
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "projectId"
+                  ],
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "scope"
+                  ],
+                  "properties": {
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "all"
+                      ]
+                    }
+                  }
                 }
-              }
+              ]
             }
           }
         }
@@ -10079,6 +10269,9 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Project not found"
+        },
+        "409": {
+          "description": "All projects needs two or more projects the caller can open"
         }
       }
     }
@@ -10628,6 +10821,48 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Workspace or project not found"
+        }
+      }
+    }
+  },
+  "/api/roadmap/combined": {
+    "get": {
+      "tags": [
+        "Roadmap"
+      ],
+      "summary": "Combined roadmap board across projects (project members)",
+      "description": "The roadmap of every project in the caller's scope that has the Roadmap tool on: the active project in single-project mode, every project they can open in All projects. Narrow it with `projects` (comma-separated project ids; an id outside the scope is 403). Columns are merged by status `value`: the first project's name and colour win, and a status only one of several projects has is marked with `onlyProject`. `projectIds` lists the projects that have the status; an item can only be moved into a column whose `projectIds` contains its project. Like the single-project board this includes hidden items (flagged `isHidden`). Each item carries `project` and `productId`; `products` lists the products of the projects in view. Moving an item still goes through `PATCH /api/feedback/{id}/status`.\n",
+      "operationId": "getCombinedRoadmap",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids to narrow the scope to",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`columns` (merged by status, with items), `projects` (id, name, slug, publicUrl), `products` and `counts` (visible items per project of the whole scope, for the filter chips)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "A requested project is outside the caller's scope"
+        },
+        "409": {
+          "description": "The caller can open no project"
         }
       }
     }
@@ -12255,6 +12490,205 @@ export const openapiPaths = {
         "404": {
           "description": "Conversation not found",
           "or tag is not on the conversation": null
+        }
+      }
+    }
+  },
+  "/api/support/conversations/combined": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List conversations across inboxes (All projects)",
+      "operationId": "listCombinedSupportConversations",
+      "description": "One newest-first list over every inbox the caller can work in, across the projects in the current scope that have Inbox switched on. In single-project mode the scope is the active project. `projects` narrows it to some of them (an id outside the scope is 403). Same views, search, filters and cursor paging as `GET /api/support/conversations`.\n",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projects",
+          "description": "Comma-separated project ids (the project filter chips). Empty means every project in scope.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "view",
+          "description": "Same values as `GET /api/support/conversations`. Spam and Trash are folders; every other view, the counts and search exclude them.\n",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "inbox",
+              "snoozed",
+              "unassigned",
+              "assigned-to-me",
+              "resolved",
+              "breaching-soon",
+              "archived",
+              "spam",
+              "trash",
+              "all"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "assigneeUserId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "contactId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "mailAddressId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "tagId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "csat",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "rated",
+              "unrated"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "schema": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`conversations` carry the receiving address (`mailAddress`), `isUnread`, `project` (`{ id, name, slug }`) and `inbox` (`{ id, name }`). `projectCounts` maps every project in scope with Inbox on (including ones the project filter left out, and zeros) to the number of conversations the current view, search and filters match in it, so the chips keep their numbers while one is selected. `unreadCounts` are for the signed-in agent over the projects that are not filtered out (same meaning as in the single-inbox list, without `byAddress`). `inboxes` are the inboxes the list covers (for live updates) and `totalInboxes` counts every inbox the caller can work in across the scope, ignoring the project filter.\n",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "conversations": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "hasMore": {
+                        "type": "boolean"
+                      },
+                      "nextCursor": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "projectCounts": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "totalInboxes": {
+                        "type": "integer"
+                      },
+                      "inboxes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "emailAddress": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          }
+                        }
+                      },
+                      "unreadCounts": {
+                        "type": "object",
+                        "properties": {
+                          "unassigned": {
+                            "type": "integer"
+                          },
+                          "assignedToMe": {
+                            "type": "integer"
+                          },
+                          "inbox": {
+                            "type": "integer"
+                          },
+                          "breachingSoon": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query or cursor"
+        },
+        "403": {
+          "description": "A requested project is outside the current scope"
         }
       }
     }

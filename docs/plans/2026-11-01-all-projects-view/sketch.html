@@ -1,0 +1,1934 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>All projects view</title>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <style>
+      /* Uses the host's theme tokens when present, falls back to Veerify's dark tokens (assets/css/main.css). */
+      :root {
+        --bg: var(--background, oklch(0.15 0.02 240));
+        --fg: var(--foreground, oklch(0.95 0.01 240));
+        --cardc: var(--card, oklch(0.18 0.02 240));
+        --pri: var(--primary, oklch(0.65 0.2 260));
+        --pri-fg: var(--primary-foreground, oklch(0.98 0 0));
+        --mut: var(--muted, oklch(0.25 0.03 240));
+        --mut-fg: var(--muted-foreground, oklch(0.65 0.02 240));
+        --acc: var(--accent, oklch(0.22 0.03 240));
+        --bd: var(--border, oklch(0.27 0.03 240));
+        --bad: oklch(0.68 0.19 25);
+        --warn: oklch(0.8 0.15 75);
+        --ok: oklch(0.72 0.15 155);
+        --r: var(--radius, 0.75rem);
+        --sans: var(--font-sans, 'Inter', ui-sans-serif, system-ui, sans-serif);
+        --mono: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+        /* Project colours: each project's appearance accent */
+        --p-dml: oklch(0.66 0.19 295);
+        --p-dek: oklch(0.72 0.13 185);
+        --p-frg: oklch(0.78 0.15 75);
+        --p-nrd: oklch(0.7 0.17 350);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--background, oklch(0.13 0.02 240));
+        color: var(--fg);
+        font: 13px/1.45 var(--sans);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 0;
+      }
+      svg.lucide {
+        width: 15px;
+        height: 15px;
+        stroke-width: 1.8;
+        flex-shrink: 0;
+      }
+      .muted {
+        color: var(--mut-fg);
+      }
+      kbd {
+        font: 10.5px var(--mono);
+        border: 1px solid var(--bd);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 0 4px;
+        color: var(--mut-fg);
+      }
+
+      /* ---------- App frame ---------- */
+      .app {
+        display: flex;
+        height: 760px;
+        border: 1px solid var(--bd);
+        border-radius: var(--r);
+        overflow: hidden;
+        background: var(--bg);
+        position: relative;
+      }
+      .side {
+        width: 212px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--bd);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        overflow-y: auto;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .topbar {
+        height: 44px;
+        border-bottom: 1px solid var(--bd);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px;
+        flex-shrink: 0;
+      }
+      .crumb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+      }
+      .crumb .sep {
+        color: var(--mut-fg);
+      }
+      .content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 18px;
+        min-height: 0;
+      }
+      .content.flush {
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+      }
+
+      /* ---------- Switcher ---------- */
+      .switch {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px;
+        border-radius: 8px;
+        width: 100%;
+        text-align: left;
+      }
+      .switch:hover,
+      .switch.open {
+        background: var(--acc);
+      }
+      .switch .t {
+        flex: 1;
+        min-width: 0;
+        line-height: 1.25;
+      }
+      .switch .t b {
+        display: block;
+        font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .switch .t span {
+        font-size: 11.5px;
+        color: var(--mut-fg);
+      }
+      .pav {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 13px;
+        color: oklch(0.18 0.02 240);
+        flex-shrink: 0;
+      }
+      .pav.sm {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        font-size: 9.5px;
+        letter-spacing: -0.03em;
+      }
+      .pav.xs {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        font-size: 8.5px;
+      }
+      .stack {
+        width: 30px;
+        height: 30px;
+        position: relative;
+        flex-shrink: 0;
+      }
+      .stack i {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        border-radius: 4px;
+        box-shadow: 0 0 0 2px var(--bg);
+      }
+      .stack i:nth-child(1) {
+        left: 0;
+        top: 0;
+      }
+      .stack i:nth-child(2) {
+        right: 0;
+        top: 0;
+      }
+      .stack i:nth-child(3) {
+        left: 0;
+        bottom: 0;
+      }
+      .stack i:nth-child(4) {
+        right: 0;
+        bottom: 0;
+      }
+      .stack.sm {
+        width: 18px;
+        height: 18px;
+      }
+      .stack.sm i {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        box-shadow: 0 0 0 1px var(--bg);
+      }
+
+      .menu {
+        position: absolute;
+        z-index: 20;
+        left: 8px;
+        top: 52px;
+        width: 270px;
+        background: var(--cardc);
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        box-shadow: 0 12px 40px oklch(0 0 0 / 0.35);
+        padding: 5px;
+      }
+      .menu .lbl {
+        font-size: 11px;
+        color: var(--mut-fg);
+        padding: 6px 8px 4px;
+      }
+      .mi {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        width: 100%;
+        text-align: left;
+      }
+      .mi:hover {
+        background: var(--acc);
+      }
+      .mi .n {
+        flex: 1;
+        min-width: 0;
+      }
+      .mi .n small {
+        display: block;
+        color: var(--mut-fg);
+        font-size: 11px;
+      }
+      .mi .cnt {
+        font-size: 11px;
+        color: var(--mut-fg);
+        font-variant-numeric: tabular-nums;
+      }
+      .hr {
+        height: 1px;
+        background: var(--bd);
+        margin: 5px 2px;
+      }
+
+      /* ---------- Sidebar nav ---------- */
+      .glabel {
+        font-size: 11px;
+        color: var(--mut-fg);
+        padding: 12px 8px 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        width: 100%;
+        text-align: left;
+        color: var(--fg);
+      }
+      .nav:hover {
+        background: var(--acc);
+      }
+      .nav.on {
+        background: var(--acc);
+        font-weight: 600;
+      }
+      .nav .badge {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--mut-fg);
+        font-variant-numeric: tabular-nums;
+      }
+      .nav .badge.hot {
+        color: var(--pri-fg);
+        background: var(--pri);
+        border-radius: 99px;
+        padding: 0 6px;
+      }
+      .nav.ghost {
+        color: var(--mut-fg);
+      }
+      .note {
+        margin: 8px 6px 0;
+        padding: 8px 9px;
+        border: 1px dashed var(--bd);
+        border-radius: 8px;
+        font-size: 11.5px;
+        color: var(--mut-fg);
+      }
+
+      /* ---------- Page header + project filter ---------- */
+      .ph {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .ph h1 {
+        font-size: 19px;
+        margin: 0;
+        letter-spacing: -0.01em;
+      }
+      .ph p {
+        margin: 2px 0 0;
+        color: var(--mut-fg);
+        font-size: 12.5px;
+      }
+      .ph .sp {
+        flex: 1;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 11px;
+        border-radius: 7px;
+        border: 1px solid var(--bd);
+        background: var(--cardc);
+        font-size: 12.5px;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: var(--acc);
+      }
+      .btn.pri {
+        background: var(--pri);
+        color: var(--pri-fg);
+        border-color: transparent;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px 0 6px;
+        border-radius: 99px;
+        border: 1px solid var(--bd);
+        font-size: 12px;
+        color: var(--mut-fg);
+      }
+      .chip:hover {
+        border-color: var(--mut-fg);
+      }
+      .chip.on {
+        color: var(--fg);
+        background: var(--acc);
+        border-color: color-mix(in oklch, var(--c, var(--pri)) 60%, var(--bd));
+      }
+      .chip .ct {
+        font-variant-numeric: tabular-nums;
+        opacity: 0.75;
+      }
+      .chip.off-tool {
+        opacity: 0.45;
+        cursor: help;
+      }
+      .chips .hint {
+        font-size: 11.5px;
+        color: var(--mut-fg);
+        margin-left: 4px;
+      }
+
+      /* project tag inline */
+      .ptag {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11.5px;
+        color: var(--mut-fg);
+        white-space: nowrap;
+      }
+      .ptag b {
+        font-weight: 500;
+        color: var(--fg);
+      }
+
+      /* ---------- Overview ---------- */
+      .sec {
+        font-size: 12px;
+        font-weight: 600;
+        margin: 4px 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sec .muted {
+        font-weight: 400;
+      }
+      .list {
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        background: var(--cardc);
+        overflow: hidden;
+        margin-bottom: 18px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border-top: 1px solid var(--bd);
+        width: 100%;
+        text-align: left;
+      }
+      .row:first-child {
+        border-top: 0;
+      }
+      .row:hover {
+        background: var(--acc);
+      }
+      .row .main-t {
+        flex: 1;
+        min-width: 0;
+      }
+      .row .main-t b {
+        font-weight: 500;
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .main-t small {
+        color: var(--mut-fg);
+        font-size: 11.5px;
+      }
+      .pill {
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 99px;
+        border: 1px solid var(--bd);
+        color: var(--mut-fg);
+        white-space: nowrap;
+      }
+      .pill.bad {
+        color: var(--bad);
+        border-color: color-mix(in oklch, var(--bad) 50%, transparent);
+      }
+      .pill.warn {
+        color: var(--warn);
+        border-color: color-mix(in oklch, var(--warn) 50%, transparent);
+      }
+      .twocol {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .ov {
+        max-width: 980px;
+      }
+      .shead {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 22px 0 8px;
+        flex-wrap: wrap;
+      }
+      .shead h2 {
+        font-size: 14px;
+        margin: 0;
+      }
+      .shead p {
+        margin: 0;
+        color: var(--mut-fg);
+        font-size: 12px;
+      }
+      .shead .sp {
+        flex: 1;
+      }
+      .legend {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        font-size: 11.5px;
+        color: var(--mut-fg);
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .legend i {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        display: inline-block;
+      }
+      /* Needs you */
+      .todo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 11px 14px;
+        border-top: 1px solid var(--bd);
+      }
+      .todo:first-child {
+        border-top: 0;
+      }
+      .todo .ic {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        background: color-mix(in oklch, var(--k, var(--mut-fg)) 16%, transparent);
+        color: var(--k, var(--mut-fg));
+      }
+      .todo .tx {
+        flex: 1;
+        min-width: 0;
+      }
+      .todo .tx b {
+        display: block;
+        font-weight: 600;
+      }
+      .todo .tx small {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+        color: var(--mut-fg);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .todo .tx small q {
+        color: var(--fg);
+        quotes: '“' '”';
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 280px;
+      }
+      .caught {
+        padding: 22px 14px;
+        text-align: center;
+        color: var(--mut-fg);
+      }
+      /* 7-day metrics */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+      .tile {
+        border: 1px solid var(--bd);
+        background: var(--cardc);
+        border-radius: 10px;
+        padding: 12px 13px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+      .tile .lb {
+        font-size: 12px;
+        color: var(--mut-fg);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .tile .lb svg {
+        width: 12px;
+        height: 12px;
+      }
+      .tile .val {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .tile .val b {
+        font-size: 24px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .delta {
+        font-size: 11.5px;
+        color: var(--mut-fg);
+        white-space: nowrap;
+      }
+      .delta.good {
+        color: var(--ok);
+      }
+      .delta.bad {
+        color: var(--bad);
+      }
+      .delta small {
+        color: var(--mut-fg);
+      }
+      .split {
+        display: flex;
+        height: 6px;
+        border-radius: 99px;
+        overflow: hidden;
+        gap: 2px;
+        margin-top: 2px;
+      }
+      .split i {
+        display: block;
+        height: 100%;
+      }
+      .tile .ft {
+        font-size: 11.5px;
+        color: var(--mut-fg);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      /* Projects table */
+      .ptable {
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        background: var(--cardc);
+        overflow: hidden;
+      }
+      .prow {
+        display: grid;
+        grid-template-columns: minmax(150px, 1.4fr) repeat(4, minmax(70px, 1fr)) minmax(110px, 1.1fr) 24px;
+        gap: 8px;
+        align-items: center;
+        padding: 10px 14px;
+        border-top: 1px solid var(--bd);
+        width: 100%;
+        text-align: left;
+        font-variant-numeric: tabular-nums;
+      }
+      .prow:first-child {
+        border-top: 0;
+      }
+      .prow.h {
+        font-size: 11px;
+        color: var(--mut-fg);
+        background: var(--bg);
+        padding: 7px 14px;
+        line-height: 1.25;
+      }
+      .prow:not(.h):hover {
+        background: var(--acc);
+      }
+      .prow .nm {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        min-width: 0;
+      }
+      .prow .z {
+        color: var(--mut-fg);
+      }
+      .prow .hot {
+        color: var(--bad);
+        font-weight: 600;
+      }
+      .prow .go {
+        color: var(--mut-fg);
+        opacity: 0;
+      }
+      .prow:hover .go {
+        opacity: 1;
+      }
+
+      /* ---------- Inbox ---------- */
+      .ilist {
+        width: 46%;
+        min-width: 260px;
+        border-right: 1px solid var(--bd);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .ilist .tools {
+        padding: 10px 12px 0;
+        border-bottom: 1px solid var(--bd);
+      }
+      .ilist .scroll {
+        overflow-y: auto;
+        flex: 1;
+      }
+      .conv {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 9px 12px 9px 14px;
+        border-bottom: 1px solid var(--bd);
+        position: relative;
+      }
+      .conv::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--c);
+        opacity: 0.85;
+      }
+      .conv:hover {
+        background: var(--acc);
+      }
+      .conv.sel {
+        background: color-mix(in oklch, var(--pri) 12%, transparent);
+      }
+      .conv .l1 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .conv .l1 b {
+        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv.read .l1 b {
+        font-weight: 500;
+      }
+      .conv .l2 {
+        font-size: 12.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .conv .l3 {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 3px;
+      }
+      .conv .t {
+        font-size: 11px;
+        color: var(--mut-fg);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--pri);
+        flex-shrink: 0;
+      }
+      .ghead {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        padding: 6px 12px;
+        font-size: 11.5px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border-bottom: 1px solid var(--bd);
+        z-index: 1;
+      }
+      .thread {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .thread .th {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--bd);
+      }
+      .thread .th h2 {
+        font-size: 15px;
+        margin: 0 0 4px;
+      }
+      .thread .body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 14px 16px;
+      }
+      .msg {
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: var(--cardc);
+        margin-bottom: 10px;
+      }
+      .msg .who {
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      .composer {
+        border-top: 1px solid var(--bd);
+        padding: 10px 14px;
+      }
+      .composer .from {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--mut-fg);
+        margin-bottom: 6px;
+      }
+      .composer .box {
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        padding: 9px 10px;
+        color: var(--mut-fg);
+        min-height: 54px;
+        background: var(--cardc);
+      }
+      .composer .act {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .back {
+        display: none;
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--mut-fg);
+        padding: 4px 0 10px;
+      }
+      .sw {
+        width: 26px;
+        height: 15px;
+        border-radius: 99px;
+        background: var(--mut);
+        position: relative;
+      }
+      .sw::after {
+        content: '';
+        position: absolute;
+        width: 11px;
+        height: 11px;
+        top: 2px;
+        left: 2px;
+        border-radius: 50%;
+        background: var(--fg);
+        transition: left 0.15s;
+      }
+      .sw.on {
+        background: var(--pri);
+      }
+      .sw.on::after {
+        left: 13px;
+      }
+
+      /* ---------- Feedback ---------- */
+      .ftable {
+        border: 1px solid var(--bd);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--cardc);
+      }
+      .frow {
+        display: grid;
+        grid-template-columns: 52px 1fr 190px 100px;
+        gap: 10px;
+        align-items: center;
+        padding: 9px 12px;
+        border-top: 1px solid var(--bd);
+      }
+      .frow:first-child {
+        border-top: 0;
+      }
+      .frow.h {
+        font-size: 11px;
+        color: var(--mut-fg);
+        padding: 7px 12px;
+        background: var(--bg);
+      }
+      .frow:not(.h):hover {
+        background: var(--acc);
+      }
+      .vote {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border: 1px solid var(--bd);
+        border-radius: 7px;
+        padding: 3px 0;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .vote svg {
+        width: 13px;
+        height: 13px;
+      }
+      .ft b {
+        font-weight: 500;
+        display: block;
+      }
+      .ft small {
+        color: var(--mut-fg);
+        font-size: 11.5px;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+      }
+      .status i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      /* ---------- Roadmap ---------- */
+      .board {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(200px, 1fr);
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+      .col {
+        background: color-mix(in oklch, var(--mut) 40%, transparent);
+        border-radius: 10px;
+        padding: 8px;
+      }
+      .col h3 {
+        font-size: 12px;
+        margin: 2px 4px 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .col h3 .muted {
+        font-weight: 400;
+      }
+      .col .only {
+        font-size: 10.5px;
+        font-weight: 400;
+      }
+      .card {
+        background: var(--cardc);
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        padding: 8px 9px;
+        margin-bottom: 7px;
+        border-left: 3px solid var(--c);
+      }
+      .card b {
+        font-weight: 500;
+        display: block;
+        margin-bottom: 4px;
+      }
+      .card .meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* ---------- Changelog ---------- */
+      .tl {
+        position: relative;
+        padding-left: 22px;
+      }
+      .tl::before {
+        content: '';
+        position: absolute;
+        left: 6px;
+        top: 6px;
+        bottom: 6px;
+        width: 1px;
+        background: var(--bd);
+      }
+      .ent {
+        position: relative;
+        margin-bottom: 14px;
+      }
+      .ent::before {
+        content: '';
+        position: absolute;
+        left: -20px;
+        top: 5px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--c);
+        box-shadow: 0 0 0 3px var(--bg);
+      }
+      .ent .d {
+        font-size: 11.5px;
+        color: var(--mut-fg);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .ent h4 {
+        margin: 2px 0 3px;
+        font-size: 14px;
+      }
+      .ent p {
+        margin: 0;
+        color: var(--mut-fg);
+        font-size: 12.5px;
+      }
+      .draft {
+        font-size: 10.5px;
+        color: var(--warn);
+        border: 1px solid color-mix(in oklch, var(--warn) 45%, transparent);
+        border-radius: 99px;
+        padding: 0 6px;
+      }
+
+      /* ---------- Dialog ---------- */
+      .scrim {
+        position: absolute;
+        inset: 0;
+        background: oklch(0 0 0 / 0.45);
+        display: grid;
+        place-items: center;
+        z-index: 30;
+      }
+      .dlg {
+        width: min(420px, 92%);
+        background: var(--cardc);
+        border: 1px solid var(--bd);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .dlg h3 {
+        margin: 0 0 2px;
+        font-size: 15px;
+      }
+      .field {
+        margin-top: 12px;
+      }
+      .field label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 5px;
+        font-weight: 500;
+      }
+      .seg {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .seg button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--bd);
+        border-radius: 7px;
+        padding: 5px 9px;
+        font-size: 12.5px;
+      }
+      .seg button.on {
+        border-color: var(--pri);
+        background: color-mix(in oklch, var(--pri) 12%, transparent);
+      }
+      .input {
+        border: 1px solid var(--bd);
+        border-radius: 7px;
+        padding: 7px 9px;
+        color: var(--mut-fg);
+      }
+      .dlg .act {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-top: 16px;
+      }
+
+      /* ---------- Notes under the prototype ---------- */
+      .notes {
+        margin-top: 22px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .notes h2 {
+        font-size: 15px;
+        margin: 0 0 8px;
+      }
+      .notes ol,
+      .notes ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+      .notes li {
+        margin-bottom: 7px;
+        color: var(--mut-fg);
+      }
+      .notes li b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .panel {
+        border: 1px solid var(--bd);
+        border-radius: var(--r);
+        padding: 14px 16px;
+        background: var(--cardc);
+      }
+      .intro {
+        margin: 0 0 12px;
+        color: var(--mut-fg);
+      }
+      .intro b {
+        color: var(--fg);
+      }
+
+      /* ---------- Narrow widths ---------- */
+      @media (max-width: 820px) {
+        .side {
+          width: 176px;
+        }
+        .twocol,
+        .notes {
+          grid-template-columns: 1fr;
+        }
+        .tiles {
+          grid-template-columns: 1fr 1fr;
+        }
+        .prow {
+          grid-template-columns: minmax(120px, 1.4fr) repeat(2, minmax(56px, 1fr)) 24px;
+        }
+        .prow .wide {
+          display: none;
+        }
+        .frow {
+          grid-template-columns: 44px 1fr 92px;
+        }
+        .frow .fprod {
+          display: none;
+        }
+        .ilist {
+          width: 100%;
+          border-right: 0;
+        }
+        .content.flush.reading .ilist {
+          display: none;
+        }
+        .content.flush:not(.reading) .thread {
+          display: none;
+        }
+        .back {
+          display: inline-flex;
+        }
+      }
+      @media (max-width: 560px) {
+        .side {
+          display: none;
+        }
+        .app {
+          height: 680px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p class="intro">
+      <b>Clickable sketch.</b> Open the project switcher (top left) to move between <b>All projects</b> and one project.
+      In All projects, every page shows project chips to narrow down, and every row is tagged with its project.
+    </p>
+    <div class="app" id="app">
+      <aside class="side" id="side"></aside>
+      <div class="main">
+        <div class="topbar" id="topbar"></div>
+        <div class="content" id="content"></div>
+      </div>
+      <div id="overlay"></div>
+    </div>
+
+    <div class="notes">
+      <div class="panel">
+        <h2>Decisions</h2>
+        <ol>
+          <li>
+            <b>All projects is a place, not a filter.</b> It sits at the top of the switcher (<kbd>⌘0</kbd>, projects
+            <kbd>⌘1</kbd>–<kbd>⌘9</kbd>). It only appears once you can open 2 or more projects.
+          </li>
+          <li>
+            <b>Last used is remembered.</b> After login you land in whatever you were in last: All projects or one
+            project.
+          </li>
+          <li>
+            <b>Project identity everywhere.</b> Each project's colour and initial (from its appearance settings) show as
+            a left edge on inbox rows and roadmap cards, a dot on the timeline and a tag on rows. Tags only appear in
+            All projects.
+          </li>
+          <li>
+            <b>Chips narrow, they don't switch.</b> They filter within All projects, remembered per page and kept in the
+            URL (<code>?projects=dml,dek</code>).
+          </li>
+          <li>
+            <b>Only projects you can open.</b> Restricted projects you aren't a member of are left out, so admins and
+            members can see different sets.
+          </li>
+          <li>
+            <b>The sidebar shows every tool that's on in at least one project.</b> Projects without that tool have
+            greyed-out chips. Marketing and project settings are hidden, with a note saying why.
+          </li>
+          <li>
+            <b>Full actions in place.</b> Replies go out from the conversation's own project address. Creating something
+            asks for the project, defaulting to the last one used.
+          </li>
+          <li><b>The combined inbox is sorted by time</b>, newest first, with no grouping.</li>
+          <li>
+            <b>The combined roadmap merges columns by status value.</b> A status only one project has gets its own
+            column, marked "Decker only".
+          </li>
+          <li><b>Reports will also be combined</b>, with a per-project breakdown, once Reports is built.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <h2>The Overview, redesigned</h2>
+        <ul>
+          <li>
+            <b>Every number has a label, a period and a comparison.</b> No bare "3" or "ideas": "Conversations received
+            · last 7 days · ↑ 14% vs previous 7 days".
+          </li>
+          <li>
+            <b>"Needs you" comes first, and each row is a sentence with one button</b> ("Reply to Marta, the SLA runs
+            out in 12 minutes" → Reply). Most urgent first. When it's empty: "You're all caught up".
+          </li>
+          <li>
+            <b>Colour means good or bad only where there is a right direction.</b> A faster reply time is green. Volume
+            (conversations, posts, votes) is grey, because more isn't better or worse.
+          </li>
+          <li>
+            <b>The project split is a thin bar under each count</b> in the project colours (hover for the numbers), so
+            you see which project drives the number without another table.
+          </li>
+          <li>
+            <b>A projects table with column headers replaces the cards.</b> Problems are red, zeros are grey, and "Inbox
+            off" is said in words. Click a row to switch to that project.
+          </li>
+          <li><b>Single-project mode uses the same page</b>, just without tags, splits and the projects table.</li>
+        </ul>
+        <h2 style="margin-top: 14px">Still open</h2>
+        <ul>
+          <li>
+            <b>Is "Needs you" personal or team-wide?</b> The sketch counts everything unanswered. With assignment it
+            could show "assigned to me + unassigned" only.
+          </li>
+          <li>
+            <b>Which numbers matter most to you</b> in "Last 7 days"? Candidates: CSAT, resolved conversations, feedback
+            shipped, roadmap items moved.
+          </li>
+          <li><b>Muted projects:</b> should muting a project leave it out of the sidebar badge and "Needs you"?</li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const P = {
+        dml: {
+          id: 'dml',
+          name: 'Dotmatrixlabs',
+          i: 'D',
+          c: 'var(--p-dml)',
+          addr: 'help@dotmatrixlabs.com',
+          products: ['dot x', 'dot mini'],
+          tools: { inbox: 1, feedback: 1, roadmap: 1, changelog: 1 },
+        },
+        dek: {
+          id: 'dek',
+          name: 'Decker',
+          i: 'De',
+          c: 'var(--p-dek)',
+          addr: 'support@decker.app',
+          products: ['Decker'],
+          tools: { inbox: 1, feedback: 1, roadmap: 1, changelog: 1 },
+        },
+        frg: {
+          id: 'frg',
+          name: 'Frogbyte',
+          i: 'F',
+          c: 'var(--p-frg)',
+          addr: 'post@frogbyte.io',
+          products: ['Website', 'Client portal'],
+          tools: { inbox: 1, feedback: 1, roadmap: 0, changelog: 1 },
+        },
+        nrd: {
+          id: 'nrd',
+          name: 'Nordlys',
+          i: 'N',
+          c: 'var(--p-nrd)',
+          addr: null,
+          products: ['Nordlys'],
+          tools: { inbox: 0, feedback: 1, roadmap: 1, changelog: 0 },
+        },
+      }
+      const PIDS = Object.keys(P)
+
+      const CONVS = [
+        {
+          id: 1,
+          p: 'dek',
+          from: 'Marta Lind',
+          subj: 'Export to PDF crops the last slide',
+          snip: 'Every time I export a deck with more than 20 slides the last one gets cut…',
+          t: '4m',
+          unread: 1,
+          sla: 'bad',
+          slaT: 'Due in 12m',
+          kind: 'case',
+        },
+        {
+          id: 2,
+          p: 'dml',
+          from: 'Jonas Berg',
+          subj: 'dot x firmware 2.4 won’t pair',
+          snip: 'After updating, the device shows the pairing LED but the app never finds it.',
+          t: '18m',
+          unread: 1,
+          sla: 'warn',
+          slaT: 'Due in 1h',
+          kind: 'case',
+        },
+        {
+          id: 3,
+          p: 'frg',
+          from: 'Ingrid Aas',
+          subj: 'Invoice for October',
+          snip: 'Hi! Could you resend the October invoice with our new VAT number?',
+          t: '41m',
+          unread: 1,
+          kind: 'mail',
+        },
+        {
+          id: 4,
+          p: 'dml',
+          from: 'Leo Haugen',
+          subj: 'Return request #4821',
+          snip: 'The box arrived damaged, I’d like to return it and get a replacement.',
+          t: '1h',
+          unread: 0,
+          sla: 'warn',
+          slaT: 'Due in 3h',
+          kind: 'case',
+        },
+        {
+          id: 5,
+          p: 'dek',
+          from: 'Priya Nair',
+          subj: 'Team plan seats',
+          snip: 'We added two people but billing still shows five seats.',
+          t: '2h',
+          unread: 0,
+          kind: 'case',
+        },
+        {
+          id: 6,
+          p: 'frg',
+          from: 'Kristoffer Moe',
+          subj: 'Re: portal login',
+          snip: 'Thanks, that worked. One more thing about the file uploads…',
+          t: '3h',
+          unread: 0,
+          kind: 'mail',
+        },
+        {
+          id: 7,
+          p: 'dml',
+          from: 'Sara Kim',
+          subj: 'Bulk order for schools',
+          snip: 'We are looking at 40 units of dot mini for next term. Do you offer…',
+          t: '5h',
+          unread: 1,
+          kind: 'case',
+        },
+        {
+          id: 8,
+          p: 'dek',
+          from: 'Tom Ruud',
+          subj: 'Keyboard shortcuts on Linux',
+          snip: 'Ctrl+Shift+D duplicates the slide on Mac but not on Ubuntu.',
+          t: 'Yesterday',
+          unread: 0,
+          kind: 'case',
+        },
+      ]
+      const FEED = [
+        {
+          p: 'dek',
+          prod: 'Decker',
+          title: 'Presenter view with notes on second screen',
+          votes: 214,
+          st: 'in_progress',
+          cm: 38,
+        },
+        { p: 'dml', prod: 'dot x', title: 'Offline mode for the companion app', votes: 187, st: 'planned', cm: 22 },
+        { p: 'nrd', prod: 'Nordlys', title: 'Aurora alerts by region', votes: 156, st: 'open', cm: 31 },
+        { p: 'dek', prod: 'Decker', title: 'Import from Keynote', votes: 133, st: 'beta', cm: 17 },
+        { p: 'frg', prod: 'Client portal', title: 'Two-factor login for clients', votes: 98, st: 'planned', cm: 9 },
+        { p: 'dml', prod: 'dot mini', title: 'USB-C charging case', votes: 91, st: 'open', cm: 14 },
+        { p: 'nrd', prod: 'Nordlys', title: 'Dark sky map overlay', votes: 77, st: 'in_progress', cm: 6 },
+        { p: 'frg', prod: 'Website', title: 'Case study filters', votes: 41, st: 'open', cm: 4 },
+        { p: 'dml', prod: 'dot x', title: 'Haptic feedback strength setting', votes: 38, st: 'done', cm: 7 },
+        { p: 'dek', prod: 'Decker', title: 'Real-time co-editing cursors', votes: 35, st: 'done', cm: 11 },
+      ]
+      const STATUS = {
+        open: { n: 'Open', c: 'oklch(0.7 0.02 240)' },
+        planned: { n: 'Planned', c: 'oklch(0.7 0.15 260)' },
+        beta: { n: 'Beta', c: 'oklch(0.72 0.13 185)', only: 'dek' },
+        in_progress: { n: 'In progress', c: 'oklch(0.8 0.15 75)' },
+        done: { n: 'Done', c: 'oklch(0.72 0.15 155)' },
+      }
+      const LOG = [
+        {
+          p: 'dek',
+          d: 'Oct 30',
+          title: 'Co-editing cursors',
+          body: 'See where teammates are working in real time.',
+          draft: 0,
+        },
+        {
+          p: 'dml',
+          d: 'Oct 29',
+          title: 'Firmware 2.4 for dot x',
+          body: 'Faster pairing and adjustable haptics.',
+          draft: 0,
+        },
+        {
+          p: 'frg',
+          d: 'Oct 27',
+          title: 'New client portal dashboard',
+          body: 'Projects, invoices and files on one page.',
+          draft: 1,
+        },
+        {
+          p: 'dek',
+          d: 'Oct 22',
+          title: 'Keynote import (beta)',
+          body: 'Bring your .key files straight into Decker.',
+          draft: 0,
+        },
+        {
+          p: 'dml',
+          d: 'Oct 15',
+          title: 'dot mini colour editions',
+          body: 'Three new colours, same tiny size.',
+          draft: 0,
+        },
+      ]
+
+      // Last 7 days, per project (prev = the 7 days before)
+      const WEEK = {
+        received: { dml: 18, dek: 16, frg: 8, nrd: 0 },
+        firstReply: { dml: 110, dek: 45, frg: 190 }, // median minutes
+        posts: { dml: 7, dek: 6, frg: 3, nrd: 7 },
+        votes: { dml: 96, dek: 121, frg: 22, nrd: 79 },
+      }
+      // The 7 days before, for the comparison
+      const PREV = {
+        received: { dml: 15, dek: 14, frg: 8, nrd: 0 },
+        firstReply: { dml: 120, dek: 50, frg: 150 },
+        posts: { dml: 9, dek: 8, frg: 4, nrd: 6 },
+        votes: { dml: 80, dek: 95, frg: 25, nrd: 60 },
+      }
+
+      const S = {
+        mode: 'all', // 'all' | project id
+        page: 'overview',
+        menu: false,
+        filters: {}, // page -> Set of project ids (empty = all)
+        sel: 1,
+        reading: false,
+        dialog: false,
+        newProj: 'dek',
+        newProd: 'Decker',
+      }
+
+      const TOOL_OF = { inbox: 'inbox', feedback: 'feedback', roadmap: 'roadmap', changelog: 'changelog' }
+      const esc = (s) =>
+        String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+      const pav = (id, cls = 'sm') =>
+        `<span class="pav ${cls}" style="background:${P[id].c}">${cls === 'xs' ? P[id].i[0] : P[id].i}</span>`
+      const stack = (cls = '') =>
+        `<span class="stack ${cls}">${PIDS.map((id) => `<i style="background:${P[id].c}"></i>`).join('')}</span>`
+      const ptag = (id) => (S.mode === 'all' ? `<span class="ptag">${pav(id, 'xs')}<b>${P[id].name}</b></span>` : '')
+      const isAll = () => S.mode === 'all'
+
+      function scopeIds(page) {
+        const tool = TOOL_OF[page]
+        const withTool = PIDS.filter((id) => !tool || P[id].tools[tool])
+        if (!isAll()) return withTool.includes(S.mode) ? [S.mode] : []
+        const f = S.filters[page]
+        return f && f.size ? withTool.filter((id) => f.has(id)) : withTool
+      }
+
+      function chips(page, countFn = null) {
+        if (!isAll()) return ''
+        const tool = TOOL_OF[page]
+        const f = S.filters[page] || new Set()
+        const allOn = !f.size
+        let h = `<div class="chips"><button class="chip ${allOn ? 'on' : ''}" data-chip="${page}:*">${stack('sm')} All projects${countFn ? ` <span class="ct">${PIDS.filter((id) => !tool || P[id].tools[tool]).reduce((a, id) => a + countFn(id), 0)}</span>` : ''}</button>`
+        for (const id of PIDS) {
+          const has = !tool || P[id].tools[tool]
+          if (!has) {
+            h += `<span class="chip off-tool" title="${tool[0].toUpperCase() + tool.slice(1)} is off in ${P[id].name}">${pav(id, 'xs')} ${P[id].name} <span class="ct">off</span></span>`
+            continue
+          }
+          h += `<button class="chip ${f.has(id) ? 'on' : ''}" style="--c:${P[id].c}" data-chip="${page}:${id}">${pav(id, 'xs')} ${P[id].name}${countFn ? ` <span class="ct">${countFn(id)}</span>` : ''}</button>`
+        }
+        if (f.size) h += `<button class="hint" data-chip="${page}:*">Clear</button>`
+        return h + '</div>'
+      }
+
+      /* ---------- Sidebar ---------- */
+      function renderSide() {
+        const cur = isAll() ? null : P[S.mode]
+        const unread = (ids) => CONVS.filter((c) => ids.includes(c.p) && c.unread).length
+        const hasTool = (t) => (isAll() ? PIDS.some((id) => P[id].tools[t]) : cur.tools[t])
+        const nav = (page, icon, title, badge = '') =>
+          `<button class="nav ${S.page === page ? 'on' : ''}" data-page="${page}"><i data-lucide="${icon}"></i>${title}${badge}</button>`
+        let h = `<button class="switch ${S.menu ? 'open' : ''}" data-act="menu">
+          ${isAll() ? stack() : pav(S.mode, '')}
+          <span class="t"><b>${isAll() ? 'All projects' : cur.name}</b><span>${isAll() ? PIDS.length + ' projects' : 'Frogbyte workspace'}</span></span>
+          <i data-lucide="chevrons-up-down" class="muted"></i></button>`
+        h += `<div class="glabel">${isAll() ? 'All projects' : 'Project'}</div>`
+        h += nav('overview', 'layout-dashboard', 'Overview')
+        if (hasTool('feedback')) h += nav('feedback', 'message-square', 'Feedback')
+        if (hasTool('roadmap')) h += nav('roadmap', 'map', 'Roadmap')
+        if (hasTool('changelog')) h += nav('changelog', 'scroll-text', 'Changelog')
+        if (hasTool('inbox')) {
+          const n = unread(isAll() ? PIDS : [S.mode])
+          h +=
+            `<div class="glabel">Inbox</div>` +
+            nav('inbox', 'inbox', 'Inbox', n ? `<span class="badge hot">${n}</span>` : '')
+          h += `<button class="nav"><i data-lucide="contact"></i>Contacts</button>`
+        }
+        if (!isAll()) {
+          h += `<div class="glabel"><i data-lucide="megaphone" style="width:12px;height:12px"></i>Marketing</div><button class="nav"><i data-lucide="megaphone"></i>Overview</button>`
+          h += `<div class="glabel">Manage</div><button class="nav"><i data-lucide="sliders-horizontal"></i>Project settings</button>`
+        } else {
+          h += `<div class="note"><i data-lucide="info" style="width:12px;height:12px;vertical-align:-2px"></i> Marketing and project settings live in each project. <button data-act="menu" style="text-decoration:underline">Pick a project</button></div>`
+        }
+        h += `<div class="glabel">Workspace</div><button class="nav"><i data-lucide="building-2"></i>Workspace settings</button>`
+        document.getElementById('side').innerHTML = h
+      }
+
+      function renderMenu() {
+        if (!S.menu) return ''
+        const unread = (id) => CONVS.filter((c) => c.p === id && c.unread).length
+        let h = `<div class="menu" id="menu">
+          <button class="mi" data-mode="all">${stack('sm')}<span class="n">All projects<small>Inbox, feedback and roadmap combined</small></span><kbd>⌘0</kbd>${isAll() ? '<i data-lucide="check"></i>' : ''}</button>
+          <div class="hr"></div><div class="lbl">Projects in Frogbyte</div>`
+        PIDS.forEach((id, i) => {
+          const n = unread(id)
+          h += `<button class="mi" data-mode="${id}">${pav(id)}<span class="n">${P[id].name}</span>${n ? `<span class="cnt">${n} new</span>` : ''}<kbd>⌘${i + 1}</kbd>${S.mode === id ? '<i data-lucide="check"></i>' : ''}</button>`
+        })
+        h += `<button class="mi muted"><i data-lucide="plus"></i>New project</button><div class="hr"></div>
+          <button class="mi muted"><i data-lucide="building-2"></i>Workspace settings</button></div>`
+        return h
+      }
+
+      /* ---------- Top bar ---------- */
+      const TITLES = {
+        overview: 'Overview',
+        inbox: 'Inbox',
+        feedback: 'Feedback',
+        roadmap: 'Roadmap',
+        changelog: 'Changelog',
+      }
+      function renderTop() {
+        const scope = isAll()
+          ? `${stack('sm')}<span>All projects</span>`
+          : `${pav(S.mode, 'xs')}<span>${P[S.mode].name}</span>`
+        document.getElementById('topbar').innerHTML =
+          `<i data-lucide="panel-left" class="muted"></i><div class="crumb">${scope}<span class="sep">/</span><b>${TITLES[S.page]}</b></div>
+          <span style="flex:1"></span><button class="btn"><i data-lucide="search"></i><span class="muted">Search ${isAll() ? 'all projects' : P[S.mode].name}</span><kbd>⌘K</kbd></button>`
+      }
+
+      /* ---------- Pages ---------- */
+      const fmtMin = (m) => (m < 60 ? m + 'm' : Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : ''))
+      const sum = (o, ids) => ids.reduce((a, id) => a + (o[id] || 0), 0)
+      const pct = (now, prev) => Math.round(((now - prev) / prev) * 100)
+      const projList = (ids) =>
+        isAll()
+          ? `<span class="legend">${ids.map((id) => `<span>${pav(id, 'xs')}${P[id].name}</span>`).join('')}</span>`
+          : ''
+
+      function pageOverview() {
+        const ids = scopeIds('overview')
+        const inboxIds = ids.filter((id) => P[id].tools.inbox)
+        const scopeName = isAll()
+          ? ids.length === PIDS.length
+            ? 'your ' + ids.length + ' projects'
+            : ids.map((id) => P[id].name).join(', ')
+          : P[S.mode].name
+        let h = `<div class="ov"><div class="ph"><div><h1>Overview</h1><p>What needs attention in ${scopeName}, and how the last 7 days went.</p></div></div>`
+        h += chips('overview')
+
+        // ---- Needs you: every row is a sentence with one action
+        const overdue = CONVS.filter((c) => inboxIds.includes(c.p) && c.sla === 'bad')
+        const waiting = CONVS.filter((c) => inboxIds.includes(c.p) && c.unread)
+        const untriaged = FEED.filter((f) => ids.includes(f.p) && f.st === 'open')
+        const drafts = LOG.filter((l) => ids.includes(l.p) && l.draft)
+        const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many)
+        const todos = []
+        for (const c of overdue)
+          todos.push({
+            k: 'var(--bad)',
+            icon: 'alarm-clock',
+            title: `Reply to ${c.from} — the SLA runs out in 12 minutes`,
+            sub: `${ptag(c.p)}<q>${esc(c.subj)}</q>`,
+            btn: `<button class="btn pri" data-open="${c.id}">Reply</button>`,
+          })
+        const waitingRest = waiting.filter((c) => !overdue.includes(c))
+        if (waitingRest.length)
+          todos.push({
+            k: 'var(--pri)',
+            icon: 'inbox',
+            title: `${plural(waitingRest.length, 'conversation is', 'conversations are')} waiting for a reply`,
+            sub: isAll() ? breakdown(waitingRest) : `Oldest: <q>${esc(waitingRest[waitingRest.length - 1].subj)}</q>`,
+            btn: `<button class="btn" data-page="inbox">Open inbox</button>`,
+          })
+        if (untriaged.length)
+          todos.push({
+            k: 'var(--warn)',
+            icon: 'message-square-dot',
+            title: `${plural(untriaged.length, 'feedback post has', 'feedback posts have')} no status yet`,
+            sub: `Give each a status, or merge it into an existing post. ${isAll() ? breakdown(untriaged) : ''}`,
+            btn: `<button class="btn" data-page="feedback">Triage</button>`,
+          })
+        for (const d of drafts)
+          todos.push({
+            k: 'var(--ok)',
+            icon: 'scroll-text',
+            title: `A changelog draft is ready to publish`,
+            sub: `${ptag(d.p)}<q>${esc(d.title)}</q> · written ${d.d}`,
+            btn: `<button class="btn" data-page="changelog">Review draft</button>`,
+          })
+        h += `<div class="shead"><h2>Needs you</h2><p>${todos.length ? (todos.length > 1 ? todos.length + ' things, most urgent first' : '1 thing') : ''}</p></div><div class="list">`
+        h += todos.length
+          ? todos
+              .map(
+                (t) =>
+                  `<div class="todo" style="--k:${t.k}"><span class="ic"><i data-lucide="${t.icon}"></i></span><div class="tx"><b>${t.title}</b><small>${t.sub}</small></div>${t.btn}</div>`
+              )
+              .join('')
+          : `<div class="caught"><i data-lucide="circle-check"></i><br />You're all caught up.</div>`
+        h += `</div>`
+
+        // ---- Last 7 days: labelled numbers, compared with the week before, split by project
+        const split = (o) =>
+          ids.length > 1
+            ? `<div class="split" title="${ids.map((id) => P[id].name + ': ' + (o[id] || 0)).join(' · ')}">${ids
+                .filter((id) => o[id])
+                .map((id) => `<i style="flex:${o[id]};background:${P[id].c}"></i>`)
+                .join('')}</div>`
+            : ''
+        const deltaHtml = (now, prev, goodWhenDown) => {
+          if (!prev || now === prev) return `<span class="delta">No change <small>vs previous 7 days</small></span>`
+          const d = pct(now, prev)
+          const cls = goodWhenDown === undefined ? '' : d < 0 === goodWhenDown ? 'good' : 'bad'
+          return `<span class="delta ${cls}">${d > 0 ? '↑' : '↓'} ${Math.abs(d)}% <small>vs previous 7 days</small></span>`
+        }
+        const rec = sum(WEEK.received, inboxIds)
+        const posts = sum(WEEK.posts, ids)
+        const votes = sum(WEEK.votes, ids)
+        const replyIds = inboxIds.filter((id) => WEEK.firstReply[id])
+        const avg = (o) =>
+          replyIds.length ? Math.round(replyIds.reduce((a, id) => a + o[id], 0) / replyIds.length) : 0
+        const prevReply = avg(PREV.firstReply)
+        const medReply = replyIds.length
+          ? Math.round(replyIds.reduce((a, id) => a + WEEK.firstReply[id], 0) / replyIds.length)
+          : 0
+        const slowest = replyIds.slice().sort((a, b) => WEEK.firstReply[b] - WEEK.firstReply[a])[0]
+        h += `<div class="shead"><h2>Last 7 days</h2><p>Oct 25 – Oct 31</p><span class="sp"></span>${ids.length > 1 ? projList(ids) : ''}<button class="btn"><i data-lucide="calendar"></i>Last 7 days<i data-lucide="chevron-down"></i></button></div>`
+        h += `<div class="tiles">
+          <div class="tile"><span class="lb"><i data-lucide="inbox"></i>Conversations received</span><div class="val"><b>${rec}</b>${deltaHtml(rec, sum(PREV.received, inboxIds))}</div>${split(WEEK.received)}<span class="ft">New emails and chats in the inbox</span></div>
+          <div class="tile"><span class="lb"><i data-lucide="timer"></i>Median first reply</span><div class="val"><b>${fmtMin(medReply)}</b>${deltaHtml(medReply, prevReply, true)}</div><span class="ft">${replyIds.length > 1 ? 'Slowest: ' + P[slowest].name + ', ' + fmtMin(WEEK.firstReply[slowest]) : 'From first message to our first reply'}</span></div>
+          <div class="tile"><span class="lb"><i data-lucide="message-square"></i>New feedback posts</span><div class="val"><b>${posts}</b>${deltaHtml(posts, sum(PREV.posts, ids))}</div>${split(WEEK.posts)}<span class="ft">Posted on your boards</span></div>
+          <div class="tile"><span class="lb"><i data-lucide="chevron-up"></i>Votes</span><div class="val"><b>${votes}</b>${deltaHtml(votes, sum(PREV.votes, ids))}</div>${split(WEEK.votes)}<span class="ft">On any feedback post</span></div>
+        </div>`
+
+        // ---- Projects table (All projects only): explicit column headers instead of unlabelled cards
+        if (isAll() && ids.length > 1) {
+          h += `<div class="shead"><h2>Projects</h2><p>Click a project to switch to it.</p></div><div class="ptable">
+            <div class="prow h"><span>Project</span><span>Waiting for reply</span><span>SLA at risk</span><span class="wide">New feedback<br />7 days</span><span class="wide">Votes<br />7 days</span><span class="wide">Last release</span><span></span></div>`
+          for (const id of ids) {
+            const p = P[id]
+            const wait = CONVS.filter((c) => c.p === id && c.unread).length
+            const over = CONVS.filter((c) => c.p === id && c.sla === 'bad').length
+            const rel = LOG.find((l) => l.p === id && !l.draft)
+            const num = (n, hot) => (n ? `<span class="${hot ? 'hot' : ''}">${n}</span>` : '<span class="z">0</span>')
+            const off = '<span class="z">Inbox off</span>'
+            h += `<button class="prow" data-switch="${id}">
+              <span class="nm">${pav(id)}${p.name}</span>
+              ${p.tools.inbox ? num(wait) : off}
+              ${p.tools.inbox ? num(over, true) : '<span class="z">–</span>'}
+              <span class="wide">${num(WEEK.posts[id])}</span>
+              <span class="wide">${num(WEEK.votes[id])}</span>
+              <span class="wide">${p.tools.changelog ? (rel ? rel.d + ' <span class="z">· ' + esc(rel.title) + '</span>' : '<span class="z">None yet</span>') : '<span class="z">Changelog off</span>'}</span>
+              <i data-lucide="arrow-right" class="go"></i></button>`
+          }
+          h += `</div>`
+        }
+        return h + '</div>'
+      }
+
+      // "3 in Dotmatrixlabs, 1 in Decker"
+      function breakdown(items) {
+        const by = {}
+        for (const it of items) by[it.p] = (by[it.p] || 0) + 1
+        return Object.entries(by)
+          .map(([id, n]) => `<span class="ptag">${pav(id, 'xs')}${n} in <b>${P[id].name}</b></span>`)
+          .join('')
+      }
+
+      function pageInbox() {
+        const ids = scopeIds('inbox')
+        const list = CONVS.filter((c) => ids.includes(c.p))
+        const conv = list.find((c) => c.id === S.sel) || list[0]
+        const row = (
+          c
+        ) => `<button class="conv ${conv && c.id === conv.id ? 'sel' : ''} ${c.unread ? '' : 'read'}" style="--c:${isAll() ? P[c.p].c : 'transparent'}" data-open="${c.id}">
+            <div class="l1">${c.unread ? '<span class="dot"></span>' : ''}<b>${c.from}</b><span class="t">${c.t}</span></div>
+            <div class="l2">${esc(c.subj)}</div>
+            <div class="l3">${ptag(c.p)}${c.sla ? `<span class="pill ${c.sla}">${c.slaT}</span>` : ''}${c.kind === 'mail' ? '<span class="pill">Mail</span>' : ''}</div></button>`
+        let rows = list.map(row).join('')
+        if (!list.length)
+          rows = `<div style="padding:30px 12px;text-align:center" class="muted">Nothing here. Inbox zero across the projects you picked.</div>`
+        let thread = ''
+        if (conv) {
+          const p = P[conv.p]
+          thread = `<div class="th"><button class="btn back" data-act="back" style="margin-bottom:8px"><i data-lucide="arrow-left"></i>Back</button>
+              <h2>${esc(conv.subj)}</h2>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${isAll() ? `<span class="ptag">${pav(conv.p, 'xs')}<b>${p.name}</b></span><span class="muted">·</span>` : ''}<span class="muted">${conv.from}</span>${conv.sla ? `<span class="pill ${conv.sla}">${conv.slaT}</span>` : ''}
+              <span style="flex:1"></span>${isAll() ? `<button class="btn" data-switch="${conv.p}"><i data-lucide="arrow-up-right"></i>Open in ${p.name}</button>` : ''}</div></div>
+            <div class="body"><div class="msg"><div class="who"><b>${conv.from}</b> <span class="muted">· ${conv.t} ago</span></div>${esc(conv.snip)} Is there something I can do on my side?</div></div>
+            <div class="composer"><div class="from"><i data-lucide="corner-up-left"></i>Reply from <b style="color:var(--fg)">${p.addr}</b>${isAll() ? `<span class="muted">(${p.name}'s inbox)</span>` : ''}</div>
+              <div class="box">Write a reply… <span style="float:right"><kbd>/</kbd> macros from ${p.name}</span></div>
+              <div class="act"><button class="btn">Note</button><button class="btn pri"><i data-lucide="send"></i>Send</button></div></div>`
+        }
+        return `<div class="ilist"><div class="tools"><div class="ph" style="margin-bottom:8px"><div><h1>Inbox</h1><p>${list.length} open${isAll() ? ' across ' + ids.length + ' projects' : ''}, newest first</p></div></div>
+          ${chips('inbox', (id) => CONVS.filter((c) => c.p === id).length)}</div>
+          <div class="scroll">${rows}</div></div><section class="thread">${thread}</section>`
+      }
+
+      function pageFeedback() {
+        const ids = scopeIds('feedback')
+        const list = FEED.filter((f) => ids.includes(f.p))
+        let h = `<div class="ph"><div><h1>Feedback</h1><p>${isAll() ? 'All boards from ' + ids.length + ' projects, sorted by votes' : 'Sorted by votes'}</p></div><span class="sp"></span>
+          <button class="btn"><i data-lucide="list-filter"></i>Status</button><button class="btn pri" data-act="new"><i data-lucide="plus"></i>New feedback</button></div>`
+        h += chips('feedback', (id) => FEED.filter((f) => f.p === id).length)
+        h += `<div class="ftable"><div class="frow h"><span>Votes</span><span>Title</span><span class="fprod">${isAll() ? 'Project / product' : 'Product'}</span><span>Status</span></div>`
+        h += list
+          .map(
+            (f) => `<div class="frow"><span class="vote"><i data-lucide="chevron-up"></i>${f.votes}</span>
+            <span class="ft"><b>${esc(f.title)}</b><small>${f.cm} comments</small></span>
+            <span class="fprod">${isAll() ? `<span class="ptag">${pav(f.p, 'xs')}<b>${P[f.p].name}</b>${P[f.p].products.length > 1 ? ' / ' + f.prod : ''}</span>` : `<span class="muted">${f.prod}</span>`}</span>
+            <span class="status"><i style="background:${STATUS[f.st].c}"></i>${STATUS[f.st].n}</span></div>`
+          )
+          .join('')
+        return h + '</div>'
+      }
+
+      function pageRoadmap() {
+        const ids = scopeIds('roadmap')
+        const cols = ['planned', 'in_progress', 'beta', 'done'].filter(
+          (st) => !STATUS[st].only || ids.includes(STATUS[st].only)
+        )
+        let h = `<div class="ph"><div><h1>Roadmap</h1><p>${isAll() ? 'Columns are merged by status. A status only one project uses gets its own column.' : 'Project roadmap'}</p></div><span class="sp"></span><button class="btn"><i data-lucide="globe"></i>Public roadmaps</button></div>`
+        h += chips('roadmap', (id) => FEED.filter((f) => f.p === id && f.st !== 'open').length)
+        h += `<div class="board">`
+        for (const st of cols) {
+          const items = FEED.filter((f) => ids.includes(f.p) && f.st === st)
+          const only = STATUS[st].only
+          h += `<div class="col"><h3><i style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${STATUS[st].c}"></i>${STATUS[st].n} <span class="muted">${items.length}</span>${only && isAll() ? `<span class="only muted">· ${P[only].name} only</span>` : ''}</h3>`
+          h += items
+            .map(
+              (f) =>
+                `<div class="card" style="--c:${isAll() ? P[f.p].c : 'var(--bd)'}"><b>${esc(f.title)}</b><div class="meta">${isAll() ? ptag(f.p) : `<span class="muted">${f.prod}</span>`}<span class="muted" style="font-size:11.5px"><i data-lucide="chevron-up" style="width:12px;height:12px;vertical-align:-2px"></i>${f.votes}</span></div></div>`
+            )
+            .join('')
+          h += `</div>`
+        }
+        return h + '</div>'
+      }
+
+      function pageChangelog() {
+        const ids = scopeIds('changelog')
+        let h = `<div class="ph"><div><h1>Changelog</h1><p>${isAll() ? 'Every project’s releases on one timeline' : 'Releases'}</p></div><span class="sp"></span><button class="btn pri" data-act="new"><i data-lucide="plus"></i>New entry</button></div>`
+        h += chips('changelog', (id) => LOG.filter((l) => l.p === id).length)
+        h +=
+          `<div class="tl">` +
+          LOG.filter((l) => ids.includes(l.p))
+            .map(
+              (l) =>
+                `<div class="ent" style="--c:${isAll() ? P[l.p].c : 'var(--pri)'}"><div class="d">${l.d}${isAll() ? ' · ' + ptag(l.p) : ''}${l.draft ? '<span class="draft">Draft</span>' : ''}</div><h4>${esc(l.title)}</h4><p>${esc(l.body)}</p></div>`
+            )
+            .join('') +
+          `</div>`
+        return h
+      }
+
+      function dialog() {
+        if (!S.dialog) return ''
+        const p = P[S.newProj]
+        const what = S.page === 'changelog' ? 'changelog entry' : 'feedback'
+        return `<div class="scrim" data-act="scrim"><div class="dlg">
+          <h3>New ${what}</h3><div class="muted" style="font-size:12.5px">You're in All projects, so pick where it goes.</div>
+          <div class="field"><label>Project</label><div class="seg">${PIDS.filter(
+            (id) => P[id].tools[S.page === 'changelog' ? 'changelog' : 'feedback']
+          )
+            .map(
+              (id) =>
+                `<button class="${S.newProj === id ? 'on' : ''}" data-np="${id}">${pav(id, 'xs')}${P[id].name}</button>`
+            )
+            .join('')}</div>
+            <div class="muted" style="font-size:11.5px;margin-top:5px"><i data-lucide="history" style="width:12px;height:12px;vertical-align:-2px"></i> Defaults to the last project you used</div></div>
+          ${p.products.length > 1 && S.page !== 'changelog' ? `<div class="field"><label>Product</label><div class="seg">${p.products.map((x) => `<button class="${S.newProd === x ? 'on' : ''}" data-nprod="${x}">${x}</button>`).join('')}</div></div>` : ''}
+          <div class="field"><label>Title</label><div class="input">Short, descriptive title</div></div>
+          <div class="act"><button class="btn" data-act="close">Cancel</button><button class="btn pri" data-act="close">Create in ${p.name}</button></div></div></div>`
+      }
+
+      function render() {
+        renderSide()
+        renderTop()
+        const c = document.getElementById('content')
+        c.className = 'content' + (S.page === 'inbox' ? ' flush' + (S.reading ? ' reading' : '') : '')
+        c.innerHTML = {
+          overview: pageOverview,
+          inbox: pageInbox,
+          feedback: pageFeedback,
+          roadmap: pageRoadmap,
+          changelog: pageChangelog,
+        }[S.page]()
+        document.getElementById('overlay').innerHTML = renderMenu() + dialog()
+        lucide.createIcons()
+      }
+
+      function setMode(m) {
+        S.mode = m
+        S.menu = false
+        const tool = TOOL_OF[S.page]
+        if (tool && m !== 'all' && !P[m].tools[tool]) S.page = 'overview'
+        render()
+      }
+
+      document.getElementById('app').addEventListener('click', (e) => {
+        const t = e.target.closest(
+          '[data-act],[data-page],[data-mode],[data-switch],[data-chip],[data-open],[data-np],[data-nprod]'
+        )
+        if (!t) {
+          if (S.menu) {
+            S.menu = false
+            render()
+          }
+          return
+        }
+        const d = t.dataset
+        if (d.act === 'menu') S.menu = !S.menu
+        else if (d.act === 'back') S.reading = false
+        else if (d.act === 'new') {
+          S.dialog = true
+          const tool = S.page === 'changelog' ? 'changelog' : 'feedback'
+          if (!isAll()) S.newProj = S.mode
+          if (!P[S.newProj].tools[tool]) S.newProj = PIDS.find((id) => P[id].tools[tool])
+          S.newProd = P[S.newProj].products[0]
+          if (!isAll()) S.dialog = false
+        } else if (d.act === 'close' || (d.act === 'scrim' && e.target === t)) S.dialog = false
+        else if (d.mode) return setMode(d.mode)
+        else if (d.switch) return setMode(d.switch)
+        else if (d.page) {
+          S.page = d.page
+          S.menu = false
+          S.reading = false
+        } else if (d.open) {
+          S.page = 'inbox'
+          S.sel = +d.open
+          S.reading = true
+        } else if (d.np) {
+          S.newProj = d.np
+          S.newProd = P[d.np].products[0]
+        } else if (d.nprod) S.newProd = d.nprod
+        else if (d.chip) {
+          const [page, id] = d.chip.split(':')
+          const f = S.filters[page] || (S.filters[page] = new Set())
+          if (id === '*') f.clear()
+          else f.has(id) ? f.delete(id) : f.add(id)
+        }
+        render()
+      })
+      document.addEventListener('keydown', (e) => {
+        if (!(e.metaKey || e.ctrlKey)) return
+        if (e.key === '0') {
+          e.preventDefault()
+          setMode('all')
+        }
+        const i = +e.key - 1
+        if (i >= 0 && i < PIDS.length) {
+          e.preventDefault()
+          setMode(PIDS[i])
+        }
+      })
+      render()
+    </script>
+  </body>
+</html>

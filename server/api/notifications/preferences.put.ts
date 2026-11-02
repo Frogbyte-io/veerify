@@ -31,7 +31,7 @@
  *       401: { description: "Not authenticated" }
  */
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
@@ -64,9 +64,15 @@ export default defineEventHandler(async (event) => {
   const currentPrefs = currentSettings.notificationPreferences || {}
 
   const updatedPrefs = { ...currentPrefs, ...body }
-  const updatedSettings = { ...currentSettings, notificationPreferences: updatedPrefs }
 
-  await db.update(user).set({ settings: updatedSettings, updatedAt: new Date() }).where(eq(user.id, session.user.id))
+  // Merge only this key, so a concurrent write to another settings key (e.g. lastContext) is kept.
+  await db
+    .update(user)
+    .set({
+      settings: sql`coalesce(${user.settings}, '{}'::jsonb) || jsonb_build_object('notificationPreferences', ${JSON.stringify(updatedPrefs)}::jsonb)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(user.id, session.user.id))
 
   return createSuccessResponse(updatedPrefs)
 })

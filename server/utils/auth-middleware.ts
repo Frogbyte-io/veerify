@@ -31,6 +31,8 @@ export interface AuthSession {
     userAgent?: string
     activeOrganizationId?: string
     activeProjectId?: string | null
+    /** `'all'` while working in All projects; anything else means the one active project. */
+    activeProjectScope?: string | null
   }
   /**
    * Set when the principal was resolved from a personal API key rather than a browser session.

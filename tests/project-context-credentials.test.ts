@@ -3,8 +3,10 @@ import {
   contextTargetFor,
   requireAuthWithOrganization,
   resolveActiveProjectForSession,
+  resolveProjectScope,
   setActiveOrganizationForSession,
   setActiveProjectForSession,
+  setAllProjectsForSession,
 } from '~/server/utils/project-context'
 
 const state = vi.hoisted(() => ({
@@ -15,6 +17,7 @@ const state = vi.hoisted(() => ({
   accessible: {} as Record<string, { id: string; organizationId: string }[]>,
   orgRoles: {} as Record<string, string | null>,
   auth: null as unknown,
+  remembered: [] as { userId: string; context: Record<string, unknown> }[],
 }))
 
 vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string }) =>
@@ -54,6 +57,11 @@ vi.mock('~/server/database/drizzle', () => ({
   },
 }))
 vi.mock('~/server/utils/auth-middleware', () => ({ requireAuth: async () => state.auth }))
+vi.mock('~/server/utils/last-context', () => ({
+  rememberLastContext: async (userId: string, context: Record<string, unknown>) => {
+    state.remembered.push({ userId, context })
+  },
+}))
 vi.mock('~/server/utils/project-access', () => ({
   getProjectById: async (id: string) => state.projects[id] ?? null,
   resolveProjectRole: async (p: { id: string }) => (state.projects[p.id] && !state.roleDenied ? 'member' : null),
@@ -93,6 +101,7 @@ beforeEach(() => {
   state.projects = { p1: { id: 'p1', organizationId: 'o1' } }
   state.accessible = { o1: [{ id: 'p1', organizationId: 'o1' }] }
   state.orgRoles = { o1: 'member' }
+  state.remembered = []
 })
 
 describe('contextTargetFor', () => {
@@ -106,8 +115,14 @@ describe('key principals', () => {
   it('setActiveProjectForSession writes the key row, never session', async () => {
     await setActiveProjectForSession({ target: KEY_TARGET, userId: 'u1', projectId: 'p1' })
     expect(state.updates).toEqual([
-      { table: 'user_api_key', values: { activeOrganizationId: 'o1', activeProjectId: 'p1' }, where: keyWhere },
+      {
+        table: 'user_api_key',
+        values: { activeOrganizationId: 'o1', activeProjectId: 'p1', activeProjectScope: null },
+        where: keyWhere,
+      },
     ])
+    // Keys keep their own context; the user's last-used context is a browser thing.
+    expect(state.remembered).toEqual([])
   })
 
   it('setActiveOrganizationForSession writes the key row', async () => {
@@ -205,5 +220,76 @@ describe('cookie sessions (regression)', () => {
     await resolveActiveProjectForSession(cookieSession() as never)
     expect(state.updates.map((u) => u.table)).toEqual(['session', 'session'])
     expect(state.updates.map((u) => u.where)).toEqual([tokenWhere, tokenWhere])
+  })
+})
+
+describe('All projects scope', () => {
+  const twoProjects = () => {
+    state.accessible.o1 = [
+      { id: 'p1', organizationId: 'o1' },
+      { id: 'p2', organizationId: 'o1' },
+    ]
+  }
+
+  it('setAllProjectsForSession stores scope all, keeps the current project and remembers it', async () => {
+    twoProjects()
+    const kept = await setAllProjectsForSession({
+      target: { kind: 'session', token: 'tok' },
+      userId: 'u1',
+      organizationId: 'o1',
+      currentProjectId: 'p2',
+    })
+    expect(kept.id).toBe('p2')
+    expect(state.updates).toEqual([
+      {
+        table: 'session',
+        values: { activeOrganizationId: 'o1', activeProjectId: 'p2', activeProjectScope: 'all' },
+        where: tokenWhere,
+      },
+    ])
+    expect(state.remembered).toEqual([
+      { userId: 'u1', context: { organizationId: 'o1', projectId: 'p2', scope: 'all' } },
+    ])
+  })
+
+  it('setAllProjectsForSession 409s with fewer than two projects', async () => {
+    state.accessible.o1 = [{ id: 'p1', organizationId: 'o1' }]
+    await expect(
+      setAllProjectsForSession({ target: { kind: 'session', token: 'tok' }, userId: 'u1', organizationId: 'o1' })
+    ).rejects.toMatchObject({ statusCode: 409 })
+    expect(state.updates).toEqual([])
+  })
+
+  it('setActiveProjectForSession leaves All projects and remembers the project', async () => {
+    await setActiveProjectForSession({ target: { kind: 'session', token: 'tok' }, userId: 'u1', projectId: 'p1' })
+    expect(state.updates[0]!.values).toMatchObject({ activeProjectScope: null })
+    expect(state.remembered[0]!.context).toEqual({ organizationId: 'o1', projectId: 'p1', scope: 'project' })
+  })
+
+  it('resolveProjectScope returns every accessible project for scope all', async () => {
+    twoProjects()
+    const session = { ...cookieSession(), session: { ...cookieSession().session, activeProjectScope: 'all' } }
+    const result = await resolveProjectScope(
+      session as never,
+      { id: 'p1', organizationId: 'o1', role: 'member' } as never
+    )
+    expect(result.scope).toBe('all')
+    expect(result.projects.map((p) => p.id)).toEqual(['p1', 'p2'])
+    expect(state.updates).toEqual([])
+  })
+
+  it('resolveProjectScope falls back to the project (and repairs) when fewer than two remain', async () => {
+    state.accessible.o1 = [{ id: 'p1', organizationId: 'o1' }]
+    const session = { ...cookieSession(), session: { ...cookieSession().session, activeProjectScope: 'all' } }
+    const active = { id: 'p1', organizationId: 'o1', role: 'member' }
+    const result = await resolveProjectScope(session as never, active as never)
+    expect(result).toEqual({ scope: 'project', projects: [active] })
+    expect(state.updates[0]!.values).toMatchObject({ activeProjectScope: null })
+  })
+
+  it('resolveProjectScope ignores the stored scope unless it is all', async () => {
+    const active = { id: 'p1', organizationId: 'o1', role: 'member' }
+    const result = await resolveProjectScope(cookieSession() as never, active as never)
+    expect(result).toEqual({ scope: 'project', projects: [active] })
   })
 })

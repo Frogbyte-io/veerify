@@ -34,6 +34,12 @@
         <span class="flex-1" />
         <slot name="actions" />
       </div>
+      <p v-if="subtitle" class="-mt-1 text-xs text-muted-foreground" data-testid="support-list-subtitle">
+        {{ subtitle }}
+      </p>
+
+      <!-- Project filter chips (All projects) -->
+      <slot name="scope" />
 
       <div class="relative">
         <Icon
@@ -225,9 +231,9 @@
             :data-unread="String(item.isUnread === true)"
             :data-has-draft="String(item.hasDraft === true)"
             :aria-current="item.id === selectedConversationId ? 'true' : undefined"
-            class="relative flex w-full items-start gap-3 border-l-2 bg-background py-3 pr-3 pl-2.5 text-left transition-[background-color,transform] duration-200"
-            :class="rowClass(item)"
-            :style="swipeStyle(item)"
+            class="relative flex w-full items-start gap-3 bg-background py-3 pr-3 pl-2.5 text-left transition-[background-color,transform] duration-200"
+            :class="[showProject ? 'border-l-[3px]' : 'border-l-2', rowClass(item)]"
+            :style="[edgeStyle(item), swipeStyle(item)]"
             @click="onRowClick(item)"
           >
             <span class="relative shrink-0">
@@ -259,6 +265,12 @@
                 {{ item.subject || 'No subject' }}
               </span>
               <span class="mt-1.5 flex min-h-5 flex-wrap items-center gap-1.5">
+                <ProjectTag
+                  v-if="projectFor(item)"
+                  :project="projectFor(item)"
+                  class="max-w-[9rem]"
+                  data-testid="support-conversation-project"
+                />
                 <span
                   v-if="item.behaviour === 'mail'"
                   data-testid="support-conversation-kind-mail"
@@ -412,6 +424,11 @@ export default {
     currentUserId: { type: String, default: '' },
     currentUserName: { type: String, default: '' },
     showDrawerButton: { type: Boolean, default: false },
+    // All projects: tag every row with its project and edge it in the project's colour.
+    showProject: { type: Boolean, default: false },
+    // Projects of the scope (`identity` gives the colour); rows carry only `project: { id, name, slug }`.
+    scopeProjects: { type: Array, default: () => [] },
+    subtitle: { type: String, default: '' },
   },
 
   emits: [
@@ -502,8 +519,19 @@ export default {
     },
 
     rowClass(item) {
-      if (item.id === this.selectedConversationId) return 'border-l-primary bg-accent'
+      // In All projects the left edge keeps the project's colour, so selection is shown by the background alone.
+      if (item.id === this.selectedConversationId) return this.showProject ? 'bg-accent' : 'border-l-primary bg-accent'
       return 'border-l-transparent [@media(hover:hover)]:hover:bg-accent/60'
+    },
+
+    projectFor(item) {
+      if (!this.showProject || !item.project) return null
+      return this.scopeProjects.find((project) => project.id === item.project.id) || item.project
+    },
+
+    edgeStyle(item) {
+      const color = this.projectFor(item)?.identity?.color
+      return color ? { borderLeftColor: color } : undefined
     },
 
     contactLabel(item) {

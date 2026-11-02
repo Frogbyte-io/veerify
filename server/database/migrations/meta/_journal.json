@@ -512,6 +512,13 @@
       "when": 1793490306223,
       "tag": "0072_mail_setup_ux",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793551282094,
+      "tag": "0073_all_projects_scope",
+      "breakpoints": true
     }
   ]
 }

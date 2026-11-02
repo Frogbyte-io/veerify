@@ -14,12 +14,32 @@
     </div>
 
     <p
-      v-else-if="inboxes.length === 0"
+      v-else-if="!combined && inboxes.length === 0"
       data-testid="support-no-assignment"
       class="px-1 py-3 text-xs leading-relaxed text-muted-foreground"
     >
       No inboxes are assigned to you.
     </p>
+
+    <!-- All projects: one combined list, so there is no inbox to pick (inbox settings are per project) -->
+    <div
+      v-else-if="combined"
+      class="flex min-w-0 items-center gap-2.5 px-2 py-1.5"
+      data-testid="support-combined-header"
+    >
+      <span
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground"
+        aria-hidden="true"
+      >
+        <Icon name="lucide:inbox" class="h-4 w-4" />
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate font-semibold leading-tight">All inboxes</span>
+        <span class="block truncate text-[11px] leading-tight text-muted-foreground">
+          {{ inboxes.length === 1 ? '1 inbox' : `${inboxes.length} inboxes` }}
+        </span>
+      </span>
+    </div>
 
     <div v-else class="flex items-center gap-1">
       <DropdownMenu>
@@ -77,7 +97,7 @@
       </NuxtLink>
     </div>
 
-    <template v-if="inboxes.length > 0">
+    <template v-if="combined || inboxes.length > 0">
       <!-- Views -->
       <nav class="mt-3 space-y-0.5" aria-label="Views">
         <button
@@ -103,7 +123,7 @@
       </nav>
 
       <!-- Addresses: a filter on top of the view -->
-      <template v-if="addresses.length > 0">
+      <template v-if="!combined && addresses.length > 0">
         <h3 :class="groupClass">Addresses</h3>
         <div class="space-y-0.5" data-testid="support-address-filter">
           <button
@@ -136,7 +156,7 @@
       </template>
 
       <!-- Tags: filters, plus the shared vocabulary for supervisors -->
-      <template v-if="tags.length > 0 || canManageTagVocabulary">
+      <template v-if="!combined && (tags.length > 0 || canManageTagVocabulary)">
         <h3 :class="groupClass">Tags</h3>
         <div class="space-y-0.5">
           <button
@@ -219,6 +239,8 @@ export default {
     activeAddressId: { type: String, default: null },
     tags: { type: Array, default: () => [] },
     activeTagId: { type: String, default: null },
+    // All projects: `inboxes` are the combined list's inboxes; addresses, tags and the inbox switcher are per project.
+    combined: { type: Boolean, default: false },
   },
 
   emits: ['select-inbox', 'select-view', 'select-address', 'select-tag', 'retry', 'create-tag'],

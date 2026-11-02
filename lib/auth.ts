@@ -6,6 +6,7 @@ import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
 import { isReservedSlug } from '../server/utils/reserved-slugs'
 import { claimImportedActivityInBackground, isVerificationPath } from '../server/services/imports/claim'
+import { restoreLastContext } from '../server/utils/last-context'
 import {
   sendEmailVerificationEmail,
   sendMagicLinkEmail,
@@ -136,12 +137,24 @@ export const auth = betterAuth({
         },
       },
     },
+    // A new sign-in starts where the user left off: the workspace and project (or All projects) they
+    // used last. server/utils/project-context.ts validates and repairs it on first use.
+    session: {
+      create: {
+        before: async (newSession) => {
+          const restored = await restoreLastContext(newSession)
+          return restored ? { data: restored } : undefined
+        },
+      },
+    },
   },
   session: {
     // The project the user is working in; resolved and repaired server-side by
     // server/utils/project-context.ts. Never set from client input.
     additionalFields: {
       activeProjectId: { type: 'string', required: false, input: false },
+      // 'all' while the user works in All projects (activeProjectId keeps the last single project).
+      activeProjectScope: { type: 'string', required: false, input: false },
     },
   },
   emailAndPassword: {

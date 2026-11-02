@@ -25,7 +25,7 @@
  *             type: object
  *             required: [status]
  *             properties:
- *               status: { type: string, minLength: 1, maxLength: 80, description: "A status value defined for the feedback project" }
+ *               status: { type: string, minLength: 1, maxLength: 100, description: "A status value defined for the feedback project" }
  *     responses:
  *       200: { description: "Updated feedback item" }
  *       400: { description: "Validation failed or status not allowed for this project" }
@@ -51,7 +51,7 @@ import { notifyLinkedFeedbackContacts } from '~/server/utils/feedback-support-no
 const logger = createLogger('feedback')
 
 const updateStatusSchema = z.object({
-  status: z.string().trim().min(1).max(80),
+  status: z.string().trim().min(1).max(100),
 })
 
 export default defineEventHandler(async (event) => {

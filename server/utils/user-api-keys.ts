@@ -106,6 +106,7 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
 
   let activeOrganizationId: string | undefined = row.activeOrganizationId ?? undefined
   let activeProjectId: string | null = row.activeProjectId ?? null
+  let activeProjectScope: string | null = row.activeProjectScope ?? null
 
   let contextOverride = false
   let headerOrganizationId: string | null = null
@@ -154,6 +155,8 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
     }
     activeProjectId = proj.id
     activeOrganizationId = proj.organizationId
+    // A header naming one project means that project, never All projects.
+    activeProjectScope = null
     contextOverride = true
   }
 
@@ -184,6 +187,7 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
       expiresAt: row.expiresAt ?? new Date(8.64e15),
       activeOrganizationId,
       activeProjectId,
+      activeProjectScope,
     },
     credential: contextOverride
       ? { kind: 'user_api_key', id: row.id, contextOverride: true }

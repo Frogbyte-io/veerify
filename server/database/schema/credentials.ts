@@ -15,6 +15,8 @@ export const userApiKey = pgTable(
     keyHash: text('key_hash').notNull(),
     activeOrganizationId: text('active_organization_id'),
     activeProjectId: text('active_project_id'),
+    // 'all' = All projects (see session.activeProjectScope)
+    activeProjectScope: text('active_project_scope'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),

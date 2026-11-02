@@ -85,55 +85,34 @@
  *       404: { description: Inbox not found }
  */
 import { z } from 'zod'
-import { and, desc, eq, getTableColumns, ilike, inArray, isNotNull, isNull, lte, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
-import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
+import { encodeListCursor } from '~/server/utils/list-cursor'
 import { db } from '~/server/database/drizzle'
 import {
   contact,
   conversation,
   conversationReadState,
-  conversationTag,
   csatResponse,
   projectMailAddress,
 } from '~/server/database/schema/support'
 import { isConversationUnread } from '~/server/utils/conversation-read-state'
-import { CONVERSATION_LIST_VIEWS, folderCondition } from '~/server/utils/support-trash'
-
-const MAX_POSTGRES_INTEGER = 2147483647
-
-const ACTIVE_STATUSES = ['open', 'pending'] as const
-
-/** Open or pending, not paused, with a response or resolution due within the hour. */
-function breachingSoonConditions(now: Date) {
-  const soon = new Date(now.getTime() + 60 * 60_000)
-  return [
-    inArray(conversation.status, ACTIVE_STATUSES),
-    isNull(conversation.slaPausedAt),
-    or(
-      and(isNotNull(conversation.firstResponseDueAt), lte(conversation.firstResponseDueAt, soon)),
-      and(isNotNull(conversation.nextResponseDueAt), lte(conversation.nextResponseDueAt, soon)),
-      and(isNotNull(conversation.resolutionDueAt), lte(conversation.resolutionDueAt, soon))
-    )!,
-  ]
-}
+import { folderCondition } from '~/server/utils/support-trash'
+import {
+  ACTIVE_STATUSES,
+  breachingSoonConditions,
+  conversationCursorCondition,
+  conversationListConditions,
+  conversationListFilterShape,
+} from '~/server/utils/support-conversation-list'
 
 const querySchema = z.object({
   inboxId: z.string().min(1),
-  view: z.enum(CONVERSATION_LIST_VIEWS).optional(),
-  status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'closed']).optional(),
-  assigneeUserId: z.string().optional(),
-  contactId: z.string().optional(),
-  mailAddressId: z.string().optional(),
-  tagId: z.string().optional(),
   projectId: z.string().optional(),
-  csat: z.enum(['rated', 'unrated']).optional(),
-  search: z.string().trim().max(200).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
-  cursor: z.string().optional(),
+  ...conversationListFilterShape,
 })
 
 export default defineEventHandler(async (event) => {
@@ -142,70 +121,11 @@ export default defineEventHandler(async (event) => {
 
   await requireInboxAccess(query.inboxId, session.user.id)
 
-  const conditions = [eq(conversation.inboxId, query.inboxId), folderCondition(query.view)]
   const activeStatuses = ACTIVE_STATUSES
   const search = query.search?.trim()
-
-  if (!search && query.view === 'inbox') {
-    conditions.push(inArray(conversation.status, activeStatuses))
-  } else if (!search && query.view === 'snoozed') {
-    conditions.push(eq(conversation.status, 'snoozed'))
-  } else if (!search && query.view === 'unassigned') {
-    conditions.push(isNull(conversation.assigneeUserId), inArray(conversation.status, activeStatuses))
-  } else if (!search && query.view === 'assigned-to-me') {
-    conditions.push(eq(conversation.assigneeUserId, session.user.id), inArray(conversation.status, activeStatuses))
-  } else if (!search && query.view === 'resolved') {
-    conditions.push(eq(conversation.status, 'resolved'))
-  } else if (!search && query.view === 'archived') {
-    conditions.push(eq(conversation.status, 'closed'))
-  } else if (!search && query.view === 'breaching-soon') {
-    conditions.push(...breachingSoonConditions(new Date()))
-  }
-
-  if (query.status) conditions.push(eq(conversation.status, query.status))
-  if (query.assigneeUserId) conditions.push(eq(conversation.assigneeUserId, query.assigneeUserId))
-  if (query.contactId) conditions.push(eq(conversation.contactId, query.contactId))
-  if (query.mailAddressId) conditions.push(eq(conversation.mailAddressId, query.mailAddressId))
+  const conditions = [eq(conversation.inboxId, query.inboxId), ...conversationListConditions(query, session.user.id)]
   if (query.projectId) conditions.push(eq(conversation.projectId, query.projectId))
-
-  if (query.csat === 'rated') conditions.push(isNotNull(csatResponse.rating))
-  if (query.csat === 'unrated') conditions.push(isNull(csatResponse.rating))
-
-  if (query.tagId) {
-    conditions.push(
-      inArray(
-        conversation.id,
-        db
-          .select({ id: conversationTag.conversationId })
-          .from(conversationTag)
-          .where(eq(conversationTag.tagId, query.tagId))
-      )
-    )
-  }
-
-  if (search) {
-    const pattern = `%${search}%`
-    const searchConditions = [
-      ilike(conversation.subject, pattern),
-      ilike(contact.name, pattern),
-      ilike(contact.email, pattern),
-    ]
-    const displayId = /^\d+$/.test(search) ? Number(search) : null
-    if (displayId !== null && Number.isSafeInteger(displayId) && displayId <= MAX_POSTGRES_INTEGER) {
-      searchConditions.push(eq(conversation.displayId, displayId))
-    }
-    conditions.push(or(...searchConditions)!)
-  }
-
-  if (query.cursor) {
-    const cursor = decodeListCursor(query.cursor, 'conversation')
-    conditions.push(
-      or(
-        lt(conversation.createdAt, cursor.createdAt),
-        and(eq(conversation.createdAt, cursor.createdAt), lt(conversation.id, cursor.id))
-      )!
-    )
-  }
+  if (query.cursor) conditions.push(conversationCursorCondition(query.cursor))
 
   const listBase = db
     .select({

@@ -23,7 +23,10 @@
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1 group-data-[collapsible=icon]:justify-center"
           >
+            <ProjectBadgeStack v-if="isAllProjects" :projects="projects" size="lg" />
+            <ProjectBadge v-else-if="activeProjectListed" :project="activeProjectListed" size="lg" />
             <div
+              v-else
               class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
             >
               <Icon name="lucide:folder-kanban" class="size-4" />
@@ -31,7 +34,7 @@
             <div class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
               <template v-if="activeOrganization">
                 <span data-testid="project-switcher-active-name" class="truncate font-semibold">
-                  {{ activeProject ? activeProject.name : 'No project' }}
+                  {{ isAllProjects ? 'All projects' : activeProject ? activeProject.name : 'No project' }}
                 </span>
                 <span data-testid="project-switcher-active-org" class="truncate text-xs text-muted-foreground">
                   {{ subtitle }}
@@ -62,24 +65,44 @@
             </DropdownMenuItem>
           </div>
           <template v-else>
+            <template v-if="allProjectsAvailable">
+              <DropdownMenuItem
+                data-testid="project-switcher-all"
+                class="gap-2 p-2"
+                :disabled="isSwitching"
+                @click="selectAllProjects"
+              >
+                <ProjectBadgeStack :projects="projects" />
+                <div class="grid flex-1 leading-tight">
+                  <span>All projects</span>
+                  <span class="text-[11px] text-muted-foreground">Inbox, feedback and roadmap combined</span>
+                </div>
+                <kbd :class="kbdClass">{{ shortcutPrefix }}0</kbd>
+                <Icon v-if="isAllProjects" name="lucide:check" class="size-4 text-primary" />
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </template>
             <DropdownMenuLabel class="text-xs text-muted-foreground">
               Projects in {{ activeOrganization?.name || 'workspace' }}
             </DropdownMenuLabel>
             <DropdownMenuItem
-              v-for="project in projects"
+              v-for="(project, index) in projects"
               :key="project.id"
               class="gap-2 p-2"
               :disabled="isSwitching"
               @click="selectProject(project)"
             >
-              <div class="flex size-6 items-center justify-center rounded-sm border">
-                <Icon name="lucide:folder" class="size-4 shrink-0" />
-              </div>
+              <ProjectBadge :project="project" size="md" />
               <span :data-testid="`project-switcher-item-${project.id}`" class="flex-1 truncate">
                 {{ project.name }}
               </span>
               <Badge variant="outline" class="text-[10px]">{{ project.isPublic ? 'Public' : 'Private' }}</Badge>
-              <Icon v-if="activeProject?.id === project.id" name="lucide:check" class="size-4 text-primary" />
+              <kbd v-if="allProjectsAvailable && index < 9" :class="kbdClass">{{ shortcutPrefix }}{{ index + 1 }}</kbd>
+              <Icon
+                v-if="!isAllProjects && activeProject?.id === project.id"
+                name="lucide:check"
+                class="size-4 text-primary"
+              />
             </DropdownMenuItem>
             <p v-if="projects.length === 0" class="px-2 py-1.5 text-xs text-muted-foreground">
               No projects yet.
@@ -205,6 +228,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import { isProjectOnlyRoute, projectShortcutIndex } from '~/lib/project-scope'
 import { shouldLeaveRouteOnOrgSwitch } from '~/lib/org-switch'
 import {
   clearDashboardBootstrapCache,
@@ -254,6 +278,7 @@ const switcherCache = {
   activeProject: null,
   activeOrganization: null,
   orgRole: null,
+  scope: 'project',
   loadedAt: 0,
   pendingRequest: null,
 }
@@ -272,6 +297,7 @@ function clearSwitcherCache() {
   switcherCache.activeProject = null
   switcherCache.activeOrganization = null
   switcherCache.orgRole = null
+  switcherCache.scope = 'project'
   switcherCache.loadedAt = 0
 }
 
@@ -290,6 +316,7 @@ export default {
       activeProject: hasCachedData ? switcherCache.activeProject : null,
       activeOrganization: hasCachedData ? switcherCache.activeOrganization : null,
       orgRole: hasCachedData ? switcherCache.orgRole : null,
+      scope: hasCachedData ? switcherCache.scope : 'project',
       isLoading: !hasCachedData,
       isSwitching: false,
       loadError: null,
@@ -308,6 +335,29 @@ export default {
       return import.meta.client ? window.innerWidth < 768 : false
     },
 
+    isAllProjects() {
+      return this.scope === 'all' && this.allProjectsAvailable
+    },
+
+    // All projects needs two or more projects the user can open.
+    allProjectsAvailable() {
+      return this.projects.length >= 2
+    },
+
+    // The active project as listed (with its colour/initials).
+    activeProjectListed() {
+      return this.projects.find((p) => p.id === this.activeProject?.id) || null
+    },
+
+    shortcutPrefix() {
+      if (!import.meta.client) return 'Alt '
+      return /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌥' : 'Alt '
+    },
+
+    kbdClass() {
+      return 'rounded border border-b-2 px-1 font-mono text-[10px] text-muted-foreground'
+    },
+
     otherOrganizations() {
       return this.organizations.filter((org) => org.id !== this.activeOrganization?.id)
     },
@@ -320,6 +370,7 @@ export default {
 
     subtitle() {
       const orgName = this.activeOrganization?.name || 'Workspace'
+      if (this.isAllProjects) return `${this.projects.length} projects · ${orgName}`
       if (!this.activeProject) return orgName
       return `${orgName} · ${this.activeProject.isPublic ? 'Public' : 'Private'}`
     },
@@ -349,12 +400,14 @@ export default {
 
     if (import.meta.client) {
       window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
+      window.addEventListener('keydown', this.handleShortcut)
     }
   },
 
   beforeUnmount() {
     if (import.meta.client) {
       window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
+      window.removeEventListener('keydown', this.handleShortcut)
     }
   },
 
@@ -365,7 +418,22 @@ export default {
       await this.initialize({ force: true, silent: true })
     },
 
+    handleShortcut(event) {
+      const index = projectShortcutIndex(event)
+      if (index === null || !this.allProjectsAvailable || this.isSwitching) return
+      if (index === 0) {
+        event.preventDefault()
+        void this.selectAllProjects()
+        return
+      }
+      const project = this.projects[index - 1]
+      if (!project) return
+      event.preventDefault()
+      void this.selectProject(project)
+    },
+
     applyFromCache() {
+      this.scope = switcherCache.scope
       this.projects = switcherCache.projects
       this.organizations = switcherCache.organizations
       this.activeProject = switcherCache.activeProject
@@ -423,6 +491,7 @@ export default {
           .then((context) => {
             switcherCache.activeProject = context.activeProject?.project || null
             switcherCache.orgRole = context.activeProject?.organization?.role || null
+            switcherCache.scope = context.activeProject?.scope === 'all' ? 'all' : 'project'
             switcherCache.projects = context.projects
             switcherCache.organizations = context.organizations || []
             switcherCache.activeOrganization = context.activeOrganization
@@ -499,14 +568,39 @@ export default {
       this.emitActiveProjectChanged()
     },
 
+    async selectAllProjects() {
+      if (this.isSwitching || this.isAllProjects) return
+
+      const previousScope = this.scope
+      this.isSwitching = true
+      try {
+        this.loadError = null
+        this.scope = 'all'
+        await $fetch('/api/projects/active', { method: 'POST', body: { scope: 'all' } })
+        await this.refreshAfterChange()
+
+        if (isProjectOnlyRoute(this.$route.path) || shouldLeaveRouteOnOrgSwitch(this.$route.path)) {
+          await navigateTo('/dashboard')
+        }
+      } catch (error) {
+        this.scope = previousScope
+        this.loadError = 'Failed to switch to All projects'
+        console.error('Error switching to All projects:', error)
+      } finally {
+        this.isSwitching = false
+      }
+    },
+
     async selectProject(project) {
-      if (this.isSwitching || project.id === this.activeProject?.id) return
+      if (this.isSwitching || (project.id === this.activeProject?.id && !this.isAllProjects)) return
 
       const previous = this.activeProject
+      const previousScope = this.scope
       this.isSwitching = true
       try {
         this.loadError = null
         this.activeProject = project
+        this.scope = 'project'
         await $fetch('/api/projects/active', { method: 'POST', body: { projectId: project.id } })
         writeLastProjectId(project.organizationId, project.id)
         await this.refreshAfterChange()
@@ -516,6 +610,7 @@ export default {
         }
       } catch (error) {
         this.activeProject = previous
+        this.scope = previousScope
         if (error?.statusCode === 409 || error?.status === 409) {
           await navigateTo('/onboarding')
           return

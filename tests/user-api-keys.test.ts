@@ -287,6 +287,14 @@ describe('resolveUserApiKeyPrincipal', () => {
     expect(p?.session.activeProjectId).toBe('p8')
   })
 
+  it('returns the stored All projects scope, and a project header clears it', async () => {
+    setRow({ activeProjectScope: 'all' })
+    expect((await resolveUserApiKeyPrincipal(bearer()))?.session.activeProjectScope).toBe('all')
+    state.projectsById.p2 = { id: 'p2', organizationId: 'org-1' }
+    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Project': 'p2' }))
+    expect(p?.session.activeProjectScope).toBeNull()
+  })
+
   it('sets the active organization from the project header', async () => {
     setRow()
     state.projectsById.p2 = { id: 'p2', organizationId: 'org-9' }
