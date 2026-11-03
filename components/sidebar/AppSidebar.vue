@@ -2,14 +2,14 @@
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import NavUser from './NavUser.vue'
 import { useSidebar } from '~/components/ui/sidebar'
-import type { ModuleSettings } from '~/lib/modules'
 import {
   activeProjectStore,
   loadActiveProject as loadSharedActiveProject,
   type ActiveProjectContext,
 } from '~/lib/active-project'
 import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups, showProductSubItems } from '~/lib/sidebar-nav'
-import { isAllProjects as isAllProjectsContext, scopeModules } from '~/lib/project-scope'
+import { isAllProjects as isAllProjectsContext } from '~/lib/project-scope'
+import { navVisibilityContext } from '~/lib/mobile-shell'
 
 interface SidebarProps {
   side?: 'left' | 'right'
@@ -139,14 +139,7 @@ type ProductSummary = { id: string; name: string; slug: string }
 // The shared cache (lib/active-project.ts) keeps the last value, so navigating never blanks the nav.
 const lastContext = computed<ActiveProjectContext | null>(() => activeProjectStore.context ?? null)
 const isAllProjects = computed(() => isAllProjectsContext(lastContext.value))
-// In All projects a tool shows when any combined project has it on.
-const projectModules = computed<Partial<ModuleSettings>>(() => scopeModules(lastContext.value))
 const products = computed<ProductSummary[]>(() => lastContext.value?.products || [])
-const isProjectAdmin = computed(() => {
-  const context = lastContext.value
-  const orgRole = context?.organization?.role
-  return context?.project?.role === 'admin' || orgRole === 'owner' || orgRole === 'admin'
-})
 const marketingOpen = ref(import.meta.client ? window.location.pathname.startsWith('/marketing') : false)
 
 async function loadActiveProject(event?: Event) {
@@ -158,13 +151,7 @@ async function loadActiveProject(event?: Event) {
   }
 }
 
-const visibilityContext = computed(() => ({
-  hasActiveOrganization: hasActiveOrganization.value,
-  modules: projectModules.value,
-  productCount: products.value.length,
-  isProjectAdmin: isProjectAdmin.value,
-  isAllProjects: isAllProjects.value,
-}))
+const visibilityContext = computed(() => navVisibilityContext(lastContext.value, hasActiveOrganization.value))
 
 // One rule decides every group and item; see lib/sidebar-nav.ts.
 const visibleGroups = computed(() => getVisibleNavGroups(SIDEBAR_NAV_GROUPS, visibilityContext.value))

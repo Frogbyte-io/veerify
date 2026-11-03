@@ -63,38 +63,88 @@ test.describe.serial('support inbox responsive layout', () => {
     if (SCREENSHOT_DIR) await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png` })
   }
 
-  test('phone shows one pane at a time with an inbox drawer', async ({ browser }) => {
+  test('phone shows one pane at a time with one top bar and a tab bar', async ({ browser }) => {
     const page = await openInbox(browser, { width: 390, height: 844 })
     await shot(page, 'phone-list')
 
+    // One bar on top (no sidebar toggle, no second drawer button), tabs at the bottom.
+    await expect(page.getByTestId('mobile-top-bar')).toBeVisible()
+    await expect(page.getByTestId('dashboard-header')).toHaveCount(0)
+    await expect(page.getByTestId('support-open-inboxes')).toHaveCount(0)
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible()
+    await expect(page.getByTestId('mobile-tab-inbox')).toHaveAttribute('aria-current', 'page')
+
     await expect(page.getByTestId('support-view-unassigned')).toBeHidden()
     await expect(page.getByTestId('support-view-rail')).toBeHidden()
-    await page.getByTestId('support-list-title-views').click()
-    await expect(page.getByTestId('support-inbox-sheet').getByTestId('support-view-resolved')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await page.getByTestId('support-open-inboxes').click()
+    const title = page.getByTestId('mobile-top-bar').getByTestId('support-list-title-views')
+    await expect(title).toHaveText('All conversations')
+    await title.click()
     const sheet = page.getByTestId('support-inbox-sheet')
     await expect(sheet.getByTestId('support-view-unassigned')).toBeVisible()
     await shot(page, 'phone-inbox-sheet')
+    await sheet.getByTestId('support-view-resolved').click()
+    await expect(sheet).toBeHidden()
+    await expect(title).toHaveText('Resolved')
+    await title.click()
     await sheet.getByTestId('support-view-all').click()
     await expect(sheet).toBeHidden()
 
     await page.getByTestId(`support-conversation-${conversationId}`).click()
     await expect(page.getByTestId('support-thread-back')).toBeVisible()
     await expect(page.getByTestId('support-conversation-search')).toBeHidden()
+    // The conversation brings its own header and composer.
+    await expect(page.getByTestId('mobile-top-bar')).toHaveCount(0)
+    await expect(page.getByTestId('mobile-tab-bar')).toHaveCount(0)
     await shot(page, 'phone-thread')
 
     await page.getByTestId('support-thread-back').click()
     await expect(page.getByTestId('support-conversation-search')).toBeVisible()
-    await page.getByTestId('support-open-inboxes').click()
-    await expect(page.getByTestId('support-inbox-sheet').getByTestId('support-sidebar-settings-link')).toHaveAttribute(
-      'href',
-      '/inbox/settings'
-    )
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible()
+    await title.click()
+    await expect(sheet.getByTestId('support-sidebar-settings-link')).toHaveAttribute('href', '/inbox/settings')
+    await page.keyboard.press('Escape')
+
+    // More holds the rest of the navigation.
+    await page.getByTestId('mobile-tab-more').click()
+    const more = page.getByTestId('mobile-more-sheet')
+    await expect(more.getByTestId('mobile-more-link-/inbox/settings')).toBeVisible()
+    await shot(page, 'phone-more-sheet')
+    await more.getByTestId('mobile-more-link-/inbox/settings').click()
+    await expect(page).toHaveURL(/\/inbox\/settings/)
+    await expect(more).toBeHidden()
   })
 
-  test('tablet shows the list beside the thread', async ({ browser }) => {
+  test('portrait tablet uses the top bar and tab bar, with list and thread side by side', async ({ browser }) => {
+    const page = await openInbox(browser, { width: 820, height: 1180 })
+    await expect(page.getByTestId('mobile-top-bar')).toBeVisible()
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible()
+    await expect(page.getByTestId('dashboard-header')).toHaveCount(0)
+    await expect(page.getByTestId('app-sidebar')).toHaveCount(0)
+    await expect(page.getByTestId('support-view-rail')).toBeVisible()
+    await shot(page, 'tablet-portrait-list')
+
+    await page.getByTestId(`support-conversation-${conversationId}`).click()
+    await expect(page.getByTestId('support-conversation-search')).toBeVisible()
+    await expect(page.getByTestId('support-thread-back')).toBeHidden()
+    // Unlike a phone, the bars stay: the thread has room beside the list.
+    await expect(page.getByTestId('mobile-top-bar')).toBeVisible()
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible()
+    await shot(page, 'tablet-portrait-thread')
+
+    await page.getByTestId('mobile-tab-more').click()
+    const more = page.getByTestId('mobile-more-sheet')
+    await expect(more.getByTestId('mobile-more-link-/inbox/settings')).toBeVisible()
+    const box = await more.boundingBox()
+    expect(box!.width).toBeLessThan(820)
+    // Let the slide-in finish so the screenshot shows the sheet in place.
+    await more.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
+    await shot(page, 'tablet-portrait-more')
+  })
+
+  test('landscape tablet keeps the sidebar and shows the list beside the thread', async ({ browser }) => {
     const page = await openInbox(browser, { width: 1024, height: 768 })
+    await expect(page.getByTestId('app-sidebar')).toBeVisible()
+    await expect(page.getByTestId('mobile-tab-bar')).toHaveCount(0)
     await page.getByTestId(`support-conversation-${conversationId}`).click()
     await expect(page.getByTestId('support-conversation-search')).toBeVisible()
     await expect(page.getByTestId('support-thread-back')).toBeHidden()
@@ -104,6 +154,7 @@ test.describe.serial('support inbox responsive layout', () => {
 
   test('unfolded foldable keeps the views in a rail beside list and thread', async ({ browser }) => {
     const page = await openInbox(browser, { width: 720, height: 800 })
+    await expect(page.getByTestId('mobile-tab-bar')).toBeVisible()
     await expect(page.getByTestId('support-view-rail')).toBeVisible()
     await page.getByTestId('support-rail-view-resolved').click()
     await expect(page.getByTestId('support-list-title')).toHaveText('Resolved')

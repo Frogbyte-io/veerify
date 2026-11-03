@@ -181,6 +181,7 @@
             :current-user-id="currentUserId"
             :current-user-name="currentUserName"
             :show-drawer-button="isCompactPanes && !showViewRail"
+            :hide-title-row="usesPhoneHeader"
             :show-project="combined"
             :scope-projects="scopeProjectList"
             :subtitle="listSubtitle"
@@ -280,13 +281,22 @@
 
     <!-- Inbox column as a drawer when the panes are too narrow -->
     <Sheet v-if="isCompactPanes" :open="showInboxSheet" @update:open="showInboxSheet = $event">
-      <SheetContent side="left" class="w-[86vw] max-w-[300px] gap-0 p-0" data-testid="support-inbox-sheet">
+      <!-- Phones: a bottom sheet opened from the title in the top bar -->
+      <SheetContent
+        :side="usesPhoneHeader ? 'bottom' : 'left'"
+        :class="
+          usesPhoneHeader ? 'max-h-[80svh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]' : 'w-[86vw] max-w-[300px]'
+        "
+        class="gap-0 p-0"
+        data-testid="support-inbox-sheet"
+      >
         <SheetHeader class="sr-only">
           <SheetTitle>Inboxes</SheetTitle>
           <SheetDescription>Switch inbox, view, address or tag</SheetDescription>
         </SheetHeader>
         <SupportInboxSidebar
           v-bind="sidebarProps"
+          class="min-h-0 flex-1"
           @select-inbox="(id) => closeInboxSheetAfter(selectInbox(id))"
           @select-view="(view) => closeInboxSheetAfter(selectView(view))"
           @select-address="(id) => closeInboxSheetAfter(selectAddress(id))"
@@ -384,6 +394,7 @@
 <script>
 import { toast } from 'vue-sonner'
 import { loadActiveProject } from '~/lib/active-project'
+import { clearMobileHeader, mobileShell, setMobileHeader } from '~/lib/mobile-shell'
 import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
 import {
   findScopeProject,
@@ -606,6 +617,28 @@ export default {
     showViewRail() {
       return this.isCompactPanes && this.pageWidth >= 672
     },
+    // Phones: the list title (view switcher) and count move into the one top bar of the layout.
+    usesPhoneHeader() {
+      return (
+        mobileShell.isCompact === true &&
+        this.isCompactPanes &&
+        !this.showViewRail &&
+        !this.isLoadingProject &&
+        !this.showNotice
+      )
+    },
+    phoneHeader() {
+      if (!this.usesPhoneHeader) return null
+      const count = this.conversationsEnriched.length
+      return {
+        title: this.activeViewLabel,
+        count: !this.isLoadingConversations && count ? `${count}${this.hasMoreConversations ? '+' : ''}` : '',
+        onTitleClick: this.openInboxSheet,
+        titleTestId: 'support-list-title-views',
+        // An open conversation brings its own header (back) and composer.
+        hidden: Boolean(this.selectedConversationId),
+      }
+    },
 
     activeInbox() {
       if (this.combined) return null
@@ -737,6 +770,13 @@ export default {
   },
 
   watch: {
+    phoneHeader: {
+      immediate: true,
+      handler(header) {
+        if (header) setMobileHeader(this, header)
+        else clearMobileHeader(this)
+      },
+    },
     // Inline (wide panes) the panel stays open unless the agent closed it; as a slide-over it starts closed.
     detailsInline: {
       handler(inline) {
@@ -768,6 +808,7 @@ export default {
   },
 
   beforeUnmount() {
+    clearMobileHeader(this)
     this.pageResizeObserver?.disconnect()
     if (import.meta.client) {
       window.removeEventListener('keydown', this.handleKeyboardShortcut)
@@ -781,6 +822,9 @@ export default {
   },
 
   methods: {
+    openInboxSheet() {
+      this.showInboxSheet = true
+    },
     handleKeyboardShortcut(event) {
       if (event.key === 'Escape' && this.showShortcutHelp) {
         event.preventDefault()
