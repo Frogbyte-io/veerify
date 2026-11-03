@@ -60,7 +60,8 @@ export default {
       return pickMobileTabs(this.visibleGroups)
     },
     activeUrl() {
-      return activeTabUrl(this.$route.path, this.tabs, navPaths(this.visibleGroups))
+      // Every sidebar route, also those of tools that are off, so their pages never light up Overview.
+      return activeTabUrl(this.$route.path, this.tabs, navPaths(SIDEBAR_NAV_GROUPS))
     },
     moreOpen() {
       return mobileShell.moreOpen
@@ -80,7 +81,8 @@ export default {
         // Tools are switched per project, so a project switch or a Tools toggle changes the tabs.
         await loadActiveProject({ force: Boolean(event) })
       } catch {
-        // Failures keep the last tabs; ProjectSwitcher shows the error with a retry.
+        // Failures keep the last tabs (lib/active-project.ts keeps the cached context); the next
+        // project event or remount tries again.
       }
     },
     openMore() {

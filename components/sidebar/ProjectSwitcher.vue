@@ -21,13 +21,19 @@
           <SidebarMenuButton
             data-testid="project-switcher-trigger"
             size="lg"
-            :aria-label="
-              compact ? `Switch project (${isAllProjects ? 'All projects' : activeProject?.name || 'none'})` : undefined
-            "
+            :aria-label="compactLabel"
             :class="compact ? '!size-10 justify-center !p-1' : ''"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1 group-data-[collapsible=icon]:justify-center"
           >
-            <ProjectBadgeStack v-if="isAllProjects" :projects="projects" size="lg" />
+            <!-- Compact (badge only): the error text is hidden, so the badge itself shows the failure -->
+            <div
+              v-if="compact && loadError"
+              data-testid="project-switcher-compact-error"
+              class="flex aspect-square size-8 items-center justify-center rounded-lg bg-red-500/10 text-red-500"
+            >
+              <Icon name="lucide:alert-circle" class="size-4" />
+            </div>
+            <ProjectBadgeStack v-else-if="isAllProjects" :projects="projects" size="lg" />
             <ProjectBadge v-else-if="activeProjectListed" :project="activeProjectListed" size="lg" />
             <div
               v-else
@@ -352,6 +358,12 @@ export default {
   },
 
   computed: {
+    compactLabel() {
+      if (!this.compact) return undefined
+      if (this.loadError) return 'Projects failed to load, open to retry'
+      return `Switch project (${this.isAllProjects ? 'All projects' : this.activeProject?.name || 'none'})`
+    },
+
     // In the compact shell (phones, tablets) the switcher sits in the top bar: open the menu below it.
     isMobile() {
       return mobileShell.isCompact === true

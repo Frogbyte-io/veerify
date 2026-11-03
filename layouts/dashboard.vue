@@ -101,6 +101,8 @@ export default {
   methods: {
     handleMediaChange(event) {
       mobileShell.isCompact = event.matches
+      // A field focused while crossing 1024px must not leave the tab bar hidden afterwards.
+      this.keyboardOpen = false
       if (!event.matches) mobileShell.moreOpen = false
     },
     handleFocusChange(event) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_PROJECT_MODULES, type ModuleSettings } from '~/lib/modules'
 import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups } from '~/lib/sidebar-nav'
 import {
+  activeNavUrl,
   activeTabUrl,
   clearMobileHeader,
   mobileShell,
@@ -9,6 +10,7 @@ import {
   navPaths,
   navVisibilityContext,
   pickMobileTabs,
+  productNavGroup,
   setMobileHeader,
 } from '~/lib/mobile-shell'
 
@@ -90,5 +92,50 @@ describe('mobile header', () => {
     expect(mobileShell.header.title).toBe('Next')
     clearMobileHeader(next)
     expect(mobileShell.header.title).toBe('')
+  })
+})
+
+describe('active tab with tools switched off', () => {
+  it('does not light up Overview on the page of a tool that is off', () => {
+    const groups = groupsFor({ roadmapEnabled: true, changelogEnabled: false })
+    const tabs = pickMobileTabs(groups)
+    expect(activeTabUrl('/dashboard/changelog', tabs, navPaths(SIDEBAR_NAV_GROUPS))).toBeNull()
+    expect(activeTabUrl('/dashboard', tabs, navPaths(SIDEBAR_NAV_GROUPS))).toBe('/dashboard')
+  })
+})
+
+describe('product boards under More', () => {
+  const products = [
+    { name: 'dot x', slug: 'dot-x' },
+    { name: 'Decker', slug: 'decker' },
+  ]
+
+  it('lists one Feedback board per product when there are several', () => {
+    const ctx = { productCount: 2, isAllProjects: false }
+    const group = productNavGroup(groupsFor(), ctx, products)
+    expect(group?.items.map((item) => [item.title, item.url])).toEqual([
+      ['dot x', '/feedback?product=dot-x'],
+      ['Decker', '/feedback?product=decker'],
+    ])
+  })
+
+  it('has no section for a single product, in All projects or with Feedback off', () => {
+    expect(productNavGroup(groupsFor(), { productCount: 1, isAllProjects: false }, products.slice(0, 1))).toBeNull()
+    expect(productNavGroup(groupsFor(), { productCount: 2, isAllProjects: true }, products)).toBeNull()
+    expect(
+      productNavGroup(groupsFor({ feedbackEnabled: false }), { productCount: 2, isAllProjects: false }, products)
+    ).toBeNull()
+  })
+})
+
+describe('active More entry', () => {
+  const urls = ['/settings?tab=notifications', '/settings', '/project/settings', '/project/settings?tab=tools']
+
+  it('highlights only the entry with the most matching query parameters', () => {
+    expect(activeNavUrl(urls, '/settings', { tab: 'notifications' })).toBe('/settings?tab=notifications')
+    expect(activeNavUrl(urls, '/settings', {})).toBe('/settings')
+    expect(activeNavUrl(urls, '/settings', { tab: 'profile' })).toBe('/settings')
+    expect(activeNavUrl(urls, '/project/settings', { tab: 'tools' })).toBe('/project/settings?tab=tools')
+    expect(activeNavUrl(urls, '/inbox', {})).toBeNull()
   })
 })

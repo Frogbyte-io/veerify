@@ -1,9 +1,10 @@
 <template>
   <Sheet :open="open" @update:open="setOpen">
+    <!-- The built-in close button (top right) stays: the grabber is decorative. -->
     <SheetContent
       side="bottom"
       data-testid="mobile-more-sheet"
-      class="max-h-[85svh] gap-0 rounded-t-2xl bg-sidebar p-0 pb-[env(safe-area-inset-bottom)] text-sidebar-foreground md:mx-auto md:max-w-xl md:border-x [&>button]:hidden"
+      class="max-h-[85svh] gap-0 rounded-t-2xl bg-sidebar p-0 pb-[env(safe-area-inset-bottom)] text-sidebar-foreground md:mx-auto md:max-w-xl md:border-x"
     >
       <SheetHeader class="sr-only">
         <SheetTitle>Menu</SheetTitle>
@@ -19,7 +20,8 @@
                 :to="item.url"
                 prefetch-on="interaction"
                 :data-testid="`mobile-more-link-${item.url}`"
-                :class="linkClass(isActive(item.url))"
+                :aria-current="activeUrl === item.url ? 'page' : undefined"
+                :class="linkClass(activeUrl === item.url)"
                 @click="setOpen(false)"
               >
                 <Icon :name="item.icon" class="size-5 shrink-0 text-[20px] text-muted-foreground" />
@@ -40,7 +42,14 @@
 import { cn } from '~/lib/utils'
 import { activeProjectStore } from '~/lib/active-project'
 import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups } from '~/lib/sidebar-nav'
-import { mobileShell, moreNavGroups, navVisibilityContext, pickMobileTabs } from '~/lib/mobile-shell'
+import {
+  activeNavUrl,
+  mobileShell,
+  moreNavGroups,
+  navVisibilityContext,
+  pickMobileTabs,
+  productNavGroup,
+} from '~/lib/mobile-shell'
 
 export default {
   name: 'MobileMoreSheet',
@@ -54,9 +63,17 @@ export default {
       return mobileShell.moreOpen
     },
     groups() {
-      const ctx = navVisibilityContext(activeProjectStore.context, this.hasActiveOrganization)
+      const context = activeProjectStore.context
+      const ctx = navVisibilityContext(context, this.hasActiveOrganization)
       const visible = getVisibleNavGroups(SIDEBAR_NAV_GROUPS, ctx)
-      return moreNavGroups(visible, pickMobileTabs(visible))
+      const more = moreNavGroups(visible, pickMobileTabs(visible))
+      // Per-product boards (Feedback has a tab, so its sub-items live here).
+      const products = productNavGroup(visible, ctx, context?.products || [])
+      return products ? [products, ...more] : more
+    },
+    activeUrl() {
+      const urls = this.groups.flatMap((group) => group.items.map((item) => item.url))
+      return activeNavUrl(urls, this.$route.path, this.$route.query)
     },
   },
   watch: {
@@ -67,13 +84,6 @@ export default {
   methods: {
     setOpen(value) {
       mobileShell.moreOpen = value
-    },
-    isActive(url) {
-      const [path, query] = url.split('?')
-      if (this.$route.path !== path) return false
-      if (!query) return true
-      const params = new URLSearchParams(query)
-      return [...params.entries()].every(([key, value]) => this.$route.query[key] === value)
     },
     linkClass(active) {
       return cn(

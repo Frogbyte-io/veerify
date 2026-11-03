@@ -635,7 +635,6 @@ export default {
         count: !this.isLoadingConversations && count ? `${count}${this.hasMoreConversations ? '+' : ''}` : '',
         onTitleClick: this.openInboxSheet,
         titleTestId: 'support-list-title-views',
-        titleLabel: 'Switch view',
         // An open conversation brings its own header (back) and composer.
         hidden: Boolean(this.selectedConversationId),
       }

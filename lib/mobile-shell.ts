@@ -1,7 +1,13 @@
 import { reactive } from 'vue'
 import type { ActiveProjectContext } from '~/lib/active-project'
 import { isAllProjects, scopeModules } from '~/lib/project-scope'
-import type { OrgState, SidebarNavGroup, SidebarNavItem, SidebarVisibilityContext } from '~/lib/sidebar-nav'
+import {
+  showProductSubItems,
+  type OrgState,
+  type SidebarNavGroup,
+  type SidebarNavItem,
+  type SidebarVisibilityContext,
+} from '~/lib/sidebar-nav'
 
 /**
  * Compact shell for phones and tablets (below `lg`, 1024px): one top bar and a bottom tab bar instead of
@@ -46,7 +52,6 @@ export interface MobileHeaderState {
   count: string
   onTitleClick: (() => void) | null
   titleTestId: string
-  titleLabel: string
   /** Hide both bars (e.g. an open conversation, which brings its own header and composer). */
   hidden: boolean
 }
@@ -59,7 +64,7 @@ interface MobileShellStore {
 }
 
 function emptyHeader(): MobileHeaderState {
-  return { title: '', count: '', onTitleClick: null, titleTestId: '', titleLabel: '', hidden: false }
+  return { title: '', count: '', onTitleClick: null, titleTestId: '', hidden: false }
 }
 
 export const mobileShell = reactive<MobileShellStore>({
@@ -145,4 +150,48 @@ export function activeTabUrl(path: string, tabs: readonly MobileTab[], navUrls: 
 /** Every sidebar entry's path (query strings dropped), for `activeTabUrl`. */
 export function navPaths(groups: readonly SidebarNavGroup[]): string[] {
   return visibleItems(groups).map((item) => item.url.split('?')[0])
+}
+
+export interface MobileProduct {
+  name: string
+  slug: string
+}
+
+/**
+ * The sidebar's per-product boards (`<url>?product=<slug>`, only with more than one product), as their own
+ * More section: their parent entries (Feedback) are tabs, so the sub-items would otherwise be lost.
+ */
+export function productNavGroup(
+  groups: readonly SidebarNavGroup[],
+  ctx: Pick<SidebarVisibilityContext, 'productCount' | 'isAllProjects'>,
+  products: readonly MobileProduct[]
+): SidebarNavGroup | null {
+  if (!showProductSubItems(ctx)) return null
+  const items = visibleItems(groups)
+    .filter((item) => item.productSubItems)
+    .flatMap((item) =>
+      products.map((product) => ({
+        title: product.name,
+        url: `${item.url}?product=${encodeURIComponent(product.slug)}`,
+        icon: item.icon,
+      }))
+    )
+  return items.length ? { id: 'products', label: 'Feedback boards', items } : null
+}
+
+/**
+ * The one entry to highlight for the current route. Entries can share a path and differ by query
+ * (`/settings` and `/settings?tab=notifications`): the entry whose query parameters all match and has
+ * the most of them wins, so only one is active.
+ */
+export function activeNavUrl(urls: readonly string[], path: string, query: Record<string, unknown>): string | null {
+  let best: { url: string; params: number } | null = null
+  for (const url of urls) {
+    const [urlPath, search] = url.split('?')
+    if (urlPath !== path) continue
+    const params = [...new URLSearchParams(search || '').entries()]
+    if (!params.every(([key, value]) => query[key] === value)) continue
+    if (!best || params.length > best.params) best = { url, params: params.length }
+  }
+  return best?.url ?? null
 }

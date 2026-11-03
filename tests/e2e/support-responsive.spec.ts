@@ -136,7 +136,8 @@ test.describe.serial('support inbox responsive layout', () => {
     await expect(more.getByTestId('mobile-more-link-/inbox/settings')).toBeVisible()
     const box = await more.boundingBox()
     expect(box!.width).toBeLessThan(820)
-    await page.waitForTimeout(600)
+    // Let the slide-in finish so the screenshot shows the sheet in place.
+    await more.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
     await shot(page, 'tablet-portrait-more')
   })
 

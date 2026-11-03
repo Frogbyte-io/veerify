@@ -13,7 +13,7 @@
           v-if="header.onTitleClick"
           type="button"
           :data-testid="header.titleTestId || 'mobile-top-bar-title'"
-          :aria-label="header.titleLabel || undefined"
+          aria-haspopup="dialog"
           class="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-base font-semibold hover:bg-accent"
           @click="header.onTitleClick()"
         >
