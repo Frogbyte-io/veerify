@@ -9,7 +9,7 @@
         class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1"
       >
         <Skeleton class="size-8 rounded-lg shrink-0" />
-        <div class="grid flex-1 gap-1 group-data-[collapsible=icon]:hidden">
+        <div class="grid flex-1 gap-1 group-data-[collapsible=icon]:hidden" :class="compact ? 'hidden' : ''">
           <Skeleton class="h-3.5 w-24 rounded" />
           <Skeleton class="h-3 w-16 rounded" />
         </div>
@@ -21,6 +21,10 @@
           <SidebarMenuButton
             data-testid="project-switcher-trigger"
             size="lg"
+            :aria-label="
+              compact ? `Switch project (${isAllProjects ? 'All projects' : activeProject?.name || 'none'})` : undefined
+            "
+            :class="compact ? '!size-10 justify-center !p-1' : ''"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1 group-data-[collapsible=icon]:justify-center"
           >
             <ProjectBadgeStack v-if="isAllProjects" :projects="projects" size="lg" />
@@ -31,7 +35,10 @@
             >
               <Icon name="lucide:folder-kanban" class="size-4" />
             </div>
-            <div class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+            <div
+              class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"
+              :class="compact ? 'hidden' : ''"
+            >
               <template v-if="activeOrganization">
                 <span data-testid="project-switcher-active-name" class="truncate font-semibold">
                   {{ isAllProjects ? 'All projects' : activeProject ? activeProject.name : 'No project' }}
@@ -45,7 +52,11 @@
                 <span class="truncate text-xs text-red-400">Please retry</span>
               </template>
             </div>
-            <Icon name="lucide:chevrons-up-down" class="ml-auto group-data-[collapsible=icon]:hidden" />
+            <Icon
+              name="lucide:chevrons-up-down"
+              class="ml-auto group-data-[collapsible=icon]:hidden"
+              :class="compact ? 'hidden' : ''"
+            />
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -166,7 +177,11 @@
           <div class="flex aspect-square size-8 items-center justify-center rounded-lg">
             <img src="/veerify.svg" alt="Veerify" class="size-8" />
           </div>
-          <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
+          <span
+            class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden"
+            :class="compact ? 'hidden' : ''"
+            >Veerify</span
+          >
         </NuxtLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -227,6 +242,7 @@
 </template>
 
 <script>
+import { mobileShell } from '~/lib/mobile-shell'
 import { authClient } from '~/lib/auth-client'
 import { isProjectOnlyRoute, projectShortcutIndex } from '~/lib/project-scope'
 import { shouldLeaveRouteOnOrgSwitch } from '~/lib/org-switch'
@@ -308,6 +324,11 @@ function unwrapList(response) {
 export default {
   name: 'ProjectSwitcher',
 
+  props: {
+    // Badge only (the phone top bar, next to a page title).
+    compact: { type: Boolean, default: false },
+  },
+
   data() {
     const hasCachedData = hasCachedContext()
     return {
@@ -331,8 +352,9 @@ export default {
   },
 
   computed: {
+    // In the compact shell (phones, tablets) the switcher sits in the top bar: open the menu below it.
     isMobile() {
-      return import.meta.client ? window.innerWidth < 768 : false
+      return mobileShell.isCompact === true
     },
 
     isAllProjects() {
@@ -355,7 +377,8 @@ export default {
     },
 
     kbdClass() {
-      return 'rounded border border-b-2 px-1 font-mono text-[10px] text-muted-foreground'
+      // Hidden on phones, which have no keyboard shortcuts.
+      return 'hidden rounded border border-b-2 px-1 font-mono text-[10px] text-muted-foreground md:inline'
     },
 
     otherOrganizations() {

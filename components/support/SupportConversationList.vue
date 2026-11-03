@@ -1,7 +1,8 @@
 <template>
   <div class="flex h-full flex-col">
     <div class="space-y-2 border-b px-3 pt-3 pb-2.5">
-      <div class="flex items-center gap-1.5">
+      <!-- On phones the layout's top bar shows the title and count instead -->
+      <div v-if="!hideTitleRow" class="flex items-center gap-1.5">
         <Button
           v-if="showDrawerButton"
           variant="ghost"
@@ -424,6 +425,7 @@ export default {
     currentUserId: { type: String, default: '' },
     currentUserName: { type: String, default: '' },
     showDrawerButton: { type: Boolean, default: false },
+    hideTitleRow: { type: Boolean, default: false },
     // All projects: tag every row with its project and edge it in the project's colour.
     showProject: { type: Boolean, default: false },
     // Projects of the scope (`identity` gives the colour); rows carry only `project: { id, name, slug }`.

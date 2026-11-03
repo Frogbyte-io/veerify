@@ -104,6 +104,7 @@
 </template>
 
 <script>
+import { mobileShell } from '~/lib/mobile-shell'
 import { authClient } from '~/lib/auth-client'
 import {
   clearDashboardBootstrapCache,
@@ -165,11 +166,9 @@ export default {
       return this.isPending && !this.session
     },
 
+    // In the compact shell (phones, tablets) the account menu sits at the bottom of the More sheet.
     isMobile() {
-      if (import.meta.client) {
-        return window.innerWidth < 768
-      }
-      return false
+      return mobileShell.isCompact === true
     },
   },
 
