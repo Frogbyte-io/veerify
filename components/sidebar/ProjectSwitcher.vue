@@ -360,7 +360,8 @@ export default {
   computed: {
     compactLabel() {
       if (!this.compact) return undefined
-      if (this.loadError) return 'Projects failed to load, open to retry'
+      // loadError covers failed loads and failed switches; announce the actual message.
+      if (this.loadError) return `Project switcher error: ${this.loadError}. Open for details`
       return `Switch project (${this.isAllProjects ? 'All projects' : this.activeProject?.name || 'none'})`
     },
 
