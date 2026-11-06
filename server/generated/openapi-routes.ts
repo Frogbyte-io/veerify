@@ -7516,7 +7516,7 @@ export const openapiPaths = {
         "Organizations"
       ],
       "summary": "List pending invitations",
-      "description": "Lists unexpired pending invitations for the organization. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Lists pending invitations for the organization, including expired ones (flagged `expired`) so they can be resent or revoked. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "listOrganizationInvitations",
       "security": [
         {
@@ -7539,7 +7539,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Array of { id, email, role, status, inviterName, expiresAt, createdAt }"
+          "description": "Array of { id, email, role, status, inviterName, expiresAt, createdAt, expired }"
         },
         "401": {
           "description": "Not authenticated"
