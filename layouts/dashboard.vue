@@ -12,7 +12,18 @@
           <div class="hidden w-(--sidebar-width) shrink-0 lg:block" aria-hidden="true" />
         </template>
       </ClientOnly>
-      <SidebarInset class="min-w-0" :class="isFlush ? 'h-svh overflow-hidden' : ''">
+      <SidebarInset
+        class="min-w-0"
+        :class="[
+          isFlush ? 'h-svh overflow-hidden' : '',
+          // Sticky bottom elements in pages offset by this so they clear the fixed tab bar.
+          showCompactChrome && !keyboardOpen
+            ? isCompact === null
+              ? 'max-lg:[--mobile-tab-bar-offset:var(--mobile-tab-bar-height)]'
+              : '[--mobile-tab-bar-offset:var(--mobile-tab-bar-height)]'
+            : '',
+        ]"
+      >
         <!-- Until the viewport is measured (SSR), CSS picks the bar. -->
         <MobileTopBar v-if="showCompactChrome" :class="isCompact === null ? 'lg:hidden' : ''" />
         <header

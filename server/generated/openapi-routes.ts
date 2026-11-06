@@ -6943,7 +6943,7 @@ export const openapiPaths = {
         "Organizations"
       ],
       "summary": "Invite member to organization",
-      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs. A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.\n",
+      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs. A person who is already a member of any workspace, or who already has an unexpired pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`. An expired pending invitation does not block: a new invitation is created and the expired one is canceled.\n",
       "operationId": "inviteOrganizationMember",
       "security": [
         {
@@ -7516,7 +7516,7 @@ export const openapiPaths = {
         "Organizations"
       ],
       "summary": "List pending invitations",
-      "description": "Lists unexpired pending invitations for the organization. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Lists pending invitations for the organization, including expired ones (flagged `expired`) so they can be resent or revoked. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "listOrganizationInvitations",
       "security": [
         {
@@ -7539,7 +7539,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Array of { id, email, role, status, inviterName, expiresAt, createdAt }"
+          "description": "Array of { id, email, role, status, inviterName, expiresAt, createdAt, expired }"
         },
         "401": {
           "description": "Not authenticated"

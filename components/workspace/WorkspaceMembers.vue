@@ -110,7 +110,7 @@
           <Icon name="lucide:mail" class="h-5 w-5" />
           Pending Invitations
         </CardTitle>
-        <CardDescription>Outstanding invitations that have not yet been accepted.</CardDescription>
+        <CardDescription>Invitations that have not been accepted yet. Expired ones can be sent again.</CardDescription>
       </CardHeader>
       <CardContent>
         <div class="space-y-2">
@@ -118,16 +118,27 @@
             v-for="inv in pendingInvitations"
             :key="inv.id"
             data-testid="workspace-pending-invitation-row"
-            class="flex items-center justify-between rounded-lg border p-3"
+            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-3"
           >
             <div class="min-w-0">
-              <p class="font-medium truncate">{{ inv.email }}</p>
+              <div class="flex min-w-0 items-center gap-2 font-medium">
+                <span class="truncate">{{ inv.email }}</span>
+                <Badge
+                  v-if="inv.expired"
+                  data-testid="workspace-pending-invitation-expired"
+                  variant="outline"
+                  class="shrink-0 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                >
+                  Expired
+                </Badge>
+              </div>
               <p class="text-xs text-muted-foreground">
                 Invited as <span class="capitalize">{{ inv.role }}</span> &middot; Sent
-                {{ formatDate(inv.createdAt) }} &middot; Expires {{ formatDate(inv.expiresAt) }}
+                {{ formatDate(inv.createdAt) }} &middot; {{ inv.expired ? 'Expired' : 'Expires' }}
+                {{ formatDate(inv.expiresAt) }}
               </p>
             </div>
-            <div class="flex items-center gap-2 shrink-0">
+            <div class="ml-auto flex items-center gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
@@ -135,7 +146,7 @@
                 @click="resendInvitation(inv)"
               >
                 <Icon v-if="resendingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
-                <span v-else>Send reminder</span>
+                <span v-else>{{ inv.expired ? 'Resend invite' : 'Send reminder' }}</span>
               </Button>
               <Button
                 variant="ghost"
