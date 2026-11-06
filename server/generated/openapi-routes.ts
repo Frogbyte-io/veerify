@@ -6943,7 +6943,7 @@ export const openapiPaths = {
         "Organizations"
       ],
       "summary": "Invite member to organization",
-      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs. A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.\n",
+      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs. A person who is already a member of any workspace, or who already has an unexpired pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`. An expired pending invitation does not block: a new invitation is created and the expired one is canceled.\n",
       "operationId": "inviteOrganizationMember",
       "security": [
         {

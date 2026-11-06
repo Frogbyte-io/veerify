@@ -6,7 +6,7 @@
  *     summary: Invite member to organization
  *     description: >
  *       Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs.
- *       A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.
+ *       A person who is already a member of any workspace, or who already has an unexpired pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`. An expired pending invitation does not block: a new invitation is created and the expired one is canceled.
  *     operationId: inviteOrganizationMember
  *     security:
  *       - cookieAuth: []
@@ -32,7 +32,7 @@
 import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { invitation, member, user } from '~/server/database/schema/index'
-import { and, eq, lte } from 'drizzle-orm'
+import { and, eq, gt, lte } from 'drizzle-orm'
 import { getAuthHeaders } from '~/server/utils/auth-headers'
 import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 
@@ -60,15 +60,14 @@ export default defineEventHandler(async (event) => {
       and(
         eq(invitation.organizationId, organizationId),
         eq(invitation.email, normalizedEmail),
-        eq(invitation.status, 'pending')
+        eq(invitation.status, 'pending'),
+        // Expired invitations no longer block: Better-Auth ignores them and creates a fresh one.
+        gt(invitation.expiresAt, new Date())
       )
     )
     .limit(1)
 
-  // An expired invitation no longer blocks: Better-Auth ignores it and creates a fresh one.
-  const hasLiveInvitation = Boolean(existingInvitation) && new Date(existingInvitation.expiresAt).getTime() > Date.now()
-
-  if (hasLiveInvitation && !resend) {
+  if (existingInvitation && !resend) {
     throw createError({
       statusCode: 409,
       statusMessage: 'This person is already invited.',

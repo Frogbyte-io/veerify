@@ -121,7 +121,7 @@
             class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border p-3"
           >
             <div class="min-w-0">
-              <p class="flex min-w-0 items-center gap-2 font-medium">
+              <div class="flex min-w-0 items-center gap-2 font-medium">
                 <span class="truncate">{{ inv.email }}</span>
                 <Badge
                   v-if="inv.expired"
@@ -131,7 +131,7 @@
                 >
                   Expired
                 </Badge>
-              </p>
+              </div>
               <p class="text-xs text-muted-foreground">
                 Invited as <span class="capitalize">{{ inv.role }}</span> &middot; Sent
                 {{ formatDate(inv.createdAt) }} &middot; {{ inv.expired ? 'Expired' : 'Expires' }}

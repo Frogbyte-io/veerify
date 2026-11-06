@@ -114,6 +114,40 @@ test.describe.serial('support inbox responsive layout', () => {
     await expect(more).toBeHidden()
   })
 
+  test('phone tab bar stays flush with the bottom and content ends above it', async ({ browser }) => {
+    const viewport = { width: 390, height: 844 }
+    const page = await openInbox(browser, viewport)
+    const bar = page.getByTestId('mobile-tab-bar')
+    await expect(bar).toBeVisible()
+
+    // Flush page (inbox): the panes end where the bar starts.
+    const inboxBar = await bar.boundingBox()
+    expect(Math.round(inboxBar!.y + inboxBar!.height)).toBe(viewport.height)
+    const list = await page.getByTestId('support-conversation-search').evaluate((el) => {
+      const pane = el.closest('main') as HTMLElement
+      const content = pane.querySelector(':scope > div.flex-1') as HTMLElement
+      return content.getBoundingClientRect().bottom
+    })
+    expect(list).toBeLessThanOrEqual(inboxBar!.y + 1)
+
+    // Short page: the bar sits at the bottom of the viewport, not right after the content.
+    await page.goto('/workspace?tab=general')
+    await expect(bar).toBeVisible()
+    const shortBar = await bar.boundingBox()
+    expect(Math.round(shortBar!.y + shortBar!.height)).toBe(viewport.height)
+
+    // Long page scrolled to the end: the bar stays at the bottom and the last content is above it.
+    await page.goto('/workspace?tab=members')
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    const longBar = await bar.boundingBox()
+    expect(Math.round(longBar!.y + longBar!.height)).toBe(viewport.height)
+    const contentBottom = await page.evaluate(() => {
+      const spacer = document.querySelector('[data-testid="mobile-tab-bar"]')!.parentElement!
+      return (spacer.previousElementSibling as HTMLElement).getBoundingClientRect().bottom
+    })
+    expect(contentBottom).toBeLessThanOrEqual(longBar!.y + 1)
+  })
+
   test('portrait tablet uses the top bar and tab bar, with list and thread side by side', async ({ browser }) => {
     const page = await openInbox(browser, { width: 820, height: 1180 })
     await expect(page.getByTestId('mobile-top-bar')).toBeVisible()
