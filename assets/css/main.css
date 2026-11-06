@@ -47,6 +47,8 @@
 }
 
 :root {
+  /* Phone/tablet tab bar (components/sidebar/MobileTabBar.vue): 56px tabs + 1px border + safe area. */
+  --mobile-tab-bar-height: calc(3.5rem + 1px + env(safe-area-inset-bottom));
   --background: oklch(0.98 0.01 240);
   --foreground: oklch(0.15 0.02 240);
   --card: oklch(1 0 0);

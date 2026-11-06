@@ -1277,7 +1277,7 @@
     <div
       v-if="inboxAccessError"
       data-testid="support-inbox-access-error"
-      class="sticky bottom-4 z-20 rounded-lg border border-destructive/30 bg-background p-3 text-sm text-destructive shadow-md"
+      class="sticky bottom-[calc(1rem+var(--mobile-tab-bar-offset,0px))] z-20 rounded-lg border border-destructive/30 bg-background p-3 text-sm text-destructive shadow-md"
       role="alert"
     >
       {{ inboxAccessError }}

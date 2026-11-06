@@ -32,7 +32,7 @@
 import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { invitation, member, user } from '~/server/database/schema/index'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, lte } from 'drizzle-orm'
 import { getAuthHeaders } from '~/server/utils/auth-headers'
 import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 
@@ -65,7 +65,10 @@ export default defineEventHandler(async (event) => {
     )
     .limit(1)
 
-  if (existingInvitation && !resend) {
+  // An expired invitation no longer blocks: Better-Auth ignores it and creates a fresh one.
+  const hasLiveInvitation = Boolean(existingInvitation) && new Date(existingInvitation.expiresAt).getTime() > Date.now()
+
+  if (hasLiveInvitation && !resend) {
     throw createError({
       statusCode: 409,
       statusMessage: 'This person is already invited.',
@@ -114,6 +117,19 @@ export default defineEventHandler(async (event) => {
       ...(resend ? { resend: true } : {}),
     },
   })
+
+  // Retire expired pending invitations for this address so only the new one is listed (and can be accepted).
+  await db
+    .update(invitation)
+    .set({ status: 'canceled' })
+    .where(
+      and(
+        eq(invitation.organizationId, organizationId),
+        eq(invitation.email, normalizedEmail),
+        eq(invitation.status, 'pending'),
+        lte(invitation.expiresAt, new Date())
+      )
+    )
 
   return result
 })

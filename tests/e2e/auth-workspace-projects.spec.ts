@@ -11,7 +11,10 @@ import {
   switchProjectFromSidebar,
 } from './helpers/projects'
 import { projectSettingsTabSelector, selectors, workspaceTabSelector } from './helpers/selectors'
-import { cleanupWorkspaceMember, createWorkspaceMember } from './helpers/workspace-members'
+import { and, eq } from 'drizzle-orm'
+import { db } from './helpers/db'
+import { SEEDED_ORG_ID, cleanupWorkspaceMember, createWorkspaceMember } from './helpers/workspace-members'
+import { invitation, user } from '../../server/database/schema/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -294,6 +297,43 @@ test('workspace members tab shows pending invites and allows reminder and revoke
 
   await inviteRow.getByRole('button', { name: 'Revoke' }).click()
   await expect(inviteRow).toHaveCount(0)
+})
+
+test('expired workspace invites stay listed and can be resent', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureProjectContext(page.request)
+
+  const inviteEmail = `expired-workspace-invite-${Date.now()}@example.com`
+  const [inviter] = await db.select({ id: user.id }).from(user).where(eq(user.email, TEST_EMAIL)).limit(1)
+  const day = 24 * 60 * 60 * 1000
+  await db.insert(invitation).values({
+    id: `e2e-expired-${Date.now()}`,
+    organizationId: SEEDED_ORG_ID,
+    email: inviteEmail,
+    role: 'member',
+    status: 'pending',
+    inviterId: inviter.id,
+    createdAt: new Date(Date.now() - 5 * day),
+    expiresAt: new Date(Date.now() - 3 * day),
+  })
+
+  try {
+    await page.goto('/workspace?tab=members')
+    const inviteRow = page.getByTestId('workspace-pending-invitation-row').filter({ hasText: inviteEmail })
+    await expect(inviteRow).toBeVisible({ timeout: 20_000 })
+    await expect(inviteRow.getByTestId('workspace-pending-invitation-expired')).toBeVisible()
+
+    await inviteRow.getByRole('button', { name: 'Resend invite' }).click()
+
+    // The expired invitation is retired and a fresh one takes its place.
+    await expect(inviteRow).toHaveCount(1)
+    await expect(inviteRow.getByTestId('workspace-pending-invitation-expired')).toHaveCount(0, { timeout: 20_000 })
+    await expect(inviteRow.getByRole('button', { name: 'Send reminder' })).toBeVisible()
+  } finally {
+    await db
+      .delete(invitation)
+      .where(and(eq(invitation.organizationId, SEEDED_ORG_ID), eq(invitation.email, inviteEmail)))
+  }
 })
 
 test('user can switch projects using the sidebar project switcher', async ({ page }) => {

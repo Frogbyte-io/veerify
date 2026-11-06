@@ -1,38 +1,45 @@
 <template>
-  <nav
-    data-testid="mobile-tab-bar"
-    aria-label="Main"
-    class="sticky bottom-0 z-20 shrink-0 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-[backdrop-filter]:bg-background/80"
-  >
-    <!-- Tablets: the tabs stay together in the middle instead of spreading across the screen -->
-    <div
-      class="mx-auto grid w-full md:max-w-2xl"
-      :style="{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }"
+  <!--
+    The bar is fixed to the viewport: `sticky` let it ride up with short pages, since the layout's min-h-svh is
+    shorter than the visible area once mobile browsers hide their URL bar. This wrapper stays in the flow and
+    reserves the bar's height (--mobile-tab-bar-height in main.css), so page content and flush panes end above it.
+  -->
+  <div class="h-(--mobile-tab-bar-height) shrink-0">
+    <nav
+      data-testid="mobile-tab-bar"
+      aria-label="Main"
+      class="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur supports-[backdrop-filter]:bg-background/80"
     >
-      <NuxtLink
-        v-for="tab in tabs"
-        :key="tab.url"
-        :to="tab.url"
-        prefetch-on="interaction"
-        :data-testid="`mobile-tab-${tab.url.split('/').pop()}`"
-        :aria-current="activeUrl === tab.url ? 'page' : undefined"
-        :class="tabClass(activeUrl === tab.url)"
+      <!-- Tablets: the tabs stay together in the middle instead of spreading across the screen -->
+      <div
+        class="mx-auto grid w-full md:max-w-2xl"
+        :style="{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }"
       >
-        <Icon :name="tab.icon" class="size-5 shrink-0 text-[20px]" />
-        <span class="max-w-full truncate px-1 md:px-0">{{ tab.title }}</span>
-      </NuxtLink>
-      <button
-        type="button"
-        data-testid="mobile-tab-more"
-        :aria-expanded="String(moreOpen)"
-        :class="tabClass(moreOpen || activeUrl === null)"
-        @click="openMore"
-      >
-        <Icon name="lucide:menu" class="size-5 shrink-0 text-[20px]" />
-        <span>More</span>
-      </button>
-    </div>
-  </nav>
+        <NuxtLink
+          v-for="tab in tabs"
+          :key="tab.url"
+          :to="tab.url"
+          prefetch-on="interaction"
+          :data-testid="`mobile-tab-${tab.url.split('/').pop()}`"
+          :aria-current="activeUrl === tab.url ? 'page' : undefined"
+          :class="tabClass(activeUrl === tab.url)"
+        >
+          <Icon :name="tab.icon" class="size-5 shrink-0 text-[20px]" />
+          <span class="max-w-full truncate px-1 md:px-0">{{ tab.title }}</span>
+        </NuxtLink>
+        <button
+          type="button"
+          data-testid="mobile-tab-more"
+          :aria-expanded="String(moreOpen)"
+          :class="tabClass(moreOpen || activeUrl === null)"
+          @click="openMore"
+        >
+          <Icon name="lucide:menu" class="size-5 shrink-0 text-[20px]" />
+          <span>More</span>
+        </button>
+      </div>
+    </nav>
+  </div>
 </template>
 
 <script>
