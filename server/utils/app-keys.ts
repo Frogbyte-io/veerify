@@ -6,8 +6,16 @@ import { projectApiKey } from '~/server/database/schema/feedback'
 import { ErrorCode, createErrorResponse } from '~/server/utils/response'
 
 export type ProjectApiKeyRow = typeof projectApiKey.$inferSelect
+export type AppKeyRow = ProjectApiKeyRow & { kind: 'app'; productId: string }
+export type ServerKeyRow = ProjectApiKeyRow & { kind: 'server' }
+export type ProjectKeyKind = 'app' | 'server'
 
+/** App keys are embedded in shipped apps and are effectively public. */
 export const APP_KEY_PREFIX = 'vfy_pub_'
+/** Server keys are secrets for a website's backend (form submissions); never ship them to a browser. */
+export const SERVER_KEY_PREFIX = 'vfy_srv_'
+
+const KEY_PREFIXES: Record<ProjectKeyKind, string> = { app: APP_KEY_PREFIX, server: SERVER_KEY_PREFIX }
 
 const TITLE_MAX_LENGTH = 80
 
@@ -15,38 +23,59 @@ export function hashAppKey(key: string): string {
   return createHash('sha256').update(key).digest('hex')
 }
 
-export function generateAppKey(): { key: string; keyPrefix: string; keyHash: string } {
-  const key = APP_KEY_PREFIX + randomBytes(32).toString('base64url')
+export function generateAppKey(kind: ProjectKeyKind = 'app'): { key: string; keyPrefix: string; keyHash: string } {
+  const key = KEY_PREFIXES[kind] + randomBytes(32).toString('base64url')
   return { key, keyPrefix: key.slice(0, 12), keyHash: hashAppKey(key) }
 }
 
-export function readBearerAppKey(event: H3Event): string | null {
+function readBearerToken(event: H3Event, prefix: string): string | null {
   const header = event.node.req.headers.authorization
   if (typeof header !== 'string') return null
   const match = /^bearer\s+(.+)$/i.exec(header.trim())
   const token = match?.[1]?.trim()
-  return token && token.startsWith(APP_KEY_PREFIX) ? token : null
+  return token && token.startsWith(prefix) ? token : null
 }
 
-function invalidAppKey() {
+export function readBearerAppKey(event: H3Event): string | null {
+  return readBearerToken(event, APP_KEY_PREFIX)
+}
+
+function invalidKey(label: string) {
   return createError({
     statusCode: 401,
     statusMessage: 'Unauthorized',
-    data: createErrorResponse(ErrorCode.UNAUTHORIZED, 'Invalid app key'),
+    data: createErrorResponse(ErrorCode.UNAUTHORIZED, `Invalid ${label}`),
   })
 }
 
-export async function requireAppKey(event: H3Event): Promise<ProjectApiKeyRow> {
-  const key = readBearerAppKey(event)
-  if (!key) throw invalidAppKey()
-
+async function findActiveKey(token: string, kind: ProjectKeyKind): Promise<ProjectApiKeyRow | undefined> {
   const [row] = await db
     .select()
     .from(projectApiKey)
-    .where(and(eq(projectApiKey.keyHash, hashAppKey(key)), isNull(projectApiKey.revokedAt)))
+    .where(
+      and(eq(projectApiKey.keyHash, hashAppKey(token)), eq(projectApiKey.kind, kind), isNull(projectApiKey.revokedAt))
+    )
     .limit(1)
-  if (!row) throw invalidAppKey()
   return row
+}
+
+export async function requireAppKey(event: H3Event): Promise<AppKeyRow> {
+  const key = readBearerAppKey(event)
+  if (!key) throw invalidKey('app key')
+
+  const row = await findActiveKey(key, 'app')
+  if (!row || !row.productId) throw invalidKey('app key')
+  return row as AppKeyRow
+}
+
+/** A project server key (`Authorization: Bearer vfy_srv_...`), or 401. */
+export async function requireServerKey(event: H3Event): Promise<ServerKeyRow> {
+  const key = readBearerToken(event, SERVER_KEY_PREFIX)
+  if (!key) throw invalidKey('server key')
+
+  const row = await findActiveKey(key, 'server')
+  if (!row) throw invalidKey('server key')
+  return row as ServerKeyRow
 }
 
 export function deriveTitle(description: string): string {

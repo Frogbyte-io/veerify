@@ -7,6 +7,7 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
@@ -144,8 +145,9 @@ export const importedPerson = pgTable(
   })
 )
 
-// App keys - product-scoped public keys that let desktop apps post feedback.
-// Only the SHA-256 hex hash is stored; the full key is shown once at creation.
+// Project keys. Only the SHA-256 hex hash is stored; the full key is shown once at creation.
+// - kind 'app' (`vfy_pub_`): product-scoped keys that desktop apps embed to post feedback.
+// - kind 'server' (`vfy_srv_`): secret keys a website's backend uses to submit forms. No product.
 export const projectApiKey = pgTable(
   'project_api_key',
   {
@@ -153,9 +155,9 @@ export const projectApiKey = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
-    productId: text('product_id')
-      .notNull()
-      .references(() => product.id, { onDelete: 'cascade' }),
+    kind: text('kind').default('app').notNull(),
+    // Required for 'app' keys (check constraint), null for 'server' keys.
+    productId: text('product_id').references(() => product.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     keyPrefix: text('key_prefix').notNull(),
     keyHash: text('key_hash').notNull(),
@@ -170,6 +172,11 @@ export const projectApiKey = pgTable(
     keyHashIdx: uniqueIndex('project_api_key_hash_idx').on(table.keyHash),
     projectIdx: index('project_api_key_project_idx').on(table.projectId),
     productIdx: index('project_api_key_product_idx').on(table.productId),
+    validKind: check('project_api_key_kind_check', sql`${table.kind} in ('app','server')`),
+    appKeyHasProduct: check(
+      'project_api_key_product_check',
+      sql`(${table.kind} = 'app' and ${table.productId} is not null) or (${table.kind} = 'server' and ${table.productId} is null)`
+    ),
   })
 )
 

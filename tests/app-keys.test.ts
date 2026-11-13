@@ -7,6 +7,8 @@ import {
   hashAppKey,
   readBearerAppKey,
   requireAppKey,
+  requireServerKey,
+  SERVER_KEY_PREFIX,
   toFeedbackType,
 } from '../server/utils/app-keys'
 
@@ -68,7 +70,28 @@ describe('app keys', () => {
   })
 
   it('requireAppKey returns the row for a valid key', async () => {
-    state.row = { id: 'k1', name: 'Dot X' }
+    state.row = { id: 'k1', name: 'Dot X', kind: 'app', productId: 'product-1' }
     await expect(requireAppKey(eventWith('Bearer vfy_pub_good'))).resolves.toMatchObject({ id: 'k1' })
+  })
+
+  it('requireAppKey refuses a server key, even one presented with the app prefix', async () => {
+    state.row = { id: 'k2', name: 'Shop', kind: 'server', productId: null }
+    await expect(requireAppKey(eventWith('Bearer vfy_srv_good'))).rejects.toMatchObject({ statusCode: 401 })
+    await expect(requireAppKey(eventWith('Bearer vfy_pub_good'))).rejects.toMatchObject({ statusCode: 401 })
+  })
+
+  it('generateAppKey makes server keys with their own prefix', () => {
+    const server = generateAppKey('server')
+    expect(server.key.startsWith(SERVER_KEY_PREFIX)).toBe(true)
+    expect(server.keyPrefix).toBe(server.key.slice(0, 12))
+  })
+
+  it('requireServerKey accepts only vfy_srv_ bearer tokens', async () => {
+    state.row = { id: 'k3', name: 'Shop', kind: 'server', productId: null }
+    await expect(requireServerKey(eventWith('Bearer vfy_srv_good'))).resolves.toMatchObject({ id: 'k3' })
+    await expect(requireServerKey(eventWith('Bearer vfy_pub_good'))).rejects.toMatchObject({ statusCode: 401 })
+    await expect(requireServerKey(eventWith())).rejects.toMatchObject({ statusCode: 401 })
+    state.row = null
+    await expect(requireServerKey(eventWith('Bearer vfy_srv_unknown'))).rejects.toMatchObject({ statusCode: 401 })
   })
 })

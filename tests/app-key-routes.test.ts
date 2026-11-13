@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   status: undefined as number | undefined,
   access: null as null | { statusCode: number },
   params: {} as Record<string, string>,
+  query: {} as Record<string, string>,
   products: {} as Record<string, string>,
 }))
 
@@ -37,6 +38,7 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
 )
 vi.stubGlobal('readBody', async () => state.body)
 vi.stubGlobal('getRouterParam', (_e: unknown, name: string) => state.params[name])
+vi.stubGlobal('getQuery', () => state.query)
 vi.stubGlobal('setResponseStatus', (_e: unknown, code: number) => {
   state.status = code
 })
@@ -56,8 +58,11 @@ vi.mock('~/server/database/drizzle', () => ({
     select: vi.fn((fields?: Record<string, unknown>) => {
       const chain = {
         from: () => chain,
-        innerJoin: () => chain,
-        where: () => chain,
+        leftJoin: () => chain,
+        where: (arg: unknown) => {
+          state.whereArgs.push(arg)
+          return chain
+        },
         orderBy: () =>
           Promise.resolve(
             state.rows.map((row) => (fields ? Object.fromEntries(Object.keys(fields).map((k) => [k, row[k]])) : row))
@@ -109,8 +114,10 @@ beforeEach(() => {
   state.status = undefined
   state.access = null
   state.params = { slug: 'proj', keyId: 'key-1' }
+  state.query = {}
   state.products = { 'prod-a': 'proj-1:a', 'prod-other': 'proj-2:x' }
   requireProjectBySlug.mockClear()
+  requireProductInProject.mockClear()
 })
 
 describe('app key routes', () => {
@@ -152,6 +159,36 @@ describe('app key routes', () => {
     expect(stored).not.toHaveProperty('key')
     expect(res.data).not.toHaveProperty('keyHash')
     expect(res.data.key.startsWith('vfy_pub_')).toBe(true)
+  })
+
+  it('list filters by kind: app keys by default, server keys on request', async () => {
+    const dialect = new PgDialect()
+    const kindParams = () => (dialect.sqlToQuery(state.whereArgs.at(-1) as SQL).params as unknown[]).slice(-1)[0]
+    await listHandler({})
+    expect(kindParams()).toBe('app')
+    state.query = { kind: 'server' }
+    await listHandler({})
+    expect(kindParams()).toBe('server')
+    state.query = { kind: 'anything-else' }
+    await listHandler({})
+    expect(kindParams()).toBe('app')
+  })
+
+  it('create makes a server key without a product', async () => {
+    state.body = { name: 'Web shop', kind: 'server' }
+    const res = await createHandler({})
+    expect(state.status).toBe(201)
+    expect(state.inserted[0]).toMatchObject({ kind: 'server', productId: null })
+    expect(requireProductInProject).not.toHaveBeenCalled()
+    expect(res.data.key.startsWith('vfy_srv_')).toBe(true)
+    expect(res.data.productName).toBeNull()
+    expect(state.inserted[0].keyHash).toBe(hashAppKey(res.data.key))
+  })
+
+  it('create refuses a server key tied to a product', async () => {
+    state.body = { name: 'Web shop', kind: 'server', productId: 'prod-a' }
+    await expect(createHandler({})).rejects.toMatchObject({ statusCode: 400 })
+    expect(state.inserted).toHaveLength(0)
   })
 
   it('create stores the requested product when it belongs to the project', async () => {
