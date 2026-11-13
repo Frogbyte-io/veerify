@@ -28,4 +28,4 @@ Baseline: a4b9e8c. Searches below ran before source edits over tracked repositor
 - Legacy redirects, crypto fallbacks and sender policies: compatibility behavior remains in use.
 - Similar roadmap/changelog access guards: intentionally separate policies with dedicated tests; avoid creating an abstraction solely to reduce a few lines.
 
-The map is a static import/component view. It cannot establish runtime HTTP, event, database or dynamically loaded reachability; these limitations are explicit in the HTML.
+Static import and component references cannot establish runtime HTTP, event, database or dynamically loaded reachability. Import counts alone are not proof of non-use; removals also require checking framework entry points, string dispatch, public APIs and test references. Candidates with uncertain runtime reachability are retained.
