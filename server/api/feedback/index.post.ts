@@ -58,7 +58,7 @@ import {
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
 import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 import { createLogger } from '~/server/utils/logger'
-import { notifyProjectTeam } from '~/server/utils/notifications'
+import { notifyProjectMembers } from '~/server/utils/notifications'
 import { createAutomaticFeedbackLink } from '~/server/utils/support-auto-link'
 import { FEEDBACK_ATTACHMENT_MAX_COUNT } from '~/server/utils/feedback-attachments'
 import { attachUploadsToFeedback } from '~/server/utils/feedback-attachment-access'
@@ -382,7 +382,7 @@ export default defineEventHandler(async (event) => {
 
   // Create in-app notifications for project members about the new feedback
   const authorName = createdFeedback.authorName || session?.user?.name || 'Someone'
-  notifyProjectTeam(createdFeedback.projectId, session?.user?.id || null, {
+  notifyProjectMembers(createdFeedback.projectId, session?.user?.id || null, {
     type: 'new_feedback',
     title: `New feedback: "${createdFeedback.title}"`,
     body: `Submitted by ${authorName}`,

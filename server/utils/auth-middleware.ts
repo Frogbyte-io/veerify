@@ -4,10 +4,7 @@
  */
 
 import type { H3Event } from 'h3'
-import { eq, and } from 'drizzle-orm'
 import { auth } from '~/lib/auth'
-import { db } from '~/server/database/drizzle'
-import { member } from '~/server/database/schema/auth'
 import { getAuthHeaders } from './auth-headers'
 import { ErrorCode, createErrorResponse } from './response'
 import { resolveUserApiKeyPrincipal } from './user-api-keys'
@@ -110,54 +107,5 @@ export async function requireInteractiveSession(event: H3Event): Promise<AuthSes
       data: createErrorResponse(ErrorCode.FORBIDDEN, 'This action requires signing in to Veerify directly'),
     })
   }
-  return session
-}
-
-/**
- * Checks if user has a specific role in an organization
- * @param session - Auth session
- * @param organizationId - Organization ID to check
- * @param allowedRoles - Array of allowed roles (defaults to ['admin', 'owner'])
- * @returns True if user has required role
- */
-export async function hasOrganizationRole(
-  session: AuthSession,
-  organizationId: string,
-  allowedRoles: string[] = ['admin', 'owner']
-): Promise<boolean> {
-  const [membership] = await db
-    .select()
-    .from(member)
-    .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
-    .limit(1)
-
-  if (!membership) return false
-  return allowedRoles.includes(membership.role)
-}
-
-/**
- * Requires specific organization role - throws 403 if insufficient permissions
- * @param event - H3 event
- * @param organizationId - Organization ID
- * @param allowedRoles - Array of allowed roles
- * @throws 401 if not authenticated, 403 if insufficient permissions
- */
-export async function requireOrganizationRole(
-  event: H3Event,
-  organizationId: string,
-  allowedRoles: string[] = ['admin', 'owner']
-): Promise<AuthSession> {
-  const session = await requireAuth(event)
-
-  const hasRole = await hasOrganizationRole(session, organizationId, allowedRoles)
-
-  if (!hasRole) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'Insufficient permissions'),
-    })
-  }
-
   return session
 }
