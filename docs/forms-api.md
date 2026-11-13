@@ -6,7 +6,9 @@ is filed like a new email from the submitter:
 - the contact is found by email (or created), and the mapped name is used for a new contact;
 - a **new** conversation opens in the form's inbox, with the inbox's SLA policy, automation rules
   (`conversation_created`) and CSAT;
-- the auto-reply is sent (the inbox's, the form's own, or none — set per form);
+- the auto-reply is sent (the inbox's, the form's own, or none — set per form). Because anyone can type any address
+  into a form, a form's auto-reply carries only the project's own text: the template, with the form name as subject.
+  It never quotes or repeats what was submitted;
 - agents see the form name, every field and the submission details in the thread, and their replies are emailed to
   the submitter through the normal outbound delivery. The customer's reply to that email threads back onto the same
   conversation.
@@ -120,10 +122,11 @@ endpoint grants no CORS.
 
 ### Idempotency
 
-Send `Idempotency-Key` (1–255 printable ASCII characters, scoped to the form) to make retries safe, for example a UUID
+Send `Idempotency-Key` (1–255 printable ASCII characters, scoped to the form and to the endpoint: browser and server keys never collide) to make retries safe, for example a UUID
 generated when the visitor presses Send. A retry with the same key and the same body (key order does not matter)
 returns the original `id` and `conversationId` with `200` and `Idempotent-Replayed: true`; nothing is filed twice, even
-when retries race. The same key with a different body is `422`. Keys are kept as long as the form exists.
+when retries race. The same key with a different body is `422`. A retry of a filed submission is answered even if the form has since been switched off or edited. Keys are kept as
+long as the form exists.
 
 ### Rate limits
 
@@ -208,7 +211,9 @@ ticked checkbox may be sent as `on`, `true`, `1` or `yes`.
   preflight) is granted to listed origins only, never `*`, never with credentials.
 - **Honeypot**: add a hidden, empty input named `_hp`. When it is filled, the endpoint answers `201` as usual and files
   nothing.
-- **Rate limits**: 5 per visitor IP per form per 10 minutes, and 200 per form per hour.
+- **Rate limits**: 5 per visitor IP per form per 10 minutes, and 200 accepted submissions per form per hour
+  (honeypot hits and invalid requests don't count toward the per-form limit). The visitor IP is the first
+  `X-Forwarded-For` entry, so the proxy in front of Veerify must overwrite that header.
 - **Bot challenge**: Veerify has no CAPTCHA integration yet. `server/services/support-forms/challenge.ts` is the hook:
   it receives `challengeToken` and currently accepts every request; a failed check is `403 CHALLENGE_FAILED`.
   Cloudflare Turnstile can be added there.

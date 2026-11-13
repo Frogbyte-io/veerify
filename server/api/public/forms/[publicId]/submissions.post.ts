@@ -8,7 +8,8 @@
  *       For sites without a backend. Off unless the form has browser
  *       submissions switched on, and accepted only from the form's allowed
  *       origins (checked against the `Origin` header; CORS is granted to those
- *       origins only). Rate limited per visitor IP and per form. The `_hp`
+ *       origins only). Rate limited per visitor IP, and per form for
+ *       submissions that pass validation. The `_hp`
  *       honeypot must be empty: a filled one gets a normal-looking 201 and
  *       nothing is filed. Accepts JSON (`{ fields, metadata?: { pageUrl,
  *       locale }, _hp?, challengeToken? }`) or form-encoded fields (`_hp`,
@@ -70,8 +71,6 @@ export default defineEventHandler(async (event) => {
 
   const clientIp = getClientIp(event) ?? null
   await requireRateLimit(event, { ...FORM_BROWSER_VISITOR_LIMIT, subject: `${form.id}:${clientIp ?? 'unknown'}` })
-  await requireRateLimit(event, { ...FORM_BROWSER_FORM_LIMIT, subject: form.id })
-
   const submission = await readBrowserSubmission(event, form)
 
   if (submission.honeypot.trim() !== '') {
@@ -109,6 +108,8 @@ export default defineEventHandler(async (event) => {
       pageUrl: submission.pageUrl,
       locale: submission.locale,
     }),
+    // Charged only for submissions that would be filed, so junk cannot block real visitors.
+    onAccepted: () => requireRateLimit(event, { ...FORM_BROWSER_FORM_LIMIT, subject: form.id }),
   })
 
   if (result.replayed) {

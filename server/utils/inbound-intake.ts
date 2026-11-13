@@ -46,7 +46,8 @@ import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { createLogger } from '~/server/utils/logger'
 
-const logger = createLogger('support-intake')
+// Same logger name as before the extraction, so existing log filters keep matching.
+const logger = createLogger('support-inbound')
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -83,8 +84,14 @@ export interface InboundIntakeInput {
   messageMetadata?: Record<string, unknown>
   /** Merged into a new conversation's metadata. */
   conversationMetadata?: Record<string, unknown>
-  /** The auto-reply to consider; defaults to the inbox's own setting. */
-  autoReply?: { enabled: boolean; template: string | null }
+  /**
+   * The auto-reply to consider; defaults to the inbox's own setting. `quote:
+   * false` leaves the inbound message out of the auto-reply and `subject`
+   * replaces its subject: for channels where anyone can write both (website
+   * forms), so the auto-reply cannot carry a stranger's text to the address
+   * they typed in.
+   */
+  autoReply?: { enabled: boolean; template: string | null; quote?: boolean; subject?: string }
   /** Extra fields for log lines, e.g. the provider. */
   logContext?: Record<string, unknown>
 }
@@ -430,8 +437,9 @@ export async function fileInboundMessage(tx: Tx, input: InboundIntakeInput): Pro
           // The literal sender of this message, not necessarily the
           // contact record's current email - correct even after a merge.
           contact: { email: message.from.address, name: message.from.name ?? null },
-          subject: message.subject ?? '(no subject)',
+          subject: autoReply.subject ?? message.subject ?? '(no subject)',
           template,
+          quoteHistory: autoReply.quote ?? true,
           previous: {
             channelMessageId: message.messageId,
             references: message.references,

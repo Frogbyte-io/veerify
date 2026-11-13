@@ -483,6 +483,32 @@ describe('server API: filing into the inbox', () => {
     expect(submission).toMatchObject({ conversationId, source: 'api', messageId: incoming.id })
   })
 
+  it('never puts submitted text in the auto-reply, which goes to whatever address was typed in', async () => {
+    const email = `relay-${runId}@victim.example.test`
+    const response = await submit('contact', {
+      body: {
+        fields: {
+          name: 'Your bank',
+          email,
+          subject: 'support',
+          message: 'Your account is locked, log in at http://phish.example.test',
+        },
+      },
+    })
+    const [autoReply] = (await messagesOf(response.json.data.conversationId)).filter((m) => m.kind === 'outgoing')
+    const [delivery] = await db
+      .select()
+      .from(supportOutboundDelivery)
+      .where(eq(supportOutboundDelivery.messageId, autoReply.id))
+    const payload = delivery.payload as { subject: string; text: string; html: string }
+    expect(payload.subject).toBe('Re: Contact')
+    for (const part of [payload.text, payload.html]) {
+      expect(part).not.toContain('phish')
+      expect(part).not.toContain('Your bank')
+    }
+    expect(payload.text).toContain('Thanks, we got your message.')
+  })
+
   it('reuses the contact but opens a new conversation for every submission', async () => {
     const email = `repeat-${runId}@buyer.example.test`
     const first = await submit('no-reply', { body: { fields: validFields(email) } })
@@ -529,6 +555,28 @@ describe('server API: idempotency', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([200, 200, 200, 201])
     expect(new Set(responses.map((response) => response.json.data.conversationId)).size).toBe(1)
     expect(await conversationsFor(email)).toHaveLength(1)
+  })
+
+  it('keeps browser and server keys apart', async () => {
+    const key = `shared-${runId}`
+    const browser = await submitFromBrowser(publicId, { idempotencyKey: key })
+    expect(browser.status).toBe(201)
+    const server = await submit('browser', { idempotencyKey: key })
+    expect(server.status).toBe(201)
+    expect(server.json.data.id).not.toBe(browser.json.data.id)
+  })
+
+  it('replays a filed submission even after the form is switched off', async () => {
+    const formId = `form_replay_${runId}`
+    await db.insert(supportForm).values(formRow({ id: formId, slug: 'replay', autoReplyMode: 'off' }))
+    const body = { fields: validFields() }
+    const first = await submit('replay', { body, idempotencyKey: `replay-${runId}` })
+    expect(first.status).toBe(201)
+    await db.update(supportForm).set({ isEnabled: false }).where(eq(supportForm.id, formId))
+    const retry = await submit('replay', { body, idempotencyKey: `replay-${runId}` })
+    expect(retry.status).toBe(200)
+    expect(retry.json.data).toEqual(first.json.data)
+    expect((await submit('replay')).status).toBe(403)
   })
 
   it('422s a reused key with a different body', async () => {

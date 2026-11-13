@@ -132,3 +132,32 @@ describe('totalAttachmentBytes', () => {
     expect(totalAttachmentBytes(undefined)).toBe(0)
   })
 })
+
+describe('buildOutgoingReply quoteHistory', () => {
+  it('keeps threading but leaves the previous message out when quoteHistory is false', () => {
+    const result = buildOutgoingReply({
+      inbox: { emailAddress: 'support@example.com', fromName: null, signature: null },
+      contact: { email: 'customer@example.com', name: null },
+      cc: [],
+      subject: 'Contact',
+      agentBody: 'Thanks.',
+      agentBodyHtml: null,
+      previous: {
+        channelMessageId: 'form-1@example.com',
+        references: [],
+        fromName: 'Stranger',
+        sentAt: new Date('2026-11-01T10:00:00Z'),
+        body: 'untrusted words',
+        bodyHtml: null,
+      },
+      newMessageId: 'reply-1',
+      domain: 'example.com',
+      attachments: [],
+      quoteHistory: false,
+    })
+    expect(result.inReplyTo).toBe('form-1@example.com')
+    expect(result.deliveryPayload.text).not.toContain('untrusted words')
+    expect(result.deliveryPayload.html).not.toContain('untrusted words')
+    expect(result.deliveryPayload.text).not.toContain('Stranger')
+  })
+})

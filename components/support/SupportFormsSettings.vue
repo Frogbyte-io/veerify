@@ -342,7 +342,9 @@
                 >
               </div>
               <p class="text-xs text-muted-foreground">
-                Full reference: docs/forms-api.md, or the API docs under Forms.
+                Request and error reference:
+                <NuxtLink to="/api-docs" class="underline hover:no-underline">API docs</NuxtLink>
+                (App API → Submit a website form).
               </p>
             </div>
           </div>

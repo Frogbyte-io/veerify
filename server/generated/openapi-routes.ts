@@ -10329,12 +10329,36 @@ export const openapiPaths = {
     }
   },
   "/api/public/forms/{publicId}/submissions": {
+    "options": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "CORS preflight for browser form submissions",
+      "description": "Grants CORS (POST, Content-Type, Idempotency-Key) to the form's allowed origins only.",
+      "operationId": "preflightSupportFormFromBrowser",
+      "security": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "publicId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "204": {
+          "description": "Preflight answered; CORS headers only for an allowed origin"
+        }
+      }
+    },
     "post": {
       "tags": [
         "Public"
       ],
       "summary": "Submit a website form from a browser",
-      "description": "For sites without a backend. Off unless the form has browser submissions switched on, and accepted only from the form's allowed origins (checked against the `Origin` header; CORS is granted to those origins only). Rate limited per visitor IP and per form. The `_hp` honeypot must be empty: a filled one gets a normal-looking 201 and nothing is filed. Accepts JSON (`{ fields, metadata?: { pageUrl, locale }, _hp?, challengeToken? }`) or form-encoded fields (`_hp`, `_page_url`, `_locale`, `_challenge` reserved). Filed exactly like the server API. See docs/forms-api.md.\n",
+      "description": "For sites without a backend. Off unless the form has browser submissions switched on, and accepted only from the form's allowed origins (checked against the `Origin` header; CORS is granted to those origins only). Rate limited per visitor IP, and per form for submissions that pass validation. The `_hp` honeypot must be empty: a filled one gets a normal-looking 201 and nothing is filed. Accepts JSON (`{ fields, metadata?: { pageUrl, locale }, _hp?, challengeToken? }`) or form-encoded fields (`_hp`, `_page_url`, `_locale`, `_challenge` reserved). Filed exactly like the server API. See docs/forms-api.md.\n",
       "operationId": "submitSupportFormFromBrowser",
       "security": [],
       "parameters": [

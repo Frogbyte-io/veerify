@@ -152,6 +152,12 @@ export interface SubmitFormInput {
   /** From `hashSubmissionRequest`; compared when an idempotency key is reused. */
   requestHash: string
   receivedAt?: Date
+  /**
+   * Runs once the submission has passed validation and the form and inbox
+   * checks, just before it is filed (not for a replay). The browser endpoint
+   * charges its per-form rate limit here, so junk cannot use up the form's quota.
+   */
+  onAccepted?: () => Promise<void>
 }
 
 export interface SubmitFormResult {
@@ -175,8 +181,57 @@ export interface FormSubmissionMessageMetadata {
  * Validate and file one submission. Throws `createError` 4xx for anything the
  * caller can fix; the form must already be authorized for the caller.
  */
+/**
+ * The stored idempotency key. Browser and server submissions get separate key
+ * spaces, so an anonymous visitor cannot claim a key the site's backend is
+ * about to use.
+ */
+export function scopedIdempotencyKey(source: 'api' | 'browser', key: string): string {
+  return `${source}:${key}`
+}
+
+type ReplayLookup = { id: string; conversationId: string | null; requestHash: string }
+
+function replayOrConflict(existing: ReplayLookup, requestHash: string): SubmitFormResult {
+  if (existing.requestHash !== requestHash) {
+    throw formError(
+      422,
+      'Unprocessable Entity',
+      FORM_ERROR.IDEMPOTENCY_KEY_REUSED,
+      'This Idempotency-Key was already used with a different request body'
+    )
+  }
+  return { id: existing.id, conversationId: existing.conversationId, replayed: true }
+}
+
+async function findIdempotentSubmission(
+  executor: Pick<typeof db, 'select'>,
+  formId: string,
+  storedKey: string
+): Promise<ReplayLookup | undefined> {
+  const [existing] = await executor
+    .select({
+      id: supportFormSubmission.id,
+      conversationId: supportFormSubmission.conversationId,
+      requestHash: supportFormSubmission.requestHash,
+    })
+    .from(supportFormSubmission)
+    .where(and(eq(supportFormSubmission.formId, formId), eq(supportFormSubmission.idempotencyKey, storedKey)))
+    .limit(1)
+  return existing
+}
+
 export async function submitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
   const { form } = input
+  const storedKey = input.idempotencyKey ? scopedIdempotencyKey(input.source, input.idempotencyKey) : null
+
+  // A retry of a submission that was already filed gets its result back even if
+  // the form has since been switched off or its fields changed.
+  if (storedKey) {
+    const existing = await findIdempotentSubmission(db, form.id, storedKey)
+    if (existing) return replayOrConflict(existing, input.requestHash)
+  }
+
   if (!form.isEnabled) {
     throw formError(403, 'Forbidden', FORM_ERROR.FORM_DISABLED, 'This form is not accepting submissions')
   }
@@ -197,6 +252,8 @@ export async function submitForm(input: SubmitFormInput): Promise<SubmitFormResu
       "The form's inbox is switched off, so it is not accepting submissions"
     )
   }
+
+  await input.onAccepted?.()
 
   const submissionId = randomUUID()
   const receivedAt = input.receivedAt ?? new Date()
@@ -233,12 +290,16 @@ export async function submitForm(input: SubmitFormInput): Promise<SubmitFormResu
     metadata: input.metadata,
   }
 
-  const autoReply =
+  // Anyone can make a form send its auto-reply to any address they type in.
+  // So the auto-reply carries only text the project wrote: the template and the
+  // form name as subject, never the submitted words.
+  const autoReplyBase =
     form.autoReplyMode === 'off'
       ? { enabled: false, template: null }
       : form.autoReplyMode === 'custom'
         ? { enabled: Boolean(form.autoReplyTemplate?.trim()), template: form.autoReplyTemplate }
         : { enabled: inbox.autoReplyEnabled, template: inbox.autoReplyTemplate }
+  const autoReply = { ...autoReplyBase, quote: false, subject: form.name }
 
   type Outcome =
     | { kind: 'replay'; id: string; conversationId: string | null }
@@ -256,7 +317,7 @@ export async function submitForm(input: SubmitFormInput): Promise<SubmitFormResu
         projectId: form.projectId,
         source: input.source,
         apiKeyId: input.apiKeyId,
-        idempotencyKey: input.idempotencyKey,
+        idempotencyKey: storedKey,
         requestHash: input.requestHash,
         createdAt: receivedAt,
       })
@@ -264,30 +325,10 @@ export async function submitForm(input: SubmitFormInput): Promise<SubmitFormResu
       .returning({ id: supportFormSubmission.id })
 
     if (!claimed) {
-      const [existing] = await tx
-        .select({
-          id: supportFormSubmission.id,
-          conversationId: supportFormSubmission.conversationId,
-          requestHash: supportFormSubmission.requestHash,
-        })
-        .from(supportFormSubmission)
-        .where(
-          and(
-            eq(supportFormSubmission.formId, form.id),
-            eq(supportFormSubmission.idempotencyKey, input.idempotencyKey as string)
-          )
-        )
-        .limit(1)
+      const existing = await findIdempotentSubmission(tx, form.id, storedKey as string)
       if (!existing) throw new Error('Idempotency conflict without a stored submission')
-      if (existing.requestHash !== input.requestHash) {
-        throw formError(
-          422,
-          'Unprocessable Entity',
-          FORM_ERROR.IDEMPOTENCY_KEY_REUSED,
-          'This Idempotency-Key was already used with a different request body'
-        )
-      }
-      return { kind: 'replay', id: existing.id, conversationId: existing.conversationId }
+      const replay = replayOrConflict(existing, input.requestHash)
+      return { kind: 'replay', id: replay.id, conversationId: replay.conversationId }
     }
 
     const filed = await fileInboundMessage(tx, {
