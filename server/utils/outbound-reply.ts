@@ -39,6 +39,12 @@ export interface OutgoingReplyInput {
   /** Domain for the generated Message-ID - inbox domain, falling back to MAIL_FROM's. */
   domain: string
   attachments: OutboundAttachment[]
+  /**
+   * Quote the previous message under the reply (default true). Threading
+   * headers are kept either way. Off for auto-replies to website forms, whose
+   * content anyone on the internet can write.
+   */
+  quoteHistory?: boolean
 }
 
 export interface OutgoingReplyResult {
@@ -65,16 +71,17 @@ export function buildOutgoingReply(input: OutgoingReplyInput): OutgoingReplyResu
   })
 
   const { html: quotedHtml, text: quotedText } = buildQuotedHistory({
-    previous: input.previous
-      ? [
-          {
-            fromName: input.previous.fromName,
-            sentAt: input.previous.sentAt,
-            body: input.previous.body,
-            bodyHtml: input.previous.bodyHtml,
-          },
-        ]
-      : [],
+    previous:
+      input.previous && input.quoteHistory !== false
+        ? [
+            {
+              fromName: input.previous.fromName,
+              sentAt: input.previous.sentAt,
+              body: input.previous.body,
+              bodyHtml: input.previous.bodyHtml,
+            },
+          ]
+        : [],
   })
 
   const signed = appendSignature({

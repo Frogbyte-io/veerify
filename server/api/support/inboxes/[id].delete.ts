@@ -7,6 +7,8 @@
  *     description: >
  *       conversation.inboxId is a restrict FK - an inbox with any
  *       conversations cannot be deleted. Delete or reassign them first.
+ *       An inbox that website forms deliver to cannot be deleted either;
+ *       move or delete those forms first.
  *     operationId: deleteSupportInbox
  *     parameters:
  *       - in: path
@@ -17,7 +19,7 @@
  *       200: { description: Inbox deleted }
  *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
- *       409: { description: Inbox still has conversations }
+ *       409: { description: Inbox still has conversations or forms }
  */
 import { and, eq, isNotNull } from 'drizzle-orm'
 import { createError } from 'h3'
@@ -26,7 +28,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxRole } from '~/server/utils/support-access'
 import { isForeignKeyViolation } from '~/server/utils/support-errors'
 import { db } from '~/server/database/drizzle'
-import { projectMailAddress, supportInbox } from '~/server/database/schema/support'
+import { projectMailAddress, supportForm, supportInbox } from '~/server/database/schema/support'
 import { deleteDirectRouteForAddress } from '~/server/utils/inbound-routes'
 
 export default defineEventHandler(async (event) => {
@@ -34,6 +36,22 @@ export default defineEventHandler(async (event) => {
   const inboxId = getRouterParam(event, 'id') as string
 
   await requireInboxRole(inboxId, session.user.id, 'admin')
+
+  const [form] = await db
+    .select({ name: supportForm.name })
+    .from(supportForm)
+    .where(eq(supportForm.inboxId, inboxId))
+    .limit(1)
+  if (form) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(
+        ErrorCode.CONFLICT,
+        `The form "${form.name}" delivers to this inbox. Move or delete it first.`
+      ),
+    })
+  }
 
   // Addresses cascade with the inbox, but their provider inbound routes do
   // not; read them first and remove the routes once the inbox is gone.
@@ -45,6 +63,14 @@ export default defineEventHandler(async (event) => {
   try {
     await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
   } catch (error) {
+    // A form created after the check above: same answer as the check.
+    if (isForeignKeyViolation(error, 'support_form_project_inbox_fk')) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Conflict',
+        data: createErrorResponse(ErrorCode.CONFLICT, 'A form delivers to this inbox. Move or delete it first.'),
+      })
+    }
     if (isForeignKeyViolation(error)) {
       throw createError({
         statusCode: 409,

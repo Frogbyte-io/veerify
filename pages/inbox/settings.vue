@@ -680,6 +680,14 @@
         </CardContent>
       </Card>
 
+      <SupportFormsSettings
+        v-if="canManageProjectSupport"
+        :project-id="activeProjectId"
+        :project-slug="activeProject?.slug || ''"
+        :inboxes="inboxes"
+        :select-classes="selectClasses"
+      />
+
       <!-- Domains moved to Project settings -> Email -->
       <Card id="sending-domains" class="scroll-mt-16" data-testid="support-domains-moved">
         <CardContent class="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
@@ -1449,7 +1457,8 @@ export default {
           { id: 'project-policy', label: 'Policy' },
           { id: 'sla', label: 'SLA' },
           { id: 'csat', label: 'CSAT' },
-          { id: 'automation', label: 'Automation' }
+          { id: 'automation', label: 'Automation' },
+          { id: 'forms', label: 'Forms' }
         )
       }
       if (this.hasInboxes && this.selectedInboxId) {

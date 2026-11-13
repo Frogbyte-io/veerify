@@ -23,7 +23,10 @@
  *       recipient_rejected, mailbox_full, provider_unavailable, configuration,
  *       abandoned, unknown; null otherwise). `deliveryAttempt` is set while the
  *       outbox retries a pending reply after a failed attempt:
- *       `{ current, max, nextAttemptAt }` (null otherwise).
+ *       `{ current, max, nextAttemptAt }` (null otherwise). An incoming message
+ *       filed by a website form carries `formSubmission`: `{ submissionId,
+ *       formId, formName, source, fields: [{ key, label, type, display }],
+ *       metadata }` (null otherwise), for laying the values out as plain text.
  *     operationId: listSupportConversationMessages
  *     parameters:
  *       - in: path
@@ -52,6 +55,25 @@ import { classifyDeliveryError } from '~/lib/support-delivery-errors'
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
 })
+
+/** The website-form layout of an incoming message, read defensively from its metadata. */
+function formSubmissionOf(metadata: Record<string, any> | null) {
+  const form = metadata?.formSubmission
+  if (!form || typeof form !== 'object' || !Array.isArray(form.fields)) return null
+  return {
+    submissionId: String(form.submissionId ?? ''),
+    formId: String(form.formId ?? ''),
+    formName: String(form.formName ?? ''),
+    source: form.source === 'browser' ? 'browser' : 'api',
+    fields: form.fields.map((field: Record<string, unknown>) => ({
+      key: String(field.key ?? ''),
+      label: String(field.label ?? ''),
+      type: String(field.type ?? 'text'),
+      display: String(field.display ?? ''),
+    })),
+    metadata: form.metadata && typeof form.metadata === 'object' ? form.metadata : {},
+  }
+}
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -145,6 +167,7 @@ export default defineEventHandler(async (event) => {
       ...(Array.isArray(metadata?.frogmailForwards) ? { frogmailForwards: metadata.frogmailForwards } : {}),
       ...(metadata?.attachmentsRemoved === true ? { attachmentsRemoved: true } : {}),
     },
+    formSubmission: item.kind === 'incoming' ? formSubmissionOf(metadata) : null,
     senderBlocked: item.deliveryStatus === 'failed' && item.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED,
     failureReason:
       item.kind === 'outgoing' && ['failed', 'bounced', 'delayed'].includes(item.deliveryStatus)

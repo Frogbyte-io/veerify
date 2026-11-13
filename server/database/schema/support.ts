@@ -43,8 +43,9 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { user } from './auth'
-import { project, feedback, product } from './feedback'
+import { project, feedback, product, projectApiKey } from './feedback'
 import type { SendingDomainDnsRecord } from '../../../lib/support-sending-domains'
+import type { FormField, FormFieldMapping } from '../../../lib/support-forms'
 
 // Support companies - the Zendesk "organization" concept, named to avoid
 // collision with the existing `organization` table. Declared before `contact`
@@ -1334,5 +1335,99 @@ export const projectMailAddressForward = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.addressId, table.destinationId] }),
     destinationIdx: index('project_mail_address_forward_destination_idx').on(table.destinationId),
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Website forms - contact/support forms that file submissions into an inbox
+// as if the submitter had emailed it. See docs/forms-api.md.
+// ---------------------------------------------------------------------------
+
+export const supportForm = pgTable(
+  'support_form',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    // Where submissions land. The composite FK below keeps it inside the form's
+    // project and refuses deleting an inbox with forms ('no action' rather than
+    // 'restrict', so deleting the whole project still cascades).
+    inboxId: text('inbox_id').notNull(),
+    name: text('name').notNull(),
+    // The server API addresses a form by slug, unique within the project.
+    slug: text('slug').notNull(),
+    // The browser endpoint addresses a form by this unguessable id instead.
+    publicId: text('public_id').notNull(),
+    // FormField[] (lib/support-forms.ts)
+    fields: jsonb('fields').$type<FormField[]>().notNull(),
+    // FormFieldMapping: which fields fill the contact's email and name and the subject
+    fieldMapping: jsonb('field_mapping').$type<FormFieldMapping>().notNull(),
+    // 'inbox' uses the inbox's auto-reply, 'custom' this form's template, 'off' none.
+    autoReplyMode: text('auto_reply_mode').default('inbox').notNull(),
+    autoReplyTemplate: text('auto_reply_template'),
+    // Exact origins (`https://shop.example.com`, or `https://*.example.com`) the browser endpoint accepts.
+    allowedOrigins: jsonb('allowed_origins').$type<string[]>().default([]).notNull(),
+    // The browser endpoint is off unless switched on; the server API needs only a key.
+    browserSubmissionsEnabled: boolean('browser_submissions_enabled').default(false).notNull(),
+    isEnabled: boolean('is_enabled').default(true).notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueProjectSlug: uniqueIndex('support_form_project_slug_idx').on(table.projectId, table.slug),
+    uniquePublicId: uniqueIndex('support_form_public_id_idx').on(table.publicId),
+    inboxIdx: index('support_form_inbox_idx').on(table.inboxId),
+    projectInboxFk: foreignKey({
+      columns: [table.projectId, table.inboxId],
+      foreignColumns: [supportInbox.projectId, supportInbox.id],
+      name: 'support_form_project_inbox_fk',
+    }).onDelete('no action'),
+    validAutoReplyMode: check(
+      'support_form_auto_reply_mode_check',
+      sql`${table.autoReplyMode} in ('inbox','custom','off')`
+    ),
+  })
+)
+
+// One row per accepted submission. Doubles as the idempotency record: a
+// repeated `Idempotency-Key` for the same form finds this row instead of
+// filing a second conversation.
+export const supportFormSubmission = pgTable(
+  'support_form_submission',
+  {
+    id: text('id').primaryKey(),
+    formId: text('form_id')
+      .notNull()
+      .references(() => supportForm.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id').references(() => conversation.id, { onDelete: 'set null' }),
+    messageId: text('message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    // 'api' (server key) | 'browser' (public endpoint)
+    source: text('source').notNull(),
+    apiKeyId: text('api_key_id').references(() => projectApiKey.id, { onDelete: 'set null' }),
+    idempotencyKey: text('idempotency_key'),
+    // SHA-256 of the canonical request, to tell a replay from a reused key.
+    requestHash: text('request_hash').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueIdempotencyKey: uniqueIndex('support_form_submission_idempotency_idx').on(table.formId, table.idempotencyKey),
+    formCreatedIdx: index('support_form_submission_form_created_idx').on(table.formId, table.createdAt),
+    // Foreign-key columns, so cascades and set-null from these parents do not scan the table.
+    projectIdx: index('support_form_submission_project_idx').on(table.projectId),
+    conversationIdx: index('support_form_submission_conversation_idx').on(table.conversationId),
+    messageIdx: index('support_form_submission_message_idx').on(table.messageId),
+    apiKeyIdx: index('support_form_submission_api_key_idx').on(table.apiKeyId),
+    validSource: check('support_form_submission_source_check', sql`${table.source} in ('api','browser')`),
   })
 )

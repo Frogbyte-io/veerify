@@ -67,19 +67,22 @@ function streamWithCap(event: H3Event, maxBytes: number): Promise<Buffer> {
   })
 }
 
-/** Reads and parses a JSON request body of at most `maxBytes`. An empty or malformed body is a 400. */
-export async function readJsonBodyWithLimit(event: H3Event, maxBytes: number): Promise<unknown> {
+/** Reads a request body of at most `maxBytes` as bytes, refusing a larger one with a 413. */
+export async function readRawBodyWithLimit(event: H3Event, maxBytes: number): Promise<Buffer> {
   const declared = Number(event.node.req.headers['content-length'])
   if (Number.isFinite(declared) && declared > maxBytes) throw payloadTooLarge(maxBytes)
 
-  let raw: Buffer
   if (hasBufferedBody(event)) {
-    raw = (await readRawBody(event, false)) ?? Buffer.alloc(0)
+    const raw = (await readRawBody(event, false)) ?? Buffer.alloc(0)
     if (raw.length > maxBytes) throw payloadTooLarge(maxBytes)
-  } else {
-    raw = await streamWithCap(event, maxBytes)
+    return raw
   }
+  return streamWithCap(event, maxBytes)
+}
 
+/** Reads and parses a JSON request body of at most `maxBytes`. An empty or malformed body is a 400. */
+export async function readJsonBodyWithLimit(event: H3Event, maxBytes: number): Promise<unknown> {
+  const raw = await readRawBodyWithLimit(event, maxBytes)
   try {
     return JSON.parse(raw.toString('utf8'))
   } catch {

@@ -56,6 +56,11 @@ export default defineEventHandler(() => {
           scheme: 'bearer',
           description: 'Project app key (vfy_pub_...) created in project settings',
         },
+        serverKeyAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'Project server key (vfy_srv_...) for website form submissions, created in Inbox settings',
+        },
         userApiKeyAuth: {
           type: 'http',
           scheme: 'bearer',

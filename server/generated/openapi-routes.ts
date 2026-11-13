@@ -8002,8 +8002,8 @@ export const openapiPaths = {
       "tags": [
         "Projects"
       ],
-      "summary": "List app keys for a project",
-      "description": "Returns key metadata with the product each key posts to, newest first. The key secret and hash are never returned.",
+      "summary": "List app or server keys for a project",
+      "description": "Returns key metadata newest first; app keys include the product they post to. The key secret and hash are never returned.",
       "operationId": "listProjectApiKeys",
       "parameters": [
         {
@@ -8013,11 +8013,25 @@ export const openapiPaths = {
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "in": "query",
+          "name": "kind",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "app",
+              "server"
+            ],
+            "default": "app"
+          },
+          "description": "`app` keys post feedback from apps; `server` keys submit website forms."
         }
       ],
       "responses": {
         "200": {
-          "description": "App key summaries"
+          "description": "App or server key summaries, by the requested kind"
         },
         "403": {
           "description": "Not a project admin"
@@ -8031,8 +8045,8 @@ export const openapiPaths = {
       "tags": [
         "Projects"
       ],
-      "summary": "Create an app key",
-      "description": "The full key is returned once in this response and cannot be retrieved later.",
+      "summary": "Create an app key or a server key",
+      "description": "The full key is returned once in this response and cannot be retrieved later. App keys (`vfy_pub_`) post feedback to a product from apps. Server keys (`vfy_srv_`) are secrets for a website's backend to submit forms; they have no product.",
       "operationId": "createProjectApiKey",
       "parameters": [
         {
@@ -8059,9 +8073,18 @@ export const openapiPaths = {
                   "minLength": 1,
                   "maxLength": 60
                 },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "app",
+                    "server"
+                  ],
+                  "default": "app",
+                  "description": "app (vfy_pub_, posts feedback to a product) or server (vfy_srv_, submits website forms)"
+                },
                 "productId": {
                   "type": "string",
-                  "description": "Product the key posts to; defaults to the project's first product"
+                  "description": "App keys only. Product the key posts to; defaults to the project's first product. Refused for server keys."
                 }
               }
             }
@@ -10314,6 +10337,89 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/public/forms/{publicId}/submissions": {
+    "options": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "CORS preflight for browser form submissions",
+      "description": "Grants CORS (POST, Content-Type, Idempotency-Key) to the form's allowed origins only.",
+      "operationId": "preflightSupportFormFromBrowser",
+      "security": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "publicId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "204": {
+          "description": "Preflight answered; CORS headers only for an allowed origin"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Submit a website form from a browser",
+      "description": "For sites without a backend. Off unless the form has browser submissions switched on, and accepted only from the form's allowed origins (checked against the `Origin` header; CORS is granted to those origins only). Rate limited per visitor IP, and per form for submissions that pass validation. The `_hp` honeypot must be empty: a filled one gets a normal-looking 201 and nothing is filed. Accepts JSON (`{ fields, metadata?: { pageUrl, locale }, _hp?, challengeToken? }`) or form-encoded fields (`_hp`, `_page_url`, `_locale`, `_challenge` reserved). Filed exactly like the server API. See docs/forms-api.md.\n",
+      "operationId": "submitSupportFormFromBrowser",
+      "security": [],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "publicId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Idempotent replay"
+        },
+        "201": {
+          "description": "Accepted. `data: { id }`"
+        },
+        "400": {
+          "description": "Invalid body or fields"
+        },
+        "403": {
+          "description": "Origin not allowed (`ORIGIN_NOT_ALLOWED`), challenge failed (`CHALLENGE_FAILED`), form disabled or inbox off"
+        },
+        "404": {
+          "description": "Unknown form, or browser submissions are off (`FORM_NOT_FOUND`)"
+        },
+        "413": {
+          "description": "Body larger than 64 KiB"
+        },
+        "415": {
+          "description": "Unsupported content type"
+        },
+        "422": {
+          "description": "Idempotency-Key reused with a different body"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
   "/api/public/o/{orgSlug}": {
     "get": {
       "tags": [
@@ -12129,7 +12235,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Get a conversation's message thread",
-      "description": "Returns the most recent window of messages in ascending (oldest-first) order, ready to render as a chat thread. `hasMore: true` means older history exists above the returned window - this endpoint always anchors to the newest messages, never to an arbitrary page. All kinds (`incoming`, `outgoing`, `note`, `activity`) are included, private notes too, since this is the agent-facing thread pane. Outgoing messages carry delivery detail for the retry UI: `deliveryError` (short sanitized text or null), `senderBlocked` (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message was never submitted to the provider) and `retryable` (true only for a failed reply that has an email outbox entry; CSAT survey deliveries are never retryable). `deliveryStatus` is pending, sent, delayed (the recipient's server deferred it and the provider is retrying), delivered, failed or bounced. `failureReason` classifies a failed, bounced or delayed reply's `deliveryError` (sender_rejected, recipient_rejected, mailbox_full, provider_unavailable, configuration, abandoned, unknown; null otherwise). `deliveryAttempt` is set while the outbox retries a pending reply after a failed attempt: `{ current, max, nextAttemptAt }` (null otherwise).\n",
+      "description": "Returns the most recent window of messages in ascending (oldest-first) order, ready to render as a chat thread. `hasMore: true` means older history exists above the returned window - this endpoint always anchors to the newest messages, never to an arbitrary page. All kinds (`incoming`, `outgoing`, `note`, `activity`) are included, private notes too, since this is the agent-facing thread pane. Outgoing messages carry delivery detail for the retry UI: `deliveryError` (short sanitized text or null), `senderBlocked` (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message was never submitted to the provider) and `retryable` (true only for a failed reply that has an email outbox entry; CSAT survey deliveries are never retryable). `deliveryStatus` is pending, sent, delayed (the recipient's server deferred it and the provider is retrying), delivered, failed or bounced. `failureReason` classifies a failed, bounced or delayed reply's `deliveryError` (sender_rejected, recipient_rejected, mailbox_full, provider_unavailable, configuration, abandoned, unknown; null otherwise). `deliveryAttempt` is set while the outbox retries a pending reply after a failed attempt: `{ current, max, nextAttemptAt }` (null otherwise). An incoming message filed by a website form carries `formSubmission`: `{ submissionId, formId, formName, source, fields: [{ key, label, type, display }], metadata }` (null otherwise), for laying the values out as plain text.\n",
       "operationId": "listSupportConversationMessages",
       "parameters": [
         {
@@ -12859,7 +12965,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Delete an inbox",
-      "description": "conversation.inboxId is a restrict FK - an inbox with any conversations cannot be deleted. Delete or reassign them first.\n",
+      "description": "conversation.inboxId is a restrict FK - an inbox with any conversations cannot be deleted. Delete or reassign them first. An inbox that website forms deliver to cannot be deleted either; move or delete those forms first.\n",
       "operationId": "deleteSupportInbox",
       "parameters": [
         {
@@ -12882,7 +12988,7 @@ export const openapiPaths = {
           "description": "Inbox not found"
         },
         "409": {
-          "description": "Inbox still has conversations"
+          "description": "Inbox still has conversations or forms"
         }
       }
     },
@@ -13728,6 +13834,430 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/projects/{projectId}/forms": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List website forms",
+      "description": "The project's website forms, each with its submission count. Project admins only.",
+      "operationId": "listSupportForms",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Forms"
+        },
+        "403": {
+          "description": "Not a project admin"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Create a website form",
+      "description": "A form files each submission into its inbox as a new conversation from the submitter, like an inbound email. Sites submit with a project server key (`POST /api/v1/forms/{slug}/submissions`) or, when browser submissions are on, from an allowed origin with the form's public id. See docs/forms-api.md. Project admins only.\n",
+      "operationId": "createSupportForm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "slug",
+                "inboxId",
+                "fields",
+                "fieldMapping"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "slug": {
+                  "type": "string",
+                  "maxLength": 60,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "inboxId": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "type"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "email",
+                          "textarea",
+                          "select",
+                          "checkbox"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "options": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "properties": {
+                            "value": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "fieldMapping": {
+                  "type": "object",
+                  "required": [
+                    "email"
+                  ],
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "description": "Key of a required email field"
+                    },
+                    "name": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Key of a text field"
+                    },
+                    "subject": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Key of a text or select field"
+                    }
+                  }
+                },
+                "autoReplyMode": {
+                  "type": "string",
+                  "enum": [
+                    "inbox",
+                    "custom",
+                    "off"
+                  ],
+                  "default": "inbox"
+                },
+                "autoReplyTemplate": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 5000
+                },
+                "allowedOrigins": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "description": "e.g. https://shop.example.com or https://*.example.com"
+                },
+                "browserSubmissionsEnabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "isEnabled": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Form created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "409": {
+          "description": "Slug already used in this project"
+        }
+      }
+    }
+  },
+  "/api/support/projects/{projectId}/forms/{formId}": {
+    "delete": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Delete a website form",
+      "description": "Further submissions to it are refused (404). Conversations it already created stay in the inbox. Project admins only.\n",
+      "operationId": "deleteSupportForm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "formId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Form deleted"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Form not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Update a website form",
+      "description": "Replaces the form definition (same body as create). Submissions already filed keep the fields they were submitted with; the public id never changes. Project admins only.\n",
+      "operationId": "updateSupportForm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "formId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "slug",
+                "inboxId",
+                "fields",
+                "fieldMapping"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "slug": {
+                  "type": "string",
+                  "maxLength": 60,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "inboxId": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "label",
+                      "type"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "email",
+                          "textarea",
+                          "select",
+                          "checkbox"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "options": {
+                        "type": "array",
+                        "maxItems": 50,
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "properties": {
+                            "value": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "fieldMapping": {
+                  "type": "object",
+                  "required": [
+                    "email"
+                  ],
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "description": "Key of a required email field"
+                    },
+                    "name": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Key of a text field"
+                    },
+                    "subject": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Key of a text or select field"
+                    }
+                  }
+                },
+                "autoReplyMode": {
+                  "type": "string",
+                  "enum": [
+                    "inbox",
+                    "custom",
+                    "off"
+                  ],
+                  "default": "inbox"
+                },
+                "autoReplyTemplate": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 5000
+                },
+                "allowedOrigins": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "description": "e.g. https://shop.example.com or https://*.example.com"
+                },
+                "browserSubmissionsEnabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "isEnabled": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Form updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Form not found"
+        },
+        "409": {
+          "description": "Slug already used in this project"
+        }
+      }
+    }
+  },
   "/api/support/projects/{projectId}/sending-domains": {
     "get": {
       "tags": [
@@ -14556,6 +15086,133 @@ export const openapiPaths = {
         },
         "401": {
           "description": "Missing, unknown, or revoked app key"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/v1/forms/{formSlug}/submissions": {
+    "post": {
+      "tags": [
+        "App API"
+      ],
+      "summary": "Submit a website form (server to server)",
+      "description": "Files the submission into the form's inbox as a new conversation from the submitter, exactly like an inbound email: the contact is found or created by email, SLA, auto-reply and automation rules apply, and agent replies are emailed to the submitter. Authenticate with a project server key (`Authorization: Bearer vfy_srv_...`) from your backend; never expose it to a browser. Send `Idempotency-Key` to make retries safe. See docs/forms-api.md.\n",
+      "operationId": "submitSupportForm",
+      "security": [
+        {
+          "serverKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "formSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "header",
+          "name": "Idempotency-Key",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": "A retry with the same key and body returns the first result (200, header Idempotent-Replayed: true) instead of filing again."
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "fields"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "type": "object",
+                  "description": "Field key to value. Strings for text, email, textarea and select (the option value); booleans for checkboxes.",
+                  "additionalProperties": true
+                },
+                "metadata": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pageUrl": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "locale": {
+                      "type": "string",
+                      "maxLength": 35
+                    },
+                    "brand": {
+                      "type": "string",
+                      "maxLength": 120
+                    },
+                    "orderNumber": {
+                      "type": "string",
+                      "maxLength": 120
+                    },
+                    "clientIp": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "description": "The visitor's IP; also rate-limits submissions per visitor"
+                    },
+                    "userAgent": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "referrer": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "extra": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "maxProperties": 20
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Idempotent replay of an earlier request with the same key"
+        },
+        "201": {
+          "description": "Filed. `data: { id, conversationId }`"
+        },
+        "400": {
+          "description": "Invalid JSON, unknown or invalid fields (`error.details` lists them), or a bad Idempotency-Key"
+        },
+        "401": {
+          "description": "Missing, unknown or revoked server key"
+        },
+        "403": {
+          "description": "Form disabled (`FORM_DISABLED`) or its inbox is off (`INBOX_UNAVAILABLE`)"
+        },
+        "404": {
+          "description": "No form with that slug in the key's project (`FORM_NOT_FOUND`)"
+        },
+        "413": {
+          "description": "Body larger than 64 KiB"
+        },
+        "422": {
+          "description": "Idempotency-Key reused with a different body (`IDEMPOTENCY_KEY_REUSED`)"
         },
         "429": {
           "description": "Rate limit exceeded"

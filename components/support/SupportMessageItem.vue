@@ -53,7 +53,33 @@
           isOutgoing ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted text-foreground rounded-bl-sm'
         "
       >
-        <SupportMessageHtml v-if="renderableHtml" :html="renderableHtml" />
+        <!-- Website form submission: the values laid out as plain text, never HTML. -->
+        <div v-if="formSubmission" class="space-y-2 text-sm" data-testid="support-message-form">
+          <p class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Icon name="lucide:clipboard-list" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span data-testid="support-message-form-name">Form: {{ formSubmission.formName }}</span>
+          </p>
+          <dl class="space-y-1.5">
+            <div v-for="field in formSubmission.fields" :key="field.key" data-testid="support-message-form-field">
+              <dt class="text-xs text-muted-foreground">{{ field.label }}</dt>
+              <dd class="whitespace-pre-wrap break-words">{{ field.display || '—' }}</dd>
+            </div>
+          </dl>
+          <details
+            v-if="formMetadataRows.length > 0"
+            class="border-t border-current/15 pt-1.5 text-xs text-muted-foreground"
+            data-testid="support-message-form-metadata"
+          >
+            <summary class="cursor-pointer select-none underline-offset-2 hover:underline">Submission details</summary>
+            <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+              <template v-for="(row, index) in formMetadataRows" :key="index">
+                <dt>{{ row.label }}</dt>
+                <dd class="break-all">{{ row.value }}</dd>
+              </template>
+            </dl>
+          </details>
+        </div>
+        <SupportMessageHtml v-else-if="renderableHtml" :html="renderableHtml" />
         <p v-else class="text-sm whitespace-pre-wrap break-words">{{ messageBody }}</p>
         <div
           v-if="deliveryNotices.length > 0"
@@ -185,6 +211,7 @@ import {
   SENDER_DOMAIN_NOT_AUTHORIZED,
   classifyDeliveryError,
 } from '~/lib/support-delivery-errors'
+import { FORM_METADATA_LABELS } from '~/lib/support-forms'
 
 /** Outbox markers are shown as their sentence; only provider text goes behind "Details". */
 const MARKERS = new Set([SENDER_DOMAIN_NOT_AUTHORIZED, 'DELIVERY_ABANDONED'])
@@ -247,6 +274,25 @@ export default {
   computed: {
     isOutgoing() {
       return this.message.kind === 'outgoing'
+    },
+
+    /** Set on an incoming message a website form filed (see the messages route). */
+    formSubmission() {
+      const form = this.message.kind === 'incoming' ? this.message.formSubmission : null
+      return form && Array.isArray(form.fields) ? form : null
+    },
+
+    formMetadataRows() {
+      const metadata = this.formSubmission?.metadata || {}
+      const rows = []
+      for (const [key, label] of Object.entries(FORM_METADATA_LABELS)) {
+        if (typeof metadata[key] === 'string' && metadata[key]) rows.push({ label, value: metadata[key] })
+      }
+      for (const [key, value] of Object.entries(metadata.extra || {})) {
+        if (typeof value === 'string' && value) rows.push({ label: key, value })
+      }
+      rows.push({ label: 'Sent from', value: this.formSubmission?.source === 'browser' ? 'Browser' : 'Website server' })
+      return rows
     },
 
     /**

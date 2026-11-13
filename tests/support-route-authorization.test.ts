@@ -1017,6 +1017,11 @@ describe('executable support route authorization inventory', () => {
       'projects/[projectId]/csat-surveys/index.get',
       'projects/[projectId]/csat-surveys/index.post',
       'projects/[projectId]/csat-summary.get',
+      // Website forms: project-admin only; see tests/support-forms-routes.test.ts.
+      'projects/[projectId]/forms/[formId].delete',
+      'projects/[projectId]/forms/[formId].put',
+      'projects/[projectId]/forms/index.get',
+      'projects/[projectId]/forms/index.post',
     ]
     const inventoryNames = [...new Set(inventoryEntries)].sort()
 

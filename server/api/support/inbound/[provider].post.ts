@@ -33,23 +33,16 @@
  *       429: { description: Rate limited }
  *       500: { description: Recorded processing failure; retry requested }
  */
-import { randomUUID } from 'node:crypto'
 import { createError, getHeaders, getRouterParam, readMultipartFormData, readRawBody, setResponseStatus } from 'h3'
 import { eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
-import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
+import { getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
 import { resolveInboxForRecipients } from '~/server/utils/support-access'
-import { helpdeskAppliesTo } from '~/server/utils/conversation-behaviour'
 import { DEFAULT_MAIL_ADDRESS_BEHAVIOUR, isMailAddressBehaviour, type MailAddressBehaviour } from '~/lib/mail-address'
-import { allocateConversationDisplayId } from '~/server/utils/support-counter'
-import { publishConversationEvent } from '~/server/utils/support-realtime'
-import { resolveThread, updatesForInboundReply } from '~/server/utils/inbound-threading'
-import { recordConversationActivity, recordConversationStatusEvent } from '~/server/utils/conversation-activity'
 import { stripQuotedReply } from '~/server/utils/inbound-content'
 import { sanitizeInboundHtml } from '~/server/utils/inbound-sanitize'
 import { isAutoResponse } from '~/server/utils/inbound-autoresponse'
-import { resolveCcParticipants, resolveOrCreateContact } from '~/server/utils/inbound-contacts'
 import { ingestInboundAttachments, rewriteInlineCidReferences } from '~/server/utils/inbound-attachments'
 import {
   attachInboundEventInbox,
@@ -63,32 +56,10 @@ import {
 } from '~/server/utils/inbound-events'
 import { checkRateLimit } from '~/server/utils/rate-limit'
 import { inboundRoutingRecipients } from '~/server/utils/inbound-routing'
-import { getRateLimitStore } from '~/server/services/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
-import {
-  AUTO_REPLY_RATE_LIMIT_MAX,
-  AUTO_REPLY_RATE_LIMIT_WINDOW_SECONDS,
-  buildAutoReply,
-  shouldSendAutoReply,
-} from '~/server/utils/auto-reply'
-import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
-import { isSenderAllowedOrRecordBlock } from '~/server/utils/sender-enforcement'
-import { reMarkConversationUnreadForIncoming } from '~/server/utils/conversation-read-state'
+import { announceInboundMessage, fileInboundMessage } from '~/server/utils/inbound-intake'
 import { db } from '~/server/database/drizzle'
-import {
-  businessHours,
-  contact,
-  conversation,
-  conversationAttachment,
-  conversationMessage,
-  conversationTag,
-  slaPolicy,
-  projectMailAddress,
-} from '~/server/database/schema/support'
-import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
-import { resolveConversationSender } from '~/server/utils/conversation-sender'
-import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
-import { triggerAutomationEvent } from '~/server/utils/automation-engine'
+import { projectMailAddress } from '~/server/database/schema/support'
 import { getProjectById } from '~/server/utils/project-access'
 import { isModuleEnabled } from '~/lib/modules'
 
@@ -352,377 +323,32 @@ export default defineEventHandler(async (event) => {
         }
       }
 
-      // ---- 6. Contact ----------------------------------------------------
-      const { contactId } = await resolveOrCreateContact(tx, inbox.projectId, message.from)
-
-      // ---- 7. Conversation -----------------------------------------------
-      const thread = await resolveThread(tx, { id: inbox.id, projectId: inbox.projectId }, message, contactId)
-
-      let conversationId = thread.conversationId
-      let isNewConversation = false
-      // Quiet: the message is filed but nothing reacts to it - no reopen, SLA,
-      // unread re-mark, auto-reply or automation. True for a spam message, and
-      // for any message threaded onto a conversation in Spam.
-      let quiet = message.isSpam
-      let initialSla: Awaited<ReturnType<typeof resolveSlaAssignment>> = null
-      const threadingCollision =
-        thread.matchedBy === 'ambiguous-message-id'
-          ? {
-              type: 'ambiguous-message-id' as const,
-              headerMessageId: message.inReplyTo ?? message.references[0] ?? '',
-              occurredAt: new Date().toISOString(),
-            }
-          : null
-
-      if (!conversationId) {
-        conversationId = randomUUID()
-        isNewConversation = true
-        const displayId = await allocateConversationDisplayId(tx, inbox.projectId)
-        const [contactRow] = await tx
-          .select({ companyId: contact.companyId })
-          .from(contact)
-          .where(eq(contact.id, contactId))
-          .limit(1)
-        // The provider's spam verdict files a new conversation straight into Spam.
-        const spamAt = message.isSpam ? new Date() : null
-        // Null for a `mail` address or a spam message: no SLA.
-        initialSla = await resolveSlaAssignment(
-          {
-            projectId: inbox.projectId,
-            inboxId: inbox.id,
-            priority: null,
-            companyId: contactRow?.companyId,
-            tagIds: [],
-            start: message.receivedAt,
-            conversation: { behaviour: addressBehaviour, spamAt, deletedAt: null },
-          },
-          tx
-        )
-
-        await tx.insert(conversation).values({
-          id: conversationId,
-          inboxId: inbox.id,
-          projectId: inbox.projectId,
-          contactId,
-          displayId,
-          subject: message.subject,
-          status: 'open',
-          // The address the mail arrived on and its behaviour at this moment;
-          // replies threaded onto the conversation later never change these.
-          mailAddressId: matchedAddress.id,
-          behaviour: addressBehaviour,
-          spamAt,
-          ...(initialSla ?? {}),
-          // Agent 2's threading matches replies against this. Writing it is
-          // what makes their `thread-key` branch reachable at all.
-          channelThreadKey: message.references[0] ?? message.messageId,
-          metadata: threadingCollision ? { threadingCollision } : null,
-          lastActivityAt: message.receivedAt,
-          lastCustomerReplyAt: message.receivedAt,
-          createdAt: message.receivedAt,
-          updatedAt: new Date(),
-        })
-
-        if (threadingCollision) {
-          logger.warn('Ambiguous inbound Message-ID created a new conversation', {
-            provider: driver.name,
-            inboxId: inbox.id,
-            headerMessageId: threadingCollision.headerMessageId,
-            conversationId,
-          })
-        }
-      } else {
-        // Never overwrite `projectId` on an existing conversation - an agent
-        // may have corrected it (stage doc step 7).
-        const [existingThread] = await tx
-          .select({
-            status: conversation.status,
-            assigneeUserId: conversation.assigneeUserId,
-            contactId: conversation.contactId,
-            priority: conversation.priority,
-            firstResponseAt: conversation.firstResponseAt,
-            slaPolicyId: conversation.slaPolicyId,
-            firstResponseDueAt: conversation.firstResponseDueAt,
-            nextResponseDueAt: conversation.nextResponseDueAt,
-            resolutionDueAt: conversation.resolutionDueAt,
-            slaPausedAt: conversation.slaPausedAt,
-            slaPausedMinutes: conversation.slaPausedMinutes,
-            behaviour: conversation.behaviour,
-            spamAt: conversation.spamAt,
-            deletedAt: conversation.deletedAt,
-          })
-          .from(conversation)
-          .where(eq(conversation.id, conversationId))
-          .for('update')
-          .limit(1)
-
-        // A conversation in Spam stays there: the reply is filed quietly.
-        quiet ||= existingThread.spamAt !== null
-
-        if (!quiet) {
-          const updates: Partial<typeof conversation.$inferInsert> = updatesForInboundReply(
-            existingThread,
-            message.receivedAt,
-            new Date()
-          )
-          // A reply to a conversation in Trash restores it and is handled as usual.
-          if (existingThread.deletedAt) updates.deletedAt = null
-          // SLA timers only run for helpdesk conversations (not `mail` addresses).
-          const helpdesk = helpdeskAppliesTo({ behaviour: existingThread.behaviour, spamAt: null, deletedAt: null })
-          if (helpdesk && existingThread.slaPausedAt) {
-            const [policyRow] = existingThread.slaPolicyId
-              ? await tx
-                  .select({ hours: businessHours })
-                  .from(slaPolicy)
-                  .leftJoin(businessHours, eq(slaPolicy.businessHoursId, businessHours.id))
-                  .where(eq(slaPolicy.id, existingThread.slaPolicyId))
-                  .limit(1)
-              : []
-            const resumed = resumeSlaDeadlines({
-              deadlines: {
-                firstResponseDueAt: existingThread.firstResponseDueAt,
-                nextResponseDueAt: existingThread.nextResponseDueAt,
-                resolutionDueAt: existingThread.resolutionDueAt,
-              },
-              pausedAt: existingThread.slaPausedAt,
-              resumedAt: message.receivedAt,
-              businessHours: policyRow?.hours
-                ? {
-                    timezone: policyRow.hours.timezone,
-                    weeklySchedule: policyRow.hours.weeklySchedule,
-                    holidays: policyRow.hours.holidays,
-                  }
-                : null,
-            })
-            updates.firstResponseDueAt = resumed.firstResponseDueAt
-            updates.nextResponseDueAt = resumed.nextResponseDueAt
-            updates.resolutionDueAt = resumed.resolutionDueAt
-            updates.slaPausedAt = null
-            updates.slaPausedMinutes = existingThread.slaPausedMinutes + resumed.pausedMinutes
-          }
-          if (helpdesk && existingThread.firstResponseAt) {
-            const [contactRow] = await tx
-              .select({ companyId: contact.companyId })
-              .from(contact)
-              .where(eq(contact.id, existingThread.contactId))
-              .limit(1)
-            const tags = await tx
-              .select({ tagId: conversationTag.tagId })
-              .from(conversationTag)
-              .where(eq(conversationTag.conversationId, conversationId))
-            const nextSla = await resolveSlaAssignment(
-              {
-                projectId: inbox.projectId,
-                inboxId: inbox.id,
-                priority: existingThread.priority,
-                companyId: contactRow?.companyId,
-                tagIds: tags.map((tag) => tag.tagId),
-                start: message.receivedAt,
-                includeNextResponse: true,
-                // The state after this reply: not spam (quiet replies never get here) and out of Trash.
-                conversation: { ...existingThread, spamAt: null, deletedAt: null },
-              },
-              tx
-            )
-            updates.nextResponseDueAt = nextSla?.nextResponseDueAt ?? null
-          }
-          const [updatedThread] = await tx
-            .update(conversation)
-            .set(updates)
-            .where(eq(conversation.id, conversationId))
-            .returning({ assigneeUserId: conversation.assigneeUserId })
-          await reMarkConversationUnreadForIncoming(tx, conversationId, updatedThread.assigneeUserId)
-
-          if (existingThread.status === 'resolved' || existingThread.status === 'pending') {
-            await recordConversationActivity(
-              tx,
-              conversationId,
-              [{ field: 'status', from: existingThread.status, to: 'open' }],
-              null
-            )
-            await recordConversationStatusEvent(tx, {
-              projectId: inbox.projectId,
-              inboxId: inbox.id,
-              conversationId,
-              fromStatus: existingThread.status,
-              toStatus: 'open',
-              actorUserId: null,
-              occurredAt: message.receivedAt,
-            })
-          }
-        }
-      }
-
-      // ---- 8. Message ------------------------------------------------------
-      const messageId = randomUUID()
-      await tx.insert(conversationMessage).values({
-        id: messageId,
-        conversationId,
-        kind: 'incoming',
+      // ---- 6-8. Contact, conversation, message, Cc, auto-reply -----------
+      const filed = await fileInboundMessage(tx, {
+        inbox,
+        mailAddressId: matchedAddress.id,
+        behaviour: addressBehaviour,
+        message,
         body: stripped.body,
         bodyHtml: safeHtml,
-        senderKind: 'contact',
-        senderContactId: contactId,
-        senderUserId: null,
-        isPrivate: false,
-        // Agent 2's threading matches replies on this column, so it must carry
-        // the RFC Message-ID rather than our own row id.
-        channelMessageId: message.messageId,
-        inReplyTo: message.inReplyTo,
-        channelHeaders: message.rawHeaders,
-        // Inbound mail has already been delivered; `pending` is for outbound.
-        deliveryStatus: 'delivered',
-        metadata: {
+        threading: 'thread',
+        ownAddresses,
+        attachments: attachments.stored,
+        messageMetadata: {
           rawBody: stripped.rawBody,
-          matchedBy: thread.matchedBy,
           ...(message.isSpam ? { spam: true } : {}),
           ...(message.frogmailForwards?.length ? { frogmailForwards: message.frogmailForwards } : {}),
           ...(message.attachmentsRemoved ? { attachmentsRemoved: true } : {}),
         },
-        createdAt: message.receivedAt,
+        logContext: { provider: driver.name },
       })
 
-      if (attachments.stored.length > 0) {
-        await tx.insert(conversationAttachment).values(
-          attachments.stored.map((file) => ({
-            id: file.id,
-            messageId,
-            storageKey: file.storageKey,
-            fileName: file.fileName,
-            contentType: file.contentType,
-            sizeBytes: file.sizeBytes,
-            isInline: file.isInline,
-            contentId: file.contentId,
-            createdAt: message.receivedAt,
-          }))
-        )
-      }
-
-      // ---- SUP-03-11: CC participants -------------------------------------
-      // Spam does not turn every Cc'd address into a contact.
-      if (!quiet) {
-        await resolveCcParticipants(tx, {
-          conversationId,
-          projectId: inbox.projectId,
-          cc: message.cc,
-          senderContactId: contactId,
-          ownAddresses,
-        })
-      }
-
-      // ---- SUP-04-8: auto-reply --------------------------------------------
-      // Guard 1 (never on a detected auto-response) is enforced above this
-      // transaction - a flagged message returns at the `isAutoResponse` check
-      // and never reaches here. Guards 2 and 3 (only a new conversation, never
-      // twice) collapse into `isNewConversation`: see `auto-reply.ts`. Guard 4
-      // (`Auto-Submitted`) is set by `buildAutoReply`. Guard 5, the per-contact
-      // rate limit, is checked here because it needs the store.
-      let autoReplyMessageId: string | null = null
-
-      if (
-        shouldSendAutoReply({
-          isNewConversation,
-          autoReplyEnabled: inbox.autoReplyEnabled,
-          autoReplyTemplate: inbox.autoReplyTemplate,
-          // Never for a `mail` address or a spam message.
-          behaviour: addressBehaviour,
-          isSpam: message.isSpam,
-        })
-      ) {
-        // Same sender as an agent reply: the receiving address when it is one of
-        // the project's verified addresses, otherwise the inbox address.
-        const autoReplySender = await resolveConversationSender(
-          { inboxId: inbox.id, inboxEmailAddress: inbox.emailAddress, mailAddressId: matchedAddress.id },
-          tx
-        )
-        if (!autoReplySender) {
-          // No agent is present to show a 409 to - this is a webhook. Log and
-          // still ticket the customer's message normally.
-          logger.warn('Auto-reply is enabled but the inbox has no sending address', { inboxId: inbox.id })
-        } else if (!(await isSenderAllowedOrRecordBlock(inbox.projectId, autoReplySender, 'auto_reply'))) {
-          // Project sender policy: this project may not send as the inbox address
-          // (domain unverified, suspended or deleted). Skip the auto-reply;
-          // the ticket is still created. Never true under the legacy policy.
-          logger.warn('Auto-reply skipped: sender address is not authorized for this project', {
-            inboxId: inbox.id,
-            conversationId,
-          })
-        } else if (message.messageId === null) {
-          // Cannot thread a reply with nothing to set In-Reply-To to, and an
-          // unthreaded acknowledgment risks becoming its own new "ticket" if
-          // the customer replies to it. Rare: providers essentially always
-          // supply a Message-ID.
-          logger.warn('Auto-reply skipped: inbound message has no Message-ID to thread onto', { conversationId })
-        } else {
-          const allowed = await getRateLimitStore().consume(
-            `support-auto-reply:${contactId}`,
-            AUTO_REPLY_RATE_LIMIT_WINDOW_SECONDS * 1000,
-            AUTO_REPLY_RATE_LIMIT_MAX
-          )
-
-          if (!allowed) {
-            logger.warn('Auto-reply rate limit exceeded for contact', { contactId })
-          } else {
-            const domain = emailDomain(autoReplySender) ?? emailDomain(process.env.MAIL_FROM ?? '') ?? 'localhost'
-            autoReplyMessageId = randomUUID()
-
-            const autoReply = buildAutoReply({
-              inbox: { emailAddress: autoReplySender, fromName: inbox.fromName, signature: inbox.signature },
-              // The literal sender of this email, not necessarily the
-              // contact record's current email - correct even after a merge.
-              contact: { email: message.from.address, name: message.from.name ?? null },
-              subject: message.subject ?? '(no subject)',
-              template: inbox.autoReplyTemplate as string,
-              previous: {
-                channelMessageId: message.messageId,
-                references: message.references,
-                fromName: message.from.name ?? message.from.address,
-                sentAt: message.receivedAt,
-                body: stripped.body,
-                bodyHtml: safeHtml,
-              },
-              newMessageId: autoReplyMessageId,
-              domain,
-            })
-
-            const [autoReplyRow] = await tx
-              .insert(conversationMessage)
-              .values({
-                id: autoReplyMessageId,
-                conversationId,
-                kind: 'outgoing',
-                body: inbox.autoReplyTemplate as string,
-                bodyHtml: null,
-                senderKind: 'system',
-                senderContactId: null,
-                senderUserId: null,
-                isPrivate: false,
-                channelMessageId: autoReply.channelMessageId,
-                inReplyTo: autoReply.inReplyTo,
-                channelHeaders: autoReply.referencesForStorage ? { references: autoReply.referencesForStorage } : null,
-                deliveryStatus: 'pending',
-                // Not a substantive agent response - deliberately does not
-                // touch firstResponseAt/lastAgentReplyAt (Stage 06 territory;
-                // flagged for the SLA implementation to
-                // confirm this reading rather than assume it).
-                metadata: { isAutoReply: true },
-                createdAt: new Date(),
-              })
-              .returning()
-
-            await tx.update(conversation).set({ lastActivityAt: new Date() }).where(eq(conversation.id, conversationId))
-
-            await enqueueOutboundDelivery(tx, { messageId: autoReplyRow.id, payload: autoReply.deliveryPayload })
-          }
-        }
-      }
-
-      const completed = await completeInboundEvent(claimToken, conversationId, tx)
+      const completed = await completeInboundEvent(claimToken, filed.conversationId, tx)
       if (!completed) {
         throw new Error('Inbound claim lost before terminal completion')
       }
 
-      return { conversationId, messageId, isNewConversation, autoReplyMessageId, quiet }
+      return filed
     })
 
     if ('duplicateOfConversationId' in result) {
@@ -742,42 +368,7 @@ export default defineEventHandler(async (event) => {
       return accepted('duplicate-in-inbox')
     }
 
-    await publishConversationEvent({
-      type: result.isNewConversation ? 'conversation.created' : 'message.created',
-      projectId: inbox.projectId,
-      inboxId: inbox.id,
-      conversationId: result.conversationId,
-      messageId: result.messageId,
-    })
-    // Spam (and anything filed into Spam) runs no automation. The engine also
-    // skips `mail` conversations and conversations in Spam or Trash itself.
-    if (!result.quiet) {
-      await triggerAutomationEvent({
-        conversationId: result.conversationId,
-        trigger: result.isNewConversation ? 'conversation_created' : 'message_created',
-      })
-    }
-
-    if (result.autoReplyMessageId) {
-      // A second, real message exists now (the auto-reply) - agents watching
-      // the inbox should see it appear without a manual refresh, same as any
-      // other new message.
-      await publishConversationEvent({
-        type: 'message.created',
-        projectId: inbox.projectId,
-        inboxId: inbox.id,
-        conversationId: result.conversationId,
-        messageId: result.autoReplyMessageId,
-      })
-
-      // Fire-and-forget, same reasoning as SUP-04-4: the outbox row is the
-      // durable copy, this is just an optimistic trigger to send it promptly.
-      runOutboundDeliveryWorker().catch((error) => {
-        logger.error('Auto-reply outbound delivery worker pass failed', {
-          error: error instanceof Error ? error.message : error,
-        })
-      })
-    }
+    await announceInboundMessage(inbox, result)
 
     setResponseStatus(event, 200)
     return createSuccessResponse({

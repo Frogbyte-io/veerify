@@ -1,0 +1,104 @@
+/**
+ * @openapi
+ * /api/support/projects/{projectId}/forms/{formId}:
+ *   put:
+ *     tags: [Support]
+ *     summary: Update a website form
+ *     description: >
+ *       Replaces the form definition (same body as create). Submissions already
+ *       filed keep the fields they were submitted with; the public id never
+ *       changes. Project admins only.
+ *     operationId: updateSupportForm
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: formId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, slug, inboxId, fields, fieldMapping]
+ *             properties:
+ *               name: { type: string, maxLength: 80 }
+ *               slug: { type: string, maxLength: 60, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+ *               inboxId: { type: string }
+ *               fields:
+ *                 type: array
+ *                 maxItems: 30
+ *                 items:
+ *                   type: object
+ *                   required: [key, label, type]
+ *                   properties:
+ *                     key: { type: string, maxLength: 40, pattern: '^[a-z0-9][a-z0-9_-]*$' }
+ *                     label: { type: string, maxLength: 120 }
+ *                     type: { type: string, enum: [text, email, textarea, select, checkbox] }
+ *                     required: { type: boolean }
+ *                     options:
+ *                       type: array
+ *                       maxItems: 50
+ *                       items:
+ *                         type: object
+ *                         required: [value, label]
+ *                         properties:
+ *                           value: { type: string, maxLength: 120 }
+ *                           label: { type: string, maxLength: 120 }
+ *               fieldMapping:
+ *                 type: object
+ *                 required: [email]
+ *                 properties:
+ *                   email: { type: string, description: Key of a required email field }
+ *                   name: { type: string, nullable: true, description: Key of a text field }
+ *                   subject: { type: string, nullable: true, description: Key of a text or select field }
+ *               autoReplyMode: { type: string, enum: [inbox, custom, off], default: inbox }
+ *               autoReplyTemplate: { type: string, nullable: true, maxLength: 5000 }
+ *               allowedOrigins: { type: array, maxItems: 20, items: { type: string, maxLength: 300 }, description: 'e.g. https://shop.example.com or https://*.example.com' }
+ *               browserSubmissionsEnabled: { type: boolean, default: false }
+ *               isEnabled: { type: boolean, default: true }
+ *     responses:
+ *       200: { description: Form updated }
+ *       400: { description: Validation failed }
+ *       403: { description: Not a project admin }
+ *       404: { description: Form not found }
+ *       409: { description: Slug already used in this project }
+ */
+import { eq } from 'drizzle-orm'
+import { createSuccessResponse } from '~/server/utils/response'
+import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireProjectAdmin } from '~/server/utils/project-access'
+import { validateBody } from '~/server/utils/validation'
+import { db } from '~/server/database/drizzle'
+import { supportForm } from '~/server/database/schema/support'
+import { formDefinitionSchema } from '~/server/services/support-forms/definition'
+import {
+  requireFormInProject,
+  requireInboxInProject,
+  rethrowSlugConflict,
+  serializeForm,
+} from '~/server/services/support-forms/admin'
+
+export default defineEventHandler(async (event) => {
+  const session = await requireAuth(event)
+  const projectId = getRouterParam(event, 'projectId') as string
+  const formId = getRouterParam(event, 'formId') as string
+  await requireProjectAdmin(projectId, session.user.id)
+  await requireFormInProject(projectId, formId)
+
+  const body = await validateBody(event, formDefinitionSchema)
+  await requireInboxInProject(projectId, body.inboxId)
+
+  const [updated] = await db
+    .update(supportForm)
+    .set({ ...body, updatedAt: new Date() })
+    .where(eq(supportForm.id, formId))
+    .returning()
+    .catch(rethrowSlugConflict)
+
+  return createSuccessResponse({ form: serializeForm(updated) })
+})
