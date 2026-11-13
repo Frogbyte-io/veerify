@@ -20,7 +20,8 @@
  *             required: [name]
  *             properties:
  *               name: { type: string, minLength: 1, maxLength: 60 }
- *               productId: { type: string, description: "Product the key posts to; defaults to the project's first product" }
+ *               kind: { type: string, enum: [app, server], default: app, description: "app (vfy_pub_, posts feedback to a product) or server (vfy_srv_, submits website forms)" }
+ *               productId: { type: string, description: "App keys only. Product the key posts to; defaults to the project's first product. Refused for server keys." }
  *     responses:
  *       201: { description: "Key created; includes the full key once" }
  *       400: { description: "Validation failed" }
