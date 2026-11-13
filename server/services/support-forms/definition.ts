@@ -10,9 +10,19 @@ import {
   FORM_FIELD_TYPES,
   FORM_LIMITS,
   FORM_SLUG_PATTERN,
+  MAX_ORIGIN_LENGTH,
+  cleanFormText,
   normalizeOrigin,
   validateFormDefinition,
 } from '~/lib/support-forms'
+
+/** `fields[2].options[1].value` → `['fields', 2, 'options', 1, 'value']`, as Zod paths are. */
+export function toPathSegments(path: string): (string | number)[] {
+  return path
+    .split(/\.|\[|\]/)
+    .filter(Boolean)
+    .map((part) => (/^\d+$/.test(part) ? Number(part) : part))
+}
 
 const fieldSchema = z.object({
   key: z.string().trim().min(1).max(FORM_LIMITS.keyLength),
@@ -22,8 +32,15 @@ const fieldSchema = z.object({
   options: z
     .array(
       z.object({
-        value: z.string().trim().min(1).max(FORM_LIMITS.optionValueLength),
-        label: z.string().trim().min(1).max(FORM_LIMITS.labelLength),
+        // Stored in the same canonical form submitted values are cleaned to, so every option stays submittable.
+        value: z
+          .string()
+          .transform((value) => cleanFormText(value, false))
+          .pipe(z.string().min(1).max(FORM_LIMITS.optionValueLength)),
+        label: z
+          .string()
+          .transform((value) => cleanFormText(value, false))
+          .pipe(z.string().min(1).max(FORM_LIMITS.labelLength)),
       })
     )
     .max(FORM_LIMITS.options)
@@ -43,14 +60,14 @@ export const formDefinitionSchema = z
     }),
     autoReplyMode: z.enum(FORM_AUTO_REPLY_MODES).default('inbox'),
     autoReplyTemplate: z.string().max(FORM_LIMITS.autoReplyLength).nullable().default(null),
-    allowedOrigins: z.array(z.string()).max(FORM_LIMITS.allowedOrigins).default([]),
+    allowedOrigins: z.array(z.string().max(MAX_ORIGIN_LENGTH)).max(FORM_LIMITS.allowedOrigins).default([]),
     browserSubmissionsEnabled: z.boolean().default(false),
     isEnabled: z.boolean().default(true),
   })
   .superRefine((value, ctx) => {
     for (const problem of validateFormDefinition({ fields: value.fields, fieldMapping: value.fieldMapping })) {
       const [path, ...rest] = problem.split(': ')
-      ctx.addIssue({ code: 'custom', path: [path], message: rest.join(': ') })
+      ctx.addIssue({ code: 'custom', path: toPathSegments(path), message: rest.join(': ') })
     }
     value.allowedOrigins.forEach((origin, index) => {
       if (!normalizeOrigin(origin)) {

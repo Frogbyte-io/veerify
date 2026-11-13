@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 
 import {
   APP_KEY_PREFIX,
@@ -12,15 +14,27 @@ import {
   toFeedbackType,
 } from '../server/utils/app-keys'
 
-const state = vi.hoisted(() => ({ row: null as Record<string, unknown> | null }))
+const state = vi.hoisted(() => ({ row: null as Record<string, unknown> | null, where: null as unknown }))
 
+// Honors the kind filter: the stored row is returned only when the query asks for its kind.
 vi.mock('~/server/database/drizzle', () => ({
   db: {
-    select: vi.fn(() => ({
-      from: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis(),
-      limit: vi.fn(async () => (state.row ? [state.row] : [])),
-    })),
+    select: vi.fn(() => {
+      const chain = {
+        from: () => chain,
+        where: (arg: unknown) => {
+          state.where = arg
+          return chain
+        },
+        limit: async () => {
+          if (!state.row) return []
+          const { sql, params } = new PgDialect().sqlToQuery(state.where as SQL)
+          expect(sql).toContain('"project_api_key"."kind" = $')
+          return params.includes(state.row.kind) ? [state.row] : []
+        },
+      }
+      return chain
+    }),
   },
 }))
 
@@ -75,7 +89,8 @@ describe('app keys', () => {
   })
 
   it('requireAppKey refuses a server key, even one presented with the app prefix', async () => {
-    state.row = { id: 'k2', name: 'Shop', kind: 'server', productId: null }
+    // A product id too, so only the kind filter can refuse it.
+    state.row = { id: 'k2', name: 'Shop', kind: 'server', productId: 'product-1' }
     await expect(requireAppKey(eventWith('Bearer vfy_srv_good'))).rejects.toMatchObject({ statusCode: 401 })
     await expect(requireAppKey(eventWith('Bearer vfy_pub_good'))).rejects.toMatchObject({ statusCode: 401 })
   })
@@ -91,6 +106,9 @@ describe('app keys', () => {
     await expect(requireServerKey(eventWith('Bearer vfy_srv_good'))).resolves.toMatchObject({ id: 'k3' })
     await expect(requireServerKey(eventWith('Bearer vfy_pub_good'))).rejects.toMatchObject({ statusCode: 401 })
     await expect(requireServerKey(eventWith())).rejects.toMatchObject({ statusCode: 401 })
+    // An app key row behind a vfy_srv_ token (forged prefix) is still refused by kind.
+    state.row = { id: 'k4', name: 'App', kind: 'app', productId: 'product-1' }
+    await expect(requireServerKey(eventWith('Bearer vfy_srv_good'))).rejects.toMatchObject({ statusCode: 401 })
     state.row = null
     await expect(requireServerKey(eventWith('Bearer vfy_srv_unknown'))).rejects.toMatchObject({ statusCode: 401 })
   })

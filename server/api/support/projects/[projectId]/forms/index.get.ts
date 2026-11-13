@@ -15,7 +15,7 @@
  *       200: { description: Forms }
  *       403: { description: Not a project admin }
  */
-import { asc, count, eq, max } from 'drizzle-orm'
+import { asc, count, eq, inArray, max } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireProjectAdmin } from '~/server/utils/project-access'
@@ -34,15 +34,20 @@ export default defineEventHandler(async (event) => {
     .where(eq(supportForm.projectId, projectId))
     .orderBy(asc(supportForm.name), asc(supportForm.id))
 
-  const stats = await db
-    .select({
-      formId: supportFormSubmission.formId,
-      submissions: count(),
-      lastSubmittedAt: max(supportFormSubmission.createdAt),
-    })
-    .from(supportFormSubmission)
-    .where(eq(supportFormSubmission.projectId, projectId))
-    .groupBy(supportFormSubmission.formId)
+  // By form id, which the (form_id, created_at) index serves.
+  const formIds = rows.map((row) => row.id)
+  const stats =
+    formIds.length === 0
+      ? []
+      : await db
+          .select({
+            formId: supportFormSubmission.formId,
+            submissions: count(),
+            lastSubmittedAt: max(supportFormSubmission.createdAt),
+          })
+          .from(supportFormSubmission)
+          .where(inArray(supportFormSubmission.formId, formIds))
+          .groupBy(supportFormSubmission.formId)
   const byForm = new Map(stats.map((row) => [row.formId, row]))
 
   return createSuccessResponse({

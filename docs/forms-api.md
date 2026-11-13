@@ -31,8 +31,8 @@ There are two ways to submit:
 5. **Connect** on the form row shows a ready-made `curl` for the form.
 
 Field types: `text` (≤ 500 characters), `email` (≤ 254), `textarea` (≤ 10 000), `select` (the site sends the option
-value; agents see its label), `checkbox` (boolean). Field keys are lowercase letters, digits, `_` and `-`. `_hp` is
-reserved. A dropdown's options are entered one per line as `value | Label`.
+value; agents see its label), `checkbox` (boolean). Field keys are 1–40 characters of lowercase letters, digits, `_` and `-`,
+starting with a letter or digit. `_hp` is reserved. A dropdown's options are entered one per line as `value | Label`.
 
 Admin API (project admins, session or personal API key): `GET`/`POST /api/support/projects/{projectId}/forms`,
 `PUT`/`DELETE /api/support/projects/{projectId}/forms/{formId}`. Server keys: `GET /api/projects/{slug}/api-keys?kind=server`,
@@ -77,7 +77,8 @@ endpoint grants no CORS.
   **value**); `true`/`false` for checkboxes. Unknown keys are rejected so a mismatch between site and form fails loudly.
   Values are trimmed, CRLF is folded to LF and control characters are removed. They are stored and shown as plain text,
   never rendered as HTML.
-- `metadata` (optional, all keys optional, strings ≤ 2048): shown to agents under "Submission details", never sent to
+- `metadata` (optional, all keys optional): `pageUrl`, `userAgent`, `referrer` and `extra` values ≤ 2048 characters,
+  `locale` ≤ 35, `brand` and `orderNumber` ≤ 120, `clientIp` ≤ 64. Shown to agents under "Submission details", never sent to
   the customer. `extra` takes up to 20 more string values (keys `[A-Za-z0-9_.-]{1,40}`). Forward the visitor's
   `clientIp`: it also rate-limits submissions per visitor.
 
@@ -125,7 +126,8 @@ endpoint grants no CORS.
 Send `Idempotency-Key` (1–255 printable ASCII characters, scoped to the form and to the endpoint: browser and server keys never collide) to make retries safe, for example a UUID
 generated when the visitor presses Send. A retry with the same key and the same body (key order does not matter)
 returns the original `id` and `conversationId` with `200` and `Idempotent-Replayed: true`; nothing is filed twice, even
-when retries race. The same key with a different body is `422`. A retry of a filed submission is answered even if the form has since been switched off or edited. Keys are kept as
+when retries race. The same key with a different body is `422`. A retry of a filed submission is answered even if the form has since been switched off or its fields edited, as long
+as the slug in the URL still names the form (renaming the slug makes the old URL `404`). Keys are kept as
 long as the form exists.
 
 ### Rate limits
@@ -172,6 +174,7 @@ export default defineEventHandler(async (event) => {
       fields: { name: body.name, email: body.email, subject: body.subject, message: body.message },
       metadata: {
         pageUrl: getRequestHeader(event, 'referer'),
+        // Only trust X-Forwarded-For when your own proxy sets it; otherwise visitors can spoof it.
         clientIp: getRequestIP(event, { xForwardedFor: true }),
         userAgent: getRequestHeader(event, 'user-agent'),
       },
@@ -188,7 +191,7 @@ host only). The form's public id (`frm_…`) is shown in the form's **Connect** 
 
 ```
 POST /api/public/forms/{publicId}/submissions
-Content-Type: application/json            (or application/x-www-form-urlencoded)
+Content-Type: application/json            (or text/plain with a JSON body, or application/x-www-form-urlencoded)
 Origin: https://shop.example.com           (sent by the browser)
 Idempotency-Key: <optional>
 ```
@@ -218,7 +221,7 @@ ticked checkbox may be sent as `on`, `true`, `1` or `yes`.
   it receives `challengeToken` and currently accepts every request; a failed check is `403 CHALLENGE_FAILED`.
   Cloudflare Turnstile can be added there.
 - The visitor IP, user agent and page URL (from `metadata.pageUrl` or `Referer`) are recorded as submission details.
-- `201` returns `{ "data": { "id": "…" } }` only: no internal ids go to the browser. Errors are as for the server API,
+- `201` returns `{ "success": true, "data": { "id": "…" } }` only: no internal ids go to the browser. Errors are as for the server API,
   plus `415` for other content types. An unknown public id and a form with browser submissions off are both `404`.
 
 ```html

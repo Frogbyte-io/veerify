@@ -51,12 +51,24 @@ const jsonBodySchema = z
       })
       .strict()
       .optional(),
-    [FORM_HONEYPOT_FIELD]: z.string().max(FORM_LIMITS.text).optional(),
+    // Any value: a filled honeypot must get the normal-looking 201, never a 400 a bot could learn from.
+    [FORM_HONEYPOT_FIELD]: z.unknown().optional(),
     challengeToken: z.string().max(4096).optional(),
   })
   .strict()
 
 const TRUTHY = new Set(['on', 'true', '1', 'yes'])
+
+const reservedSchema = z.object({
+  pageUrl: z.string().max(FORM_LIMITS.metadataValue).nullable(),
+  locale: z.string().max(35).nullable(),
+  challengeToken: z.string().max(4096).nullable(),
+})
+
+function honeypotText(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
 
 /** Form-encoded bodies carry checkboxes as `on` when ticked and nothing when not. */
 function fromFormEncoded(params: URLSearchParams, fields: FormField[]): BrowserSubmission {
@@ -66,12 +78,17 @@ function fromFormEncoded(params: URLSearchParams, fields: FormField[]): BrowserS
     if (name.startsWith('_')) continue
     values[name] = types.get(name) === 'checkbox' ? TRUTHY.has(value.trim().toLowerCase()) : value
   }
-  return {
-    fields: values,
+  // Same caps as the JSON body's metadata.
+  const reserved = reservedSchema.safeParse({
     pageUrl: params.get('_page_url'),
     locale: params.get('_locale'),
-    honeypot: params.get(FORM_HONEYPOT_FIELD) ?? '',
     challengeToken: params.get('_challenge'),
+  })
+  if (!reserved.success) throw invalid('Request validation failed', reserved.error.issues)
+  return {
+    fields: values,
+    ...reserved.data,
+    honeypot: params.get(FORM_HONEYPOT_FIELD) ?? '',
   }
 }
 
@@ -113,7 +130,7 @@ export async function readBrowserSubmission(event: H3Event, form: SupportFormRow
     fields: parsed.data.fields,
     pageUrl: parsed.data.metadata?.pageUrl ?? null,
     locale: parsed.data.metadata?.locale ?? null,
-    honeypot: parsed.data[FORM_HONEYPOT_FIELD] ?? '',
+    honeypot: honeypotText(parsed.data[FORM_HONEYPOT_FIELD]),
     challengeToken: parsed.data.challengeToken ?? null,
   }
 }

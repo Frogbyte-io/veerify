@@ -391,13 +391,23 @@ let uidCounter = 0
 const nextUid = () => `field-${++uidCounter}`
 
 function slugify(value, separator = '-') {
-  return String(value || '')
+  const collapsed = String(value || '')
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, separator)
-    .replace(new RegExp(`^\\${separator}+|\\${separator}+$`, 'g'), '')
     .slice(0, 40)
+  // Trim after slicing, so a cut never leaves a trailing separator.
+  let start = 0
+  let end = collapsed.length
+  while (start < end && collapsed[start] === separator) start++
+  while (end > start && collapsed[end - 1] === separator) end--
+  return collapsed.slice(start, end)
+}
+
+/** Single-quote a string for a POSIX shell. */
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`
 }
 
 function optionsToText(options) {
@@ -706,7 +716,7 @@ export default {
         '  -H "Authorization: Bearer $VEERIFY_SERVER_KEY" \\',
         '  -H "Content-Type: application/json" \\',
         '  -H "Idempotency-Key: <unique per submission>" \\',
-        `  -d '${body}'`,
+        `  -d ${shellQuote(body)}`,
       ].join('\n')
     },
     browserExample(form) {

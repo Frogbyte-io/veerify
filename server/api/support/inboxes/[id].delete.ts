@@ -63,6 +63,14 @@ export default defineEventHandler(async (event) => {
   try {
     await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
   } catch (error) {
+    // A form created after the check above: same answer as the check.
+    if (isForeignKeyViolation(error, 'support_form_project_inbox_fk')) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Conflict',
+        data: createErrorResponse(ErrorCode.CONFLICT, 'A form delivers to this inbox. Move or delete it first.'),
+      })
+    }
     if (isForeignKeyViolation(error)) {
       throw createError({
         statusCode: 409,

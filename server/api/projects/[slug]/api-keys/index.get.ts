@@ -17,7 +17,7 @@
  *         schema: { type: string, enum: [app, server], default: app }
  *         description: "`app` keys post feedback from apps; `server` keys submit website forms."
  *     responses:
- *       200: { description: "App key summaries" }
+ *       200: { description: "App or server key summaries, by the requested kind" }
  *       403: { description: "Not a project admin" }
  *       404: { description: "Project not found" }
  */

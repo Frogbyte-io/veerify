@@ -8,7 +8,7 @@ import {
   validateFormSubmission,
   type FormDefinitionInput,
 } from '../lib/support-forms'
-import { formDefinitionSchema } from '../server/services/support-forms/definition'
+import { formDefinitionSchema, toPathSegments } from '../server/services/support-forms/definition'
 
 const definition: FormDefinitionInput = {
   fields: [
@@ -134,7 +134,16 @@ describe('validateFormSubmission', () => {
   })
 
   it('rejects addresses that could inject headers', () => {
-    for (const email of ['a@b.c\r\nBcc: x@y.z', 'a b@c.d', '<a@b.c>', 'a@b', 'a@b.c,d@e.f']) {
+    for (const email of [
+      'a@b.c\r\nBcc: x@y.z',
+      'a b@c.d',
+      '<a@b.c>',
+      'a@b',
+      'a@b.c,d@e.f',
+      'a@b..c',
+      'a@b.c.',
+      'a@.b.c',
+    ]) {
       const result = validateFormSubmission(definition, { ...valid, email })
       expect(result.ok, email).toBe(false)
     }
@@ -253,5 +262,60 @@ describe('formDefinitionSchema', () => {
     const noOrigins = formDefinitionSchema.safeParse({ ...body, browserSubmissionsEnabled: true })
     expect(noOrigins.success).toBe(false)
     expect(noOrigins.error!.issues[0].path).toEqual(['allowedOrigins'])
+  })
+})
+
+describe('review hardening', () => {
+  it('strips C1 control characters', () => {
+    expect(cleanFormText('a\u0085b\u009bc', true)).toBe('a b c')
+  })
+
+  it('handles long runs of slashes in origins quickly and refuses over-long entries', () => {
+    const started = Date.now()
+    expect(normalizeOrigin(`https://shop.example.com${'/'.repeat(250)}`)).toBe('https://shop.example.com')
+    expect(normalizeOrigin('/'.repeat(100_000))).toBeNull()
+    expect(Date.now() - started).toBeLessThan(200)
+  })
+
+  it('turns helper paths into Zod path segments', () => {
+    expect(toPathSegments('fields[2].options[1].value')).toEqual(['fields', 2, 'options', 1, 'value'])
+    expect(toPathSegments('fieldMapping.email')).toEqual(['fieldMapping', 'email'])
+  })
+
+  it('stores option values in the canonical form submissions are matched in', () => {
+    const parsed = formDefinitionSchema.parse({
+      name: 'Contact',
+      slug: 'contact',
+      inboxId: 'inbox-1',
+      fields: [
+        { key: 'email', label: 'Email', type: 'email', required: true },
+        {
+          key: 'topic',
+          label: 'Topic',
+          type: 'select',
+          required: true,
+          options: [{ value: 'cafe\u0301\u0007', label: 'Café' }],
+        },
+      ],
+      fieldMapping: { email: 'email' },
+    })
+    const topic = parsed.fields.find((field) => field.key === 'topic')!
+    expect(topic.options).toEqual([{ value: 'café', label: 'Café' }])
+    const result = validateFormSubmission(parsed, { email: 'a@b.co', topic: 'cafe\u0301' })
+    expect(result.ok).toBe(true)
+  })
+
+  it('reports nested definition problems with structured paths', () => {
+    const result = formDefinitionSchema.safeParse({
+      name: 'Contact',
+      slug: 'contact',
+      inboxId: 'inbox-1',
+      fields: [
+        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'email', label: 'Again', type: 'text', required: false },
+      ],
+      fieldMapping: { email: 'email' },
+    })
+    expect(result.error!.issues.map((issue) => issue.path)).toContainEqual(['fields', 1, 'key'])
   })
 })

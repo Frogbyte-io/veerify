@@ -163,7 +163,11 @@ describe('app key routes', () => {
 
   it('list filters by kind: app keys by default, server keys on request', async () => {
     const dialect = new PgDialect()
-    const kindParams = () => (dialect.sqlToQuery(state.whereArgs.at(-1) as SQL).params as unknown[]).slice(-1)[0]
+    const kindParams = () => {
+      const { sql, params } = dialect.sqlToQuery(state.whereArgs.at(-1) as SQL)
+      expect(sql).toContain('"project_api_key"."kind" = $')
+      return (params as unknown[]).slice(-1)[0]
+    }
     await listHandler({})
     expect(kindParams()).toBe('app')
     state.query = { kind: 'server' }

@@ -170,6 +170,7 @@ export default {
       showRevokeDialog: false,
       revokingKey: null,
       isRevoking: false,
+      loadToken: 0,
     }
   },
   watch: {
@@ -188,15 +189,19 @@ export default {
       return new Date(value).toLocaleDateString()
     },
     async loadKeys() {
+      // Only the latest request may write: a slow answer for a previous project must not land here.
+      const token = ++this.loadToken
       this.isLoading = true
       this.error = null
       try {
         const response = await $fetch(this.keysUrl(), { params: { kind: 'server' } })
+        if (token !== this.loadToken) return
         this.keys = Array.isArray(response?.data) ? response.data : []
       } catch (err) {
+        if (token !== this.loadToken) return
         this.error = err?.data?.error?.message || err?.statusMessage || 'Failed to load server keys'
       } finally {
-        this.isLoading = false
+        if (token === this.loadToken) this.isLoading = false
       }
     },
     openCreateDialog() {
@@ -233,10 +238,20 @@ export default {
     async copyKey() {
       try {
         await navigator.clipboard.writeText(this.createdKey)
-        this.copiedKey = true
       } catch {
-        toast.error('Could not copy. Select the key and copy it by hand.')
+        // Non-secure origins have no Clipboard API; fall back like the app keys dialog does.
+        const el = document.createElement('textarea')
+        el.value = this.createdKey
+        document.body.appendChild(el)
+        el.select()
+        const copied = document.execCommand('copy')
+        document.body.removeChild(el)
+        if (!copied) {
+          toast.error('Could not copy. Select the key and copy it by hand.')
+          return
+        }
       }
+      this.copiedKey = true
     },
     openRevokeDialog(apiKey) {
       this.revokingKey = apiKey

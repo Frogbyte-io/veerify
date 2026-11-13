@@ -59,7 +59,8 @@ export const FORM_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
 export const FORM_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 // Deliberately strict: the address becomes the To of every reply.
-const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]+$/
+// Domain: two or more non-empty dot-separated labels (no `a@b..c`, no trailing dot).
+const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:".]+(?:\.[^\s@<>()[\]\\,;:".]+)+$/
 
 export function isValidFormEmail(value: string): boolean {
   return value.length <= FORM_LIMITS.email && EMAIL_PATTERN.test(value)
@@ -68,8 +69,14 @@ export function isValidFormEmail(value: string): boolean {
 /** An origin as browsers send it: scheme, host and optional port, no path. `https://*.example.com` covers subdomains. */
 const ORIGIN_PATTERN = /^https?:\/\/(\*\.)?[a-z0-9.-]+(:\d{1,5})?$/
 
+/** Longest origin worth considering: scheme, a 253-character host and a port. */
+export const MAX_ORIGIN_LENGTH = 300
+
 export function normalizeOrigin(value: string): string | null {
-  const trimmed = value.trim().toLowerCase().replace(/\/+$/, '')
+  if (value.length > MAX_ORIGIN_LENGTH) return null
+  let trimmed = value.trim().toLowerCase()
+  // A loop, not /\/+$/: that regex is quadratic on a long run of slashes.
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1)
   return ORIGIN_PATTERN.test(trimmed) ? trimmed : null
 }
 
@@ -166,8 +173,10 @@ export function validateFormDefinition(input: FormDefinitionInput): string[] {
  */
 export function cleanFormText(value: string, multiline: boolean): string {
   const normalized = value.normalize('NFC').replace(/\r\n?/g, '\n')
+  // C0 controls, DEL and C1 controls (U+0080-U+009F); newline and tab survive in multiline text.
   // eslint-disable-next-line no-control-regex
-  const stripped = normalized.replace(multiline ? /[\u0000-\u0008\u000B-\u001F\u007F]/g : /[\u0000-\u001F\u007F]/g, ' ')
+  const pattern = multiline ? /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g : /[\u0000-\u001F\u007F-\u009F]/g
+  const stripped = normalized.replace(pattern, ' ')
   return stripped.trim()
 }
 
@@ -208,7 +217,8 @@ export function validateFormSubmission(
 
   const values: SubmissionFieldValue[] = []
   for (const field of definition.fields) {
-    const raw = input[field.key]
+    // Own properties only: an omitted field named e.g. `constructor` must not read Object.prototype.
+    const raw = Object.hasOwn(input, field.key) ? input[field.key] : undefined
     const missing = raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')
 
     if (field.type === 'checkbox') {

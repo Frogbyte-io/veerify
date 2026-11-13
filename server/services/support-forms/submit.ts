@@ -58,7 +58,10 @@ export const submissionMetadataSchema = z
     userAgent: metadataString,
     referrer: metadataString,
     extra: z
-      .record(z.string().regex(/^[A-Za-z0-9_.-]{1,40}$/), z.string().max(FORM_LIMITS.metadataValue))
+      .record(
+        z.string().regex(new RegExp(`^[A-Za-z0-9_.-]{1,${FORM_LIMITS.extraKeyLength}}$`)),
+        z.string().max(FORM_LIMITS.metadataValue)
+      )
       .refine((value) => Object.keys(value).length <= FORM_LIMITS.extraKeys, {
         message: `At most ${FORM_LIMITS.extraKeys} extra keys`,
       })

@@ -1,5 +1,5 @@
 {
-  "id": "d7700eaa-d15d-49a4-89d4-c2c3f5361aaa",
+  "id": "07147b57-0611-44e8-837b-a9a464281a24",
   "prevId": "e9c64fe4-7536-465d-8efb-6ca5bb79532f",
   "version": "7",
   "dialect": "postgresql",
@@ -8691,19 +8691,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "support_form_inbox_id_support_inbox_id_fk": {
-          "name": "support_form_inbox_id_support_inbox_id_fk",
-          "tableFrom": "support_form",
-          "tableTo": "support_inbox",
-          "columnsFrom": [
-            "inbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "support_form_created_by_user_id_user_id_fk": {
           "name": "support_form_created_by_user_id_user_id_fk",
           "tableFrom": "support_form",
@@ -8715,6 +8702,21 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "support_form_project_inbox_fk": {
+          "name": "support_form_project_inbox_fk",
+          "tableFrom": "support_form",
+          "tableTo": "support_inbox",
+          "columnsFrom": [
+            "project_id",
+            "inbox_id"
+          ],
+          "columnsTo": [
+            "project_id",
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8827,6 +8829,66 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_form_submission_project_idx": {
+          "name": "support_form_submission_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_form_submission_conversation_idx": {
+          "name": "support_form_submission_conversation_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_form_submission_message_idx": {
+          "name": "support_form_submission_message_idx",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_form_submission_api_key_idx": {
+          "name": "support_form_submission_api_key_idx",
+          "columns": [
+            {
+              "expression": "api_key_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

@@ -1350,11 +1350,10 @@ export const supportForm = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
-    // Where submissions land. Deleting an inbox with forms is refused by the FK
-    // ('no action' rather than 'restrict' so deleting the whole project still cascades).
-    inboxId: text('inbox_id')
-      .notNull()
-      .references(() => supportInbox.id, { onDelete: 'no action' }),
+    // Where submissions land. The composite FK below keeps it inside the form's
+    // project and refuses deleting an inbox with forms ('no action' rather than
+    // 'restrict', so deleting the whole project still cascades).
+    inboxId: text('inbox_id').notNull(),
     name: text('name').notNull(),
     // The server API addresses a form by slug, unique within the project.
     slug: text('slug').notNull(),
@@ -1384,6 +1383,11 @@ export const supportForm = pgTable(
     uniqueProjectSlug: uniqueIndex('support_form_project_slug_idx').on(table.projectId, table.slug),
     uniquePublicId: uniqueIndex('support_form_public_id_idx').on(table.publicId),
     inboxIdx: index('support_form_inbox_idx').on(table.inboxId),
+    projectInboxFk: foreignKey({
+      columns: [table.projectId, table.inboxId],
+      foreignColumns: [supportInbox.projectId, supportInbox.id],
+      name: 'support_form_project_inbox_fk',
+    }).onDelete('no action'),
     validAutoReplyMode: check(
       'support_form_auto_reply_mode_check',
       sql`${table.autoReplyMode} in ('inbox','custom','off')`
@@ -1419,6 +1423,11 @@ export const supportFormSubmission = pgTable(
   (table) => ({
     uniqueIdempotencyKey: uniqueIndex('support_form_submission_idempotency_idx').on(table.formId, table.idempotencyKey),
     formCreatedIdx: index('support_form_submission_form_created_idx').on(table.formId, table.createdAt),
+    // Foreign-key columns, so cascades and set-null from these parents do not scan the table.
+    projectIdx: index('support_form_submission_project_idx').on(table.projectId),
+    conversationIdx: index('support_form_submission_conversation_idx').on(table.conversationId),
+    messageIdx: index('support_form_submission_message_idx').on(table.messageId),
+    apiKeyIdx: index('support_form_submission_api_key_idx').on(table.apiKeyId),
     validSource: check('support_form_submission_source_check', sql`${table.source} in ('api','browser')`),
   })
 )

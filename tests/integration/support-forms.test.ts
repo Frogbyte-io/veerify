@@ -18,6 +18,12 @@ for (const [name, value] of Object.entries(h3)) vi.stubGlobal(name, value)
 const automation = vi.hoisted(() => ({ triggerAutomationEvent: vi.fn(async () => undefined) }))
 vi.mock('~/server/utils/automation-engine', () => automation)
 vi.mock('~/server/utils/support-realtime', () => ({ publishConversationEvent: async () => undefined }))
+// Only the inbox-delete route below authenticates; it runs as an inbox admin.
+vi.mock('~/server/utils/auth-middleware', () => ({ requireAuth: async () => ({ user: { id: 'user-forms' } }) }))
+vi.mock('~/server/utils/support-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/server/utils/support-access')>()),
+  requireInboxRole: async () => undefined,
+}))
 vi.mock('~/server/utils/sender-enforcement', () => ({ isSenderAllowedOrRecordBlock: async () => true }))
 vi.mock('~/server/utils/outbound-delivery', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~/server/utils/outbound-delivery')>()),
@@ -42,11 +48,13 @@ const { generateAppKey } = await import('../../server/utils/app-keys')
 const serverRoute = (await import('../../server/api/v1/forms/[formSlug]/submissions.post')).default
 const browserRoute = (await import('../../server/api/public/forms/[publicId]/submissions.post')).default
 const preflightRoute = (await import('../../server/api/public/forms/[publicId]/submissions.options')).default
+const inboxDeleteRoute = (await import('../../server/api/support/inboxes/[id].delete')).default
 
 const router = h3.createRouter()
 router.post('/api/v1/forms/:formSlug/submissions', serverRoute)
 router.post('/api/public/forms/:publicId/submissions', browserRoute)
 router.options('/api/public/forms/:publicId/submissions', preflightRoute)
+router.delete('/api/support/inboxes/:id', inboxDeleteRoute)
 const app = h3.createApp()
 app.use(router)
 const handle = h3.toWebHandler(app)
@@ -57,6 +65,7 @@ const projectId = `project_forms_${runId}`
 const otherProjectId = `project_forms_other_${runId}`
 const inboxId = `inbox_forms_${runId}`
 const offInboxId = `inbox_forms_off_${runId}`
+const otherInboxId = `inbox_forms_other_${runId}`
 const inboxAddress = `support-${runId}@shop.example.test`
 const ORIGIN = 'https://shop.example.test'
 const publicId = `frm_public_${runId}`
@@ -135,7 +144,7 @@ async function call(path: string, options: CallOptions = {}) {
     new Request(`http://veerify.test${path}`, {
       method: options.method ?? 'POST',
       headers,
-      ...(options.method === 'OPTIONS'
+      ...(options.method === 'OPTIONS' || options.method === 'DELETE'
         ? {}
         : { body: options.rawBody ?? JSON.stringify(options.body ?? { fields: validFields() }) }),
     })
@@ -218,6 +227,15 @@ beforeAll(async () => {
       updatedAt: now,
     },
     {
+      id: otherInboxId,
+      projectId: otherProjectId,
+      name: 'Other',
+      slug: `other-${runId}`,
+      emailAddress: `other-${runId}@shop.example.test`,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
       id: offInboxId,
       projectId,
       name: 'Off',
@@ -256,6 +274,16 @@ beforeAll(async () => {
     formRow({ id: `form_noreply_${runId}`, slug: 'no-reply', autoReplyMode: 'off' }),
     formRow({ id: `form_limited_${runId}`, slug: 'limited' }),
     formRow({
+      id: `form_proto_${runId}`,
+      slug: 'proto',
+      autoReplyMode: 'off',
+      fields: [
+        { key: 'email', label: 'Email', type: 'email', required: true },
+        { key: 'constructor', label: 'Built by', type: 'text', required: false },
+      ],
+      fieldMapping: { email: 'email', name: null, subject: null },
+    }),
+    formRow({
       id: `form_browser_${runId}`,
       slug: 'browser',
       publicId,
@@ -271,7 +299,7 @@ beforeAll(async () => {
     formRow({
       id: `form_other_${runId}`,
       projectId: otherProjectId,
-      inboxId,
+      inboxId: otherInboxId,
       slug: 'other-contact',
     }),
   ])
@@ -530,6 +558,32 @@ describe('server API: filing into the inbox', () => {
   })
 })
 
+describe('server API: edge cases', () => {
+  it('treats an omitted field named like an Object.prototype member as missing', async () => {
+    const response = await submit('proto', { body: { fields: { email: `proto-${runId}@buyer.example.test` } } })
+    expect(response.status).toBe(201)
+  })
+})
+
+describe('database guards', () => {
+  it("refuses a form pointing at another project's inbox", async () => {
+    await expect(
+      db.insert(supportForm).values(formRow({ id: `form_cross_${runId}`, slug: 'cross', projectId: otherProjectId }))
+    ).rejects.toThrow()
+  })
+
+  it('refuses deleting an inbox that a form delivers to, and keeps the form', async () => {
+    const response = await call(`/api/support/inboxes/${inboxId}`, { method: 'DELETE' })
+    expect(response.status).toBe(409)
+    expect(response.json.data.error.message).toContain('form')
+    const [form] = await db
+      .select()
+      .from(supportForm)
+      .where(eq(supportForm.id, `form_contact_${runId}`))
+    expect(form).toBeTruthy()
+  })
+})
+
 describe('server API: idempotency', () => {
   it('answers a retry with the first result and files once', async () => {
     const email = `idem-${runId}@buyer.example.test`
@@ -662,6 +716,22 @@ describe('browser endpoint', () => {
     expect(response.status).toBe(201)
     expect(response.json.data.id).toEqual(expect.any(String))
     expect(await conversationsFor(email)).toHaveLength(0)
+  })
+
+  it('pretends to accept a honeypot filled with a non-string value', async () => {
+    const email = `bot2-${runId}@buyer.example.test`
+    const response = await submitFromBrowser(publicId, { body: { fields: validFields(email), _hp: { url: 'x' } } })
+    expect(response.status).toBe(201)
+    expect(await conversationsFor(email)).toHaveLength(0)
+  })
+
+  it('caps the reserved form-encoded values like the JSON metadata', async () => {
+    const params = new URLSearchParams({ ...validFields(), _page_url: `${ORIGIN}/${'x'.repeat(3000)}` })
+    const response = await submitFromBrowser(publicId, {
+      contentType: 'application/x-www-form-urlencoded',
+      rawBody: params.toString(),
+    })
+    expect(response.status).toBe(400)
   })
 
   it('rejects other content types with 415', async () => {

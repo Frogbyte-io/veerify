@@ -14,7 +14,7 @@
  *       safe. See docs/forms-api.md.
  *     operationId: submitSupportForm
  *     security:
- *       - appKeyAuth: []
+ *       - serverKeyAuth: []
  *     parameters:
  *       - in: path
  *         name: formSlug

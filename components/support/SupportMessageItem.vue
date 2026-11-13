@@ -72,7 +72,7 @@
           >
             <summary class="cursor-pointer select-none underline-offset-2 hover:underline">Submission details</summary>
             <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-              <template v-for="row in formMetadataRows" :key="row.label">
+              <template v-for="(row, index) in formMetadataRows" :key="index">
                 <dt>{{ row.label }}</dt>
                 <dd class="break-all">{{ row.value }}</dd>
               </template>

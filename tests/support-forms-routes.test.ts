@@ -183,6 +183,7 @@ describe('form admin routes: writes', () => {
   })
 
   it('updates the definition but never the public id', async () => {
+    state.body = { ...validBody, publicId: 'frm_attacker_chosen' }
     state.selects = [[formRow], [{ id: 'inbox-1' }]]
     await update({})
     expect(state.updated[0]).not.toHaveProperty('publicId')

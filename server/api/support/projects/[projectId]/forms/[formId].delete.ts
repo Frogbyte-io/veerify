@@ -22,7 +22,7 @@
  *       403: { description: Not a project admin }
  *       404: { description: Form not found }
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireProjectAdmin } from '~/server/utils/project-access'
@@ -37,6 +37,6 @@ export default defineEventHandler(async (event) => {
   await requireProjectAdmin(projectId, session.user.id)
   await requireFormInProject(projectId, formId)
 
-  await db.delete(supportForm).where(eq(supportForm.id, formId))
+  await db.delete(supportForm).where(and(eq(supportForm.id, formId), eq(supportForm.projectId, projectId)))
   return createSuccessResponse({ deleted: true })
 })

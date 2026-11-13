@@ -197,6 +197,14 @@ describe('api-v1 CORS middleware', () => {
     expect(state.headers['Access-Control-Allow-Origin']).toBe('*')
   })
 
+  it('grants no CORS to form submissions, which take a secret server key', () => {
+    for (const method of ['POST', 'OPTIONS']) {
+      expect(cors(makeEvent(undefined, { method, path: '/api/v1/forms/contact/submissions' }))).toBeUndefined()
+      expect(state.headers).toEqual({})
+      expect(state.status).toBeUndefined()
+    }
+  })
+
   it('ignores non-/api/v1 paths', () => {
     cors(makeEvent(undefined, { path: '/api/feedback' }))
     expect(state.headers).toEqual({})

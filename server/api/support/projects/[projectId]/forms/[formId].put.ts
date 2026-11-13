@@ -18,6 +18,47 @@
  *         name: formId
  *         required: true
  *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, slug, inboxId, fields, fieldMapping]
+ *             properties:
+ *               name: { type: string, maxLength: 80 }
+ *               slug: { type: string, maxLength: 60, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+ *               inboxId: { type: string }
+ *               fields:
+ *                 type: array
+ *                 maxItems: 30
+ *                 items:
+ *                   type: object
+ *                   required: [key, label, type]
+ *                   properties:
+ *                     key: { type: string, pattern: '^[a-z0-9][a-z0-9_-]*$' }
+ *                     label: { type: string }
+ *                     type: { type: string, enum: [text, email, textarea, select, checkbox] }
+ *                     required: { type: boolean }
+ *                     options:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           value: { type: string }
+ *                           label: { type: string }
+ *               fieldMapping:
+ *                 type: object
+ *                 required: [email]
+ *                 properties:
+ *                   email: { type: string, description: Key of a required email field }
+ *                   name: { type: string, nullable: true, description: Key of a text field }
+ *                   subject: { type: string, nullable: true, description: Key of a text or select field }
+ *               autoReplyMode: { type: string, enum: [inbox, custom, off], default: inbox }
+ *               autoReplyTemplate: { type: string, nullable: true }
+ *               allowedOrigins: { type: array, items: { type: string }, description: 'e.g. https://shop.example.com or https://*.example.com' }
+ *               browserSubmissionsEnabled: { type: boolean, default: false }
+ *               isEnabled: { type: boolean, default: true }
  *     responses:
  *       200: { description: Form updated }
  *       400: { description: Validation failed }
