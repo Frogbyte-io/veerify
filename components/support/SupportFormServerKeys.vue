@@ -212,8 +212,11 @@ export default {
       const name = this.newKeyName.trim()
       if (!name || this.isCreating) return
       this.isCreating = true
+      const slug = this.projectSlug
       try {
         const response = await $fetch(this.keysUrl(), { method: 'POST', body: { name, kind: 'server' } })
+        // The project changed while this was in flight: the key belongs to the old list.
+        if (slug !== this.projectSlug) return
         const { key, ...summary } = response?.data || {}
         this.keys = [summary, ...this.keys]
         this.createdKey = key

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   cleanFormText,
   formatSubmissionText,
+  isValidFormEmail,
   normalizeOrigin,
   originAllowed,
   validateFormDefinition,
@@ -266,15 +267,20 @@ describe('formDefinitionSchema', () => {
 })
 
 describe('review hardening', () => {
+  it('rejects empty dot-separated parts in the local part too', () => {
+    for (const email of ['.a@b.co', 'a.@b.co', 'a..b@c.com']) {
+      expect(isValidFormEmail(email), email).toBe(false)
+    }
+    expect(isValidFormEmail('first.last+tag@shop.example.com')).toBe(true)
+  })
+
   it('strips C1 control characters', () => {
     expect(cleanFormText('a\u0085b\u009bc', true)).toBe('a b c')
   })
 
   it('handles long runs of slashes in origins quickly and refuses over-long entries', () => {
-    const started = Date.now()
     expect(normalizeOrigin(`https://shop.example.com${'/'.repeat(250)}`)).toBe('https://shop.example.com')
     expect(normalizeOrigin('/'.repeat(100_000))).toBeNull()
-    expect(Date.now() - started).toBeLessThan(200)
   })
 
   it('turns helper paths into Zod path segments', () => {

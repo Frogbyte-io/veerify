@@ -59,8 +59,10 @@ export const FORM_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
 export const FORM_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 // Deliberately strict: the address becomes the To of every reply.
-// Domain: two or more non-empty dot-separated labels (no `a@b..c`, no trailing dot).
-const EMAIL_PATTERN = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:".]+(?:\.[^\s@<>()[\]\\,;:".]+)+$/
+// Local part and domain: non-empty dot-separated parts (no `.a@`, `a..b@`, `a@b..c` or trailing dot);
+// the domain needs at least two labels.
+const EMAIL_PATTERN =
+  /^[^\s@<>()[\]\\,;:".]+(?:\.[^\s@<>()[\]\\,;:".]+)*@[^\s@<>()[\]\\,;:".]+(?:\.[^\s@<>()[\]\\,;:".]+)+$/
 
 export function isValidFormEmail(value: string): boolean {
   return value.length <= FORM_LIMITS.email && EMAIL_PATTERN.test(value)

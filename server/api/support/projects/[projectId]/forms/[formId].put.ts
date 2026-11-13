@@ -36,17 +36,19 @@
  *                   type: object
  *                   required: [key, label, type]
  *                   properties:
- *                     key: { type: string, pattern: '^[a-z0-9][a-z0-9_-]*$' }
- *                     label: { type: string }
+ *                     key: { type: string, maxLength: 40, pattern: '^[a-z0-9][a-z0-9_-]*$' }
+ *                     label: { type: string, maxLength: 120 }
  *                     type: { type: string, enum: [text, email, textarea, select, checkbox] }
  *                     required: { type: boolean }
  *                     options:
  *                       type: array
+ *                       maxItems: 50
  *                       items:
  *                         type: object
+ *                         required: [value, label]
  *                         properties:
- *                           value: { type: string }
- *                           label: { type: string }
+ *                           value: { type: string, maxLength: 120 }
+ *                           label: { type: string, maxLength: 120 }
  *               fieldMapping:
  *                 type: object
  *                 required: [email]
@@ -55,8 +57,8 @@
  *                   name: { type: string, nullable: true, description: Key of a text field }
  *                   subject: { type: string, nullable: true, description: Key of a text or select field }
  *               autoReplyMode: { type: string, enum: [inbox, custom, off], default: inbox }
- *               autoReplyTemplate: { type: string, nullable: true }
- *               allowedOrigins: { type: array, items: { type: string }, description: 'e.g. https://shop.example.com or https://*.example.com' }
+ *               autoReplyTemplate: { type: string, nullable: true, maxLength: 5000 }
+ *               allowedOrigins: { type: array, maxItems: 20, items: { type: string, maxLength: 300 }, description: 'e.g. https://shop.example.com or https://*.example.com' }
  *               browserSubmissionsEnabled: { type: boolean, default: false }
  *               isEnabled: { type: boolean, default: true }
  *     responses:

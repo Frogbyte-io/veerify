@@ -67,7 +67,8 @@ const reservedSchema = z.object({
 
 function honeypotText(value: unknown): string {
   if (value === undefined || value === null) return ''
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  // Any non-string value counts as filled. Never serialized: a deeply nested value would overflow the stack.
+  return typeof value === 'string' ? value : 'filled'
 }
 
 /** Form-encoded bodies carry checkboxes as `on` when ticked and nothing when not. */

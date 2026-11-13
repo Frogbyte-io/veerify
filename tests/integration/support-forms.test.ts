@@ -7,9 +7,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * Website forms through the real HTTP routes and a real database: the server
  * API (`/api/v1/forms/{slug}/submissions`) and the browser endpoint
  * (`/api/public/forms/{publicId}/submissions`) are mounted on an h3 router and
- * called with real Requests. Only infrastructure edges are mocked: realtime,
- * the outbound worker pass, the sender policy and the automation trigger
- * (spied, to see that a submission fires `conversation_created`).
+ * called with real Requests. Mocked: realtime, the outbound worker pass, the
+ * sender policy, the automation trigger (spied, to see that a submission fires
+ * `conversation_created`), and, for the inbox-delete case only, `requireAuth`
+ * and `requireInboxRole` (inbox-admin authorization has its own suite in
+ * tests/support-route-authorization.test.ts).
  */
 
 // Nitro auto-imports h3's helpers as globals; the route files rely on that.
@@ -570,6 +572,15 @@ describe('database guards', () => {
     await expect(
       db.insert(supportForm).values(formRow({ id: `form_cross_${runId}`, slug: 'cross', projectId: otherProjectId }))
     ).rejects.toThrow()
+  })
+
+  it('still deletes a whole project whose inbox has forms', async () => {
+    const id = `proj_delete_${runId}`
+    await db.insert(project).values({ id, name: 'Gone', slug: `gone-${runId}`, organizationId: orgId })
+    await db.insert(supportInbox).values({ id, projectId: id, name: 'Gone', slug: `gone-${runId}` })
+    await db.insert(supportForm).values(formRow({ id, slug: 'gone', projectId: id, inboxId: id }))
+    await db.delete(project).where(eq(project.id, id))
+    expect(await db.select().from(supportForm).where(eq(supportForm.id, id))).toEqual([])
   })
 
   it('refuses deleting an inbox that a form delivers to, and keeps the form', async () => {

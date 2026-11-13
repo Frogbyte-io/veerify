@@ -13917,10 +13917,12 @@ export const openapiPaths = {
                     "properties": {
                       "key": {
                         "type": "string",
+                        "maxLength": 40,
                         "pattern": "^[a-z0-9][a-z0-9_-]*$"
                       },
                       "label": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 120
                       },
                       "type": {
                         "type": "string",
@@ -13937,14 +13939,21 @@ export const openapiPaths = {
                       },
                       "options": {
                         "type": "array",
+                        "maxItems": 50,
                         "items": {
                           "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
                           "properties": {
                             "value": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 120
                             },
                             "label": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 120
                             }
                           }
                         }
@@ -13985,12 +13994,15 @@ export const openapiPaths = {
                 },
                 "autoReplyTemplate": {
                   "type": "string",
-                  "nullable": true
+                  "nullable": true,
+                  "maxLength": 5000
                 },
                 "allowedOrigins": {
                   "type": "array",
+                  "maxItems": 20,
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 300
                   },
                   "description": "e.g. https://shop.example.com or https://*.example.com"
                 },
@@ -14125,10 +14137,12 @@ export const openapiPaths = {
                     "properties": {
                       "key": {
                         "type": "string",
+                        "maxLength": 40,
                         "pattern": "^[a-z0-9][a-z0-9_-]*$"
                       },
                       "label": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 120
                       },
                       "type": {
                         "type": "string",
@@ -14145,14 +14159,21 @@ export const openapiPaths = {
                       },
                       "options": {
                         "type": "array",
+                        "maxItems": 50,
                         "items": {
                           "type": "object",
+                          "required": [
+                            "value",
+                            "label"
+                          ],
                           "properties": {
                             "value": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 120
                             },
                             "label": {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 120
                             }
                           }
                         }
@@ -14193,12 +14214,15 @@ export const openapiPaths = {
                 },
                 "autoReplyTemplate": {
                   "type": "string",
-                  "nullable": true
+                  "nullable": true,
+                  "maxLength": 5000
                 },
                 "allowedOrigins": {
                   "type": "array",
+                  "maxItems": 20,
                   "items": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 300
                   },
                   "description": "e.g. https://shop.example.com or https://*.example.com"
                 },
