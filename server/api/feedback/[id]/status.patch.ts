@@ -45,7 +45,7 @@ import { sendStatusChangeNotificationEmail } from '~/lib/email'
 import { onFeedbackStatusChanged } from '~/server/services/marketing/reviews/hooks'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { createLogger } from '~/server/utils/logger'
-import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
+import { notifyProjectMembers, notifyFeedbackSubscribers } from '~/server/utils/notifications'
 import { notifyLinkedFeedbackContacts } from '~/server/utils/feedback-support-notifications'
 
 const logger = createLogger('feedback')
@@ -118,7 +118,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // In-app notifications for team members
-    notifyProjectTeam(fb.projectId, session.user.id, notifParams)
+    notifyProjectMembers(fb.projectId, session.user.id, notifParams)
 
     // In-app notifications for non-team-member subscribers (app/both channel)
     notifyFeedbackSubscribers(id, session.user.id, [], {

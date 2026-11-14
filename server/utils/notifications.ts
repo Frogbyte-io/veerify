@@ -194,9 +194,6 @@ export async function notifyUser(
   }
 }
 
-/** @deprecated Use notifyProjectMembers; kept so existing call sites keep working until they are renamed. */
-export const notifyProjectTeam = notifyProjectMembers
-
 /**
  * Creates in-app notifications for logged-in users subscribed to a feedback item
  * whose notifyChannel is 'app' or 'both'.

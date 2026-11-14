@@ -101,7 +101,7 @@ length-capped).
   (e.g. "Dot X user"), no author user/session, `voteCount 0`, no vote row,
   `metadata: { feedbackType, client }`, `apiKeyId`, `sourceLabel`.
 - Update `lastUsedAt` on the key (fire-and-forget is fine).
-- Side effects: notify the project team via `notifyProjectTeam` (`server/utils/notifications.ts`).
+- Side effects: notify project members via `notifyProjectMembers` (`server/utils/notifications.ts`).
   GitHub auto-create is skipped: it is inlined in `server/api/feedback/index.post.ts` and not
   reusable without copying (follow-up: extract it).
 - Response `201`: `{ success: true, data: { id } }` via existing `createSuccessResponse`.
@@ -110,7 +110,7 @@ length-capped).
   as `subject`.
 - CORS for `/api/v1/**` only: `Access-Control-Allow-Origin: *`, methods `POST, OPTIONS`,
   headers `Authorization, Content-Type`, no `Allow-Credentials`. `OPTIONS` returns 204.
-- Document it with `defineOpenAPIRoute` in the route file and regenerate via
+- Document it with an `@openapi` JSDoc block in the route file and regenerate via
   `yarn openapi:generate`; add a bearer security scheme next to `cookieAuth` in
   `server/api/openapi.json.get.ts`.
 

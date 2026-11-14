@@ -52,7 +52,7 @@ import { feedback, feedbackComment, feedbackSubscription } from '~/server/databa
 import { user } from '~/server/database/schema/auth'
 import { sendNewCommentNotificationEmail } from '~/lib/email'
 import { createLogger } from '~/server/utils/logger'
-import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
+import { notifyProjectMembers, notifyFeedbackSubscribers } from '~/server/utils/notifications'
 import { requirePublicFeedback } from '~/server/utils/feedback-access'
 
 const logger = createLogger('feedback')
@@ -206,7 +206,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // In-app notifications for team members
-    notifyProjectTeam(fb.projectId, session?.user?.id || null, notifParams)
+    notifyProjectMembers(fb.projectId, session?.user?.id || null, notifParams)
 
     // In-app notifications for non-team-member subscribers (app/both channel)
     notifyFeedbackSubscribers(id, session?.user?.id || null, [], {
